@@ -1,0 +1,2912 @@
+ 
+
+Quero que desenvolvas uma ferramenta no meu sistema que permita a criação de **menus e formulários dinâmicos**.
+
+### Estrutura de Funcionalidades (Visão do Usuário Final)
+
+| **Ação**       | **Descrição**                                                                 |
+| -------------- | ----------------------------------------------------------------------------- |
+| **Listar**     | Exibe todos os registos criados numa tabela dinâmica, com filtros e pesquisa. |
+| **Editar**     | Abre o registo em modo de edição para atualizar dados.                        |
+| **Apagar**     | Remove um registo (com aviso de confirmação).                                 |
+| **Visualizar** | Mostra o registo em modo somente leitura (sem edição).                        |
+| **Exportar**   | Permite baixar os dados em Excel, CSV ou PDF.                                 |
+| **Validar**    | (Opcional) Marca o registo como aprovado/revisado.                            |
+
+### Criação de Formulários Personalizados
+
+O utilizador poderá criar um formulário customizado e organizar o conteúdo escolhendo:
+
+* Se um campo será **input de texto, email, número, etc.**
+* Se será um **select**, com opção de pesquisa (`react-select-search`) ou **radio buttons**, definindo manualmente as opções disponíveis.
+* Se será um **textarea** ou um **editor de texto rico (RichTextEditor)**.
+* Se será um campo de **imagem ou avatar** (ex.: usando Material UI).
+* Também poderá definir se o campo será **obrigatório**, exibindo o indicador `<span className="text-danger">*</span>`.
+
+### Gestão dos Formulários
+
+Haverá uma tabela que lista todos os formulários criados, contendo:
+
+* **Nome do formulário**
+* **Categoria do formulário**, exibida com **badge do Bootstrap** (ex.: Administrativo, Recursos Humanos, Financeiro, Relatórios, Secretaria, Comunicação, Pedagogia, Biblioteca, Estudantes, Outros).
+* **Botão de visualização** para abrir o formulário criado.
+
+### Rotas no React Router
+
+O sistema contará com as seguintes rotas principais:
+
+* **`/customform_create`** → Criar novos formulários.
+* **`/customform_list`** → Listar todos os formulários existentes.
+* **`/customform_edit/:id`** → Editar um formulário específico (usando um código único).
+* **`/customform_work/:id`** → Permitir ao utilizador preencher/registar dados através do formulário.
+* **`/customform_work_form/:id`** → Renderizar todos os campos do formulário numa página completa (quando não for usado modal).
+se for um maodla na pagina de listagem dos dados do forma acima ada tabela vai ter o compoentn. mdoal para criara. e nas tabelaes vai estar o mmemso compoennt no campo action para editar.
+ 
+ 
+caso seja uma pagina e não um modal usar estes modleo e alguns componenets e que são suados aqui , como o compoenent de upload de ficheiros:
+modelo 1 - :
+
+import React, { useEffect, useRef, useState } from 'react'
+import { Form } from 'react-bootstrap'
+import styled from 'styled-components'
+import { Link } from 'react-router-dom';
+import { Save, Delete, Send, BallotOutlined, SummarizeOutlined, Clear } from '@mui/icons-material';
+import Alert from 'react-bootstrap/Alert';
+import BuildDataHistory from '../components/elements/BuildDataHistory';
+import FileUpload from '../../General/components/FileUpload';
+import CRValue from '../../General/components/CRValue';
+import ClearInputs from '../../General/components/ClearInputs';
+import Hoot from '../../General/components/Hoot';
+import axios from 'axios';
+import { RichTextEditor } from '../../General/components/RichTextEditor';
+import { toast } from 'react-hot-toast';
+import CalcAge from '../../General/components/CalcAge';
+import { AcademicYearDataOptions, ClassDataOptions, GetAcademiclevel_byclass, GetAcademicYear, GetAcademicYear_byclass, GetClassroom_byclass, GetCourse_byclass, GetFaculty_byclass, GetPeriod_byclass } from '../../General/components/InstituteData';
+import { Camera, Close } from '@mui/icons-material';
+import { Avatar, Checkbox, FormControlLabel, stepButtonClasses } from '@mui/material';
+import { ImagePreview } from '../components/elements/ImagePreview';
+import SwitchFromPages from '../../General/components/SwitchFromPages';
+import ReligionOptions from '../../General/components/ReligionOptions';
+import RandomCodeGenerator from '../../General/components/RandomCodeGenerator';
+import { FormControl, FormLabel, Radio, RadioGroup } from '@mui/material';
+import ReplaceWord from '../../General/components/ReplaceWord';
+import GetTypeOfInstitute from '../../General/components/GetTypeOfInstitute';
+import SaveButton from '../components/elements/SaveButton';
+
+const FORMURL = [
+    Hoot() + "eduallstudentregisterapi/post",
+    Hoot() + "eduallfilesregister/post/",
+    Hoot() + "eduallparentnopicregister/post",
+    Hoot() + "edualluserstudentaccountregister/post",
+    Hoot() + "eduallgetstudentbyidenitycard/get/"
+];
+
+
+function NewStudentBase() {
+    document.title = 'Registrar novo estudante';
+
+
+
+    const [ToggleHealth, setToggleHealth] = useState(0);
+    const [form, setForm] = useState({});
+    const [errors, setErrors] = useState({});
+    const [Files, setFiles] = useState([]);
+    const [Image, setImage] = useState([]);
+    const [Class, setClass] = useState(null);
+    const [StudentGuardion, setStudentGuardion] = useState(null);
+
+    const [StudentWorkStatus, setStudentWorkStatus] = useState(false);
+    const [Loaded, setLoaded] = useState(false);
+    const [FoundedUserAccount, SetFoundedUserAccount] = useState(false);
+    const [FormMessage, setFormMessage] = useState(null);
+    const [MessageType, setMessageType] = useState(1);
+    const [show, setShow] = useState(true);
+    const [RegisterStatus, SetRegisterStatus] = useState(2);
+    const [StudentCreateAccount, setStudentCreateAccount] = useState(0);
+
+    const [UserCode, setUserCode] = useState(null);
+
+    const [Data, SetData] = useState({});
+    const SEARCHURL = Hoot() + 'eduallcheckexistentuseraccountemail/'
+
+    const ChildRef = useRef();
+    const ChildRef2 = useRef();
+
+    const INPUTS = {
+        student_name: CRValue("#student_name"),
+        student_address: CRValue("#student_address"),
+        student_nacionality: CRValue("#student_nacionality"),
+        student_gender: CRValue("#student_gender"),
+        student_religion: CRValue("#student_religion"),
+        student_birthday: CRValue("#student_birthday"),
+        student_phone: CRValue("#student_phone"),
+        student_guardion: StudentGuardion,
+        student_lastschool: CRValue("#student_lastschool"),
+        student_naturalness: CRValue("#student_naturalness"),
+        student_lastclass: CRValue("#student_lastclass"),
+
+        student_email: CRValue("#student_email"),
+        student_hasAccount: CRValue("#student_hasAccount"),
+        student_scholarshipHolder: CRValue("#student_scholarshipHolder"),
+        student_class: CRValue("#student_class"),
+        student_code: RandomCodeGenerator(30),
+        student_identityCard: CRValue("#student_identityCard"),
+        student_picture: Image,
+        student_files: Files,
+        student_health_problems: CRValue("#student_health_problems"),
+        student_health_problems_description: CRValue("#student_health_problems_description"),
+        student_status: CRValue("#student_status"),
+
+        guardion_name: CRValue("#guardion_name"),
+        guardion_email: CRValue("#guardion_email"),
+        guardion_phone: CRValue("#guardion_phone"),
+        guardion_emergency_phone: CRValue("#guardion_emergency_phone"),
+        guardion_job: CRValue("#guardion_job"),
+        guardion_address: CRValue("#guardion_address"),
+        guardion_phone2: CRValue("#guardion_emergency_phone"),
+        guardion_gender: CRValue("#guardion_gender"),
+        guardion_degree_of_kinship: CRValue("#guardion_degree_of_kinship"),
+
+        father_name: CRValue("#father_name"),
+        father_email: CRValue("#father_email"),
+        father_phone: CRValue("#father_phone"),
+        father_emergency_phone: CRValue("#father_emergency_phone"),
+        father_job: CRValue("#father_job"),
+        father_address: CRValue("#father_address"),
+        father_phone2: CRValue("#father_emergency_phone"),
+
+        mother_name: CRValue("#mother_name"),
+        mother_email: CRValue("#mother_email"),
+        mother_phone: CRValue("#mother_phone"),
+        mother_emergency_phone: CRValue("#mother_emergency_phone"),
+        mother_job: CRValue("#mother_job"),
+        mother_address: CRValue("#mother_address"),
+        mother_phone2: CRValue("#mother_emergency_phone"),
+
+        // for college students
+
+        student_lastschool_course: CRValue("#student_lastschool_course"),
+        student_lastschool_score: CRValue("#student_lastschool_score"),
+        student_lastschool_formationfield: CRValue("#student_lastschool_formationfield"),
+        student_lastschool_conclusionyear: CRValue("#student_lastschool_conclusionyear"),
+        student_lifeconditions: CRValue("#student_lifeconditions"),
+        student_socialsecurity: CRValue("#student_socialsecurity"),
+        student_sociallevel: CRValue("#student_sociallevel"),
+        student_workstatus: CRValue("#student_workstatus"),
+        student_workplace: CRValue("#student_workplace"),
+        student_worktitle: CRValue("#student_worktitle"),
+
+    }
+
+
+    const setField = (field, value) => {
+        setForm({
+            ...form,
+            [field]: value
+        })
+
+        if (!!errors[field]) {
+            setErrors({
+                ...errors,
+                [field]: null
+            });
+        }
+    }
+
+    const GetAvatarImage = (e) => {
+        setImage(e);
+    }
+
+    const GetFiles = (e) => {
+        setFiles(e);
+        
+    }
+
+
+    const validateForm = () => {
+        const { student_name, student_address, student_nacionality, student_gender, student_religion, student_birthday, student_phone,
+            student_email, student_class, student_identityCard, student_health_problems, student_scholarshipHolder, student_status,
+            father_name, father_address, father_job, father_phone, father_phone2, father_email, student_lastschool, student_lastclass, student_naturalness,
+            mother_name, mother_address, mother_job, mother_phone, mother_phone2, mother_email,
+            guardion_name, guardion_degree_of_kinship, guardion_address, guardion_job, guardion_phone, guardion_phone2, guardion_email,
+
+            student_lastschool_course, student_lastschool_score, student_lastschool_formationfield, student_lastschool_conclusionyear,
+            student_lifeconditions, student_socialsecurity, student_sociallevel, student_workstatus, student_workplace, student_worktitle
+        } = form;
+
+        const NewErrors = {};
+
+        SetRegisterStatus(0);
+        if (INPUTS.father_name !== "" && INPUTS.father_name !== " ") {
+            if (INPUTS.father_name.length >= 4)
+
+                if (INPUTS.father_name === "" || INPUTS.father_name === " ") {
+                    if (!father_name || father_name === '') NewErrors.father_name = 'Nome invalido';
+                } else { if (!father_name) { setField("father_name", INPUTS.father_name); } }
+
+            if (INPUTS.father_address === "" || INPUTS.father_address === " ") {
+                if (!father_address || father_address === '') NewErrors.father_address = 'Endereço invalido';
+            } else { if (!father_address) { setField("father_address", INPUTS.father_address); } }
+
+            if (INPUTS.father_job === "" || INPUTS.father_job === " ") {
+                if (!father_job || father_job === '') NewErrors.father_job = 'Profissão invalida';
+            } else { if (!father_job) { setField("father_job", INPUTS.father_job); } }
+
+            if (INPUTS.father_phone === "" || INPUTS.father_phone === " ") {
+                if (!father_phone || father_phone === '') NewErrors.father_phone = 'Número de telefone invalido';
+            } else { if (!father_phone) { setField("father_phone", INPUTS.father_phone); } }
+
+            if (INPUTS.father_phone2 === "" || INPUTS.father_phone2 === " ") {
+                if (!father_phone2 || father_phone2 === '') NewErrors.father_phone2 = 'Número de telefone invalido';
+            } else { if (!father_phone2) { setField("father_phone2", INPUTS.father_phone2); } }
+
+            if (INPUTS.father_email === "" || INPUTS.father_email === " ") {
+                if (!father_email || father_email === '') NewErrors.father_email = 'Email invalido';
+            } else { if (!father_email) { setField("father_email", INPUTS.father_email); } }
+        }
+
+        if (INPUTS.mother_name !== "" && INPUTS.mother_name !== " ") {
+            if (INPUTS.mother_name.length >= 4)
+
+                if (INPUTS.mother_name === "" || INPUTS.mother_name === " ") {
+                    if (!mother_name || mother_name === '') NewErrors.mother_name = 'Nome invalido';
+                } else { if (!mother_name) { setField("mother_name", INPUTS.mother_name); } }
+
+            if (INPUTS.mother_address === "" || INPUTS.mother_address === " ") {
+                if (!mother_address || mother_address === '') NewErrors.mother_address = 'Endereço invalido';
+            } else { if (!mother_address) { setField("mother_address", INPUTS.mother_address); } }
+
+            if (INPUTS.mother_job === "" || INPUTS.mother_job === " ") {
+                if (!mother_job || mother_job === '') NewErrors.mother_job = 'Profissão invalida';
+            } else { if (!mother_job) { setField("mother_job", INPUTS.mother_job); } }
+
+            if (INPUTS.mother_phone === "" || INPUTS.mother_phone === " ") {
+                if (!mother_phone || mother_phone === '') NewErrors.mother_phone = 'Número de telefone invalido';
+            } else { if (!mother_phone) { setField("mother_phone", INPUTS.mother_phone); } }
+
+            if (INPUTS.mother_phone2 === "" || INPUTS.mother_phone2 === " ") {
+                if (!mother_phone2 || mother_phone2 === '') NewErrors.mother_phone2 = 'Número de telefone invalido';
+            } else { if (!mother_phone2) { setField("mother_phone2", INPUTS.mother_phone2); } }
+
+            if (INPUTS.mother_email === "" || INPUTS.mother_email === " ") {
+                if (!mother_email || mother_email === '') NewErrors.mother_email = 'Email invalido';
+            } else { if (!mother_email) { setField("mother_email", INPUTS.mother_email); } }
+        }
+
+        if (INPUTS.guardion_name !== "" && INPUTS.guardion_name !== " ") {
+            if (INPUTS.guardion_name.length >= 4)
+
+                if (INPUTS.guardion_name === "" || INPUTS.guardion_ === " ") {
+                    if (!guardion_name || guardion_name === '') NewErrors.guardion_name = 'Nome invalido';
+                } else { if (!guardion_name) { setField("guardion_name", INPUTS.guardion_name); } }
+
+            if (INPUTS.guardion_degree_of_kinship === "" || INPUTS.guardion_degree_of_kinship === " ") {
+                if (!guardion_degree_of_kinship || guardion_degree_of_kinship === '') NewErrors.guardion_degree_of_kinship = 'Informação invalida';
+            } else { if (!guardion_degree_of_kinship) { setField("guardion_degree_of_kinship", INPUTS.guardion_degree_of_kinship); } }
+
+            if (INPUTS.guardion_address === "" || INPUTS.guardion_address === " ") {
+                if (!guardion_address || guardion_address === '') NewErrors.guardion_address = 'Endereço invalido';
+            } else { if (!guardion_address) { setField("guardion_address", INPUTS.guardion_address); } }
+
+            if (INPUTS.guardion_job === "" || INPUTS.guardion_job === " ") {
+                if (!guardion_job || guardion_job === '') NewErrors.guardion_job = 'Profissão invalida';
+            } else { if (!guardion_job) { setField("guardion_job", INPUTS.guardion_job); } }
+
+            if (INPUTS.guardion_phone === "" || INPUTS.guardion_phone === " ") {
+                if (!guardion_phone || guardion_phone === '') NewErrors.guardion_phone = 'Número de telefone invalido';
+            } else { if (!guardion_phone) { setField("guardion_phone", INPUTS.guardion_phone); } }
+
+            if (INPUTS.guardion_phone2 === "" || INPUTS.guardion_phone2 === " ") {
+                if (!guardion_phone2 || guardion_phone2 === '') NewErrors.guardion_phone2 = 'Número de telefone invalido';
+            } else { if (!guardion_phone2) { setField("guardion_phone2", INPUTS.guardion_phone2); } }
+
+            if (INPUTS.guardion_email === "" || INPUTS.guardion_email === " ") {
+                if (!guardion_email || guardion_email === '') NewErrors.guardion_email = 'Email invalido';
+            } else { if (!guardion_email) { setField("guardion_email", INPUTS.guardion_email); } }
+        }
+
+
+        if (INPUTS.student_name === "" || INPUTS.student_name === " ") {
+            if (!student_name || student_name === '') NewErrors.student_name = 'Preencha o campo corretamente';
+        } else { if (!student_name) { setField("student_name", INPUTS.student_name); } }
+
+        if (INPUTS.student_scholarshipHolder === "" || INPUTS.student_scholarshipHolder === " ") {
+            if (!student_scholarshipHolder || student_scholarshipHolder === '') NewErrors.student_scholarshipHolder = 'Selecione uma opção valida';
+        } else { if (!student_scholarshipHolder) { setField("student_scholarshipHolder", INPUTS.student_scholarshipHolder); } }
+
+        if (INPUTS.student_gender === "" || INPUTS.student_gender === " ") {
+            if (!student_gender || student_gender === '') NewErrors.student_gender = 'Genero inavalido';
+        } else { if (!student_gender) { setField("student_gender", INPUTS.student_gender); } }
+        /*
+            if(INPUTS.student_naturalness  ===  "" || INPUTS.student_naturalness  ===  " "){
+            if(!student_naturalness  || student_naturalness  === '') NewErrors.student_naturalness  = 'Naturalidade invalida';
+            }else{if(!student_naturalness){setField("student_naturalness", INPUTS.student_naturalness);}}
+        
+            if(INPUTS.student_email ===  "" || INPUTS.student_email ===  " "){
+            if(!student_email || student_email === '') NewErrors.student_email = 'Email invalido';   
+            }else{if(!student_email){setField("student_email", INPUTS.student_email);}}
+        */
+        if (INPUTS.student_address === "" || INPUTS.student_name === " ") {
+            if (!student_address || student_address === '') NewErrors.student_address = 'Endereço invalido';
+        } else { if (!student_address) { setField("student_address", INPUTS.student_address); } }
+
+        if (INPUTS.student_nacionality === "" || INPUTS.student_nacionality === " ") {
+            if (!student_nacionality || student_nacionality === '') NewErrors.student_nacionality = 'Nacionalidade invalida';
+        } else { if (!student_nacionality) { setField("student_nacionality", INPUTS.student_nacionality); } }
+
+
+        if (INPUTS.student_birthday === "" || INPUTS.student_birthday === " ") {
+            if (!student_birthday || student_birthday === '') NewErrors.student_birthday = 'Preencha o campo corretamente';
+        } else { if (!student_birthday) { setField("student_birthday", INPUTS.student_birthday); } }
+
+        if (!student_birthday || student_birthday.trim() === "") {
+            NewErrors.student_birthday = "Preencha o campo corretamente";
+          } else {
+            const birthdayDate = new Date(student_birthday);
+            const today = new Date();
+           
+            if (isNaN(birthdayDate.getTime())) {
+              NewErrors.student_birthday = "Data inválida";
+            } else if (birthdayDate > today) {
+              NewErrors.student_birthday = "A data de nascimento não pode estar no futuro";
+            } else {
+              const diffTime = Math.abs(today - birthdayDate);
+              const diffDays = diffTime / (1000 * 60 * 60 * 24);
+          
+              if (diffDays < 4) {
+                NewErrors.student_birthday = "A data deve ter pelo menos 4 dias em relação à data atual";
+              } else {
+                setField("student_birthday", student_birthday.trim());
+              }
+            }
+          }
+          
+
+        if (INPUTS.student_phone === "" || INPUTS.student_phone === " ") {
+            if (!student_phone || student_phone === '') NewErrors.student_phone = 'Numero de telefone invalido';
+        } else { if (!student_phone) { setField("student_phone", INPUTS.student_phone); } }
+
+        if (INPUTS.student_class === "" || INPUTS.student_class === " ") {
+            if (!student_class || student_class === '') NewErrors.student_class = 'Preencha o campo corretamente';
+        } else { if (!student_class) { setField("student_class", INPUTS.student_class); } }
+
+        if (INPUTS.student_identityCard === "" || INPUTS.student_identityCard === " ") {
+            if (!student_identityCard || student_identityCard === '') NewErrors.student_identityCard = 'Bilhete de identficação invalido';
+        } else { if (!student_identityCard) { setField("student_identityCard", INPUTS.student_identityCard); } }
+
+        if (INPUTS.student_health_problems === "" || INPUTS.student_health_problems === " ") {
+            if (!student_health_problems || student_health_problems === '') NewErrors.student_health_problems = 'Selecione uma opção valida';
+        } else { if (!student_health_problems) { setField("student_health_problems", INPUTS.student_health_problems); } }
+
+        if (INPUTS.student_status === "" || INPUTS.student_status === " ") {
+            if (!student_status || student_status === '') NewErrors.student_status = 'Selecione um estado valido';
+        } else { if (!student_status) { setField("student_status", INPUTS.student_status); } }
+
+
+
+
+        /// verify data for college students 
+        if (GetTypeOfInstitute() === 1) {
+
+
+            if (INPUTS.student_lastschool_course === "" || INPUTS.student_lastschool_course === " ") {
+                if (!student_lastschool_course || student_lastschool_course === '') NewErrors.student_lastschool_course = 'Preencha o campo corretamente';
+            } else { if (!student_lastschool_course) { setField("student_lastschool_course", INPUTS.student_lastschool_course); } }
+
+            if (INPUTS.student_lastschool_score === "" || INPUTS.student_lastschool_score === " ") {
+                if (!student_lastschool_score || student_lastschool_score === '') NewErrors.student_lastschool_score = 'Preencha o campo corretamente';
+            } else { if (!student_lastschool_score) { setField("student_lastschool_score", INPUTS.student_lastschool_score); } }
+
+            if (INPUTS.student_lastschool_formationfield === "" || INPUTS.student_lastschool_formationfield === " ") {
+                if (!student_lastschool_formationfield || student_lastschool_formationfield === '') NewErrors.student_lastschool_formationfield = 'Preencha o campo corretamente';
+            } else { if (!student_lastschool_formationfield) { setField("student_lastschool_formationfield", INPUTS.student_lastschool_formationfield); } }
+
+            if (INPUTS.student_lastschool_conclusionyear === "" || INPUTS.student_lastschool_conclusionyear === " ") {
+                if (!student_lastschool_conclusionyear || student_lastschool_conclusionyear === '') NewErrors.student_lastschool_conclusionyear = 'Preencha o campo corretamente';
+            } else { if (!student_lastschool_conclusionyear) { setField("student_lastschool_conclusionyear", INPUTS.student_lastschool_conclusionyear); } }
+
+            if (INPUTS.student_lifeconditions === "" || INPUTS.student_lifeconditions === " ") {
+                if (!student_lifeconditions || student_lifeconditions === '') NewErrors.student_lifeconditions = 'Preencha o campo corretamente';
+            } else { if (!student_lifeconditions) { setField("student_lifeconditions", INPUTS.student_lifeconditions); } }
+
+            if (INPUTS.student_socialsecurity === "" || INPUTS.student_socialsecurity === " ") {
+                if (!student_socialsecurity || student_socialsecurity === '') NewErrors.student_socialsecurity = 'Preencha o campo corretamente';
+            } else { if (!student_socialsecurity) { setField("student_socialsecurity", INPUTS.student_socialsecurity); } }
+
+            if (INPUTS.student_sociallevel === "" || INPUTS.student_sociallevel === " ") {
+                if (!student_sociallevel || student_sociallevel === '') NewErrors.student_sociallevel = 'Preencha o campo corretamente';
+            } else { if (!student_sociallevel) { setField("student_sociallevel", INPUTS.student_sociallevel); } }
+
+        }
+
+
+
+
+        return NewErrors;
+    }
+
+
+    useEffect(() => {
+        setTimeout(() => {
+            setClass(CRValue("#student_class") * 1 >= 0 ? CRValue("#student_class") * 1 : null);
+        }, 1000);
+    }, []);
+
+
+    const FormSubmit = (e) => {
+        e.preventDefault();
+        const formErrors = validateForm();
+        if (Object.keys(formErrors).length > 0) {
+            setErrors(formErrors);
+            console.log(formErrors)
+            toast.error("Verifique todos os  campos !");
+            SetRegisterStatus(1);
+        } else {
+
+            console.log(INPUTS);
+
+            const formData = new FormData();
+            formData.append("student_name", INPUTS.student_name);
+            formData.append("student_scholarshipHolder", INPUTS.student_scholarshipHolder);
+            formData.append("student_address", INPUTS.student_address);
+            formData.append("student_nacionality", INPUTS.student_nacionality);
+            formData.append("student_gender", INPUTS.student_gender);
+            formData.append("student_religion", INPUTS.student_religion);
+            formData.append("student_birthday", INPUTS.student_birthday);
+            formData.append("student_phone", INPUTS.student_phone);
+            formData.append("student_naturalness", INPUTS.student_naturalness);
+            formData.append("student_lastclass", INPUTS.student_lastclass);
+            formData.append("student_lastschool", INPUTS.student_lastschool);
+            formData.append("student_email", INPUTS.student_email);
+            formData.append("student_hasAccount", INPUTS.student_hasAccount);
+            formData.append("student_class", Math.floor(INPUTS.student_class));
+            formData.append("student_code", INPUTS.student_code);
+            formData.append("student_identityCard", INPUTS.student_identityCard);
+            formData.append("student_picture", INPUTS.student_picture);
+            formData.append("student_health_problems", INPUTS.student_health_problems);
+            formData.append("student_health_problems_description", INPUTS.student_health_problems_description);
+            formData.append("student_status", INPUTS.student_status);
+            /// for college 
+            formData.append("student_lastschool_course", INPUTS.student_lastschool_course);
+            formData.append("student_lastschool_score", INPUTS.student_lastschool_score);
+            formData.append("student_lastschool_formationfield", INPUTS.student_lastschool_formationfield);
+            formData.append("student_lastschool_conclusionyear", INPUTS.student_lastschool_conclusionyear);
+            formData.append("student_lifeconditions", INPUTS.student_lifeconditions);
+            formData.append("student_socialsecurity", INPUTS.student_socialsecurity);
+            formData.append("student_sociallevel", INPUTS.student_sociallevel);
+            formData.append("student_workstatus", INPUTS.student_workstatus);
+            formData.append("student_workplace", INPUTS.student_workplace);
+            formData.append("student_worktitle", INPUTS.student_worktitle);
+
+
+
+            /*
+        
+        
+            student_lastschool_course, student_lastschool_score , student_lastschool_formationfield , student_lastschool_conclusionyear ,  
+            student_lifeconditions , student_socialsecurity , student_sociallevel , student_workstatus , student_workplace , student_worktitle
+        
+            */
+
+
+            const fatherData = {
+                parent_name: INPUTS.father_name,
+                parent_students: INPUTS.student_code,
+                parent_gender: 0,
+                parent_degree_of_kinship: 1,
+                parent_address: INPUTS.father_address,
+                parent_job: INPUTS.father_job,
+                parent_phone: INPUTS.father_phone,
+                parent_phone2: INPUTS.father_emergency_phone,
+                parent_email: INPUTS.father_email,
+                parent_guardion: INPUTS.student_guardion * 1 === 1 ? 1 : 0
+            }
+
+            const motherData = {
+                parent_name: INPUTS.mother_name,
+                parent_students: INPUTS.student_code,
+                parent_gender: 1,
+                parent_degree_of_kinship: 0,
+                parent_address: INPUTS.mother_address,
+                parent_job: INPUTS.mother_job,
+                parent_phone: INPUTS.mother_phone,
+                parent_phone2: INPUTS.mother_emergency_phone,
+                parent_email: INPUTS.mother_email,
+                parent_guardion: INPUTS.student_guardion * 1 === 0 ? 1 : 0
+            }
+
+            const guardionData = {
+                parent_name: INPUTS.guardion_name,
+                paremt_students: INPUTS.student_code,
+                parent_gender: INPUTS.guardion_gender,
+                parent_degree_of_kinship: INPUTS.guardion_degree_of_kinship,
+                parent_address: INPUTS.guardion_address,
+                parent_job: INPUTS.guardion_job,
+                parent_phone: INPUTS.guardion_phone,
+                parent_phone2: INPUTS.guardion_emergency_phone,
+                parent_email: INPUTS.guardion_email,
+                parent_guardion: INPUTS.student_guardion * 1 === 2 ? 1 : 0
+            }
+
+
+            const AddUserStudentAccount = async () => {
+                if (StudentCreateAccount === 1 && UserCode !== null) {
+                    try {
+                        const response = await axios.get(FORMURL[4] + INPUTS.student_identityCard);
+                        if (response.data.length >= 1) {
+                            axios.post(FORMURL[3], { student_account_usercode: UserCode, student_account_studentcode: response.data[0].ed_student_id }).then((e) => {
+                                Clear();
+                            }).catch((error) => {
+                                if (error.response.data.msg) {
+                                    toast.error(error.response.data.msg);
+                                } else { toast.error("lamentamos mas não foi possivel associar está conta ao estudante !"); }
+                                console.clear()
+                                console.log(error.response);
+                                Clear();
+                            });
+                        } else {
+                            toast.error("Estudante não encontrado !");
+                            Clear();
+                        }
+                    } catch (error) {
+                        if (error.response.data.msg) {
+                            toast.error(error.response.data.msg);
+                        } else { toast.error("lamentamos mas não foi possivel associar está conta ao estudante !"); }
+                        console.clear()
+                        console.log(error.response);
+                        Clear();
+                    }
+                } else {
+                    Clear();
+                }
+            }
+
+
+
+            const Clear = () => {
+                setTimeout(() => {
+                    toast.success("Estudante cadastrado com sucesso !");
+                    setForm({});
+                    ClearInputs();
+                    ChildRef.current.RemoveImage();
+                    ChildRef2.current.ClearFiles();
+                    setStudentGuardion(null);
+                }, 1500);
+            }
+
+
+            const RegisterParents = () => {
+                if (INPUTS.father_name !== "" || INPUTS.father_name !== " ") {
+                    if (INPUTS.father_name.length >= 4)
+                        try {
+                            axios.post(FORMURL[2], fatherData)
+                                .then((e) => {
+                                    toast.success("Encarregado cadastrado com sucesso !");
+                                    console.log(e.data)
+                                }).catch((error) => {
+                                    console.log(error);
+                                    toast.error("lamentamos mas não foi possivel cadastrar o encarregado  (PAI) !");
+                                });
+                        } catch (error) {
+                            toast.error("lamentamos mas não foi possivel cadastrar o encarregado  (PAI) !");
+                        }
+                }
+                if (INPUTS.mother_name !== "" || INPUTS.mother_name !== " ") {
+                    if (INPUTS.mother_name.length >= 4)
+                        try {
+                            axios.post(FORMURL[2], motherData)
+                                .then((e) => {
+                                    console.log(e.data)
+                                    toast.success("Encarregado cadastrado com sucesso !");
+                                }).catch((error) => {
+                                    console.log(error);
+                                    toast.error("lamentamos mas não foi possivel cadastrar o encarregado (MÃE) !");
+                                });
+                        } catch (error) {
+                            toast.error("lamentamos mas não foi possivel cadastrar o encarregado (MÃE) !");
+                        }
+                }
+                if (INPUTS.guardion_name !== "" || INPUTS.guardion_name !== " ") {
+                    if (INPUTS.guardion_name.length >= 4)
+                        try {
+                            axios.post(FORMURL[2], guardionData)
+                                .then((e) => {
+                                    console.log(e.data)
+                                    toast.success("Encarregado cadastrado com sucesso !");
+                                }).catch((error) => {
+                                    console.log(error);
+                                    toast.error("lamentamos mas não foi possivel cadastrar o encarregado (RESPONSAVEL)!");
+                                });
+                        } catch (error) {
+                            toast.error("lamentamos mas não foi possivel cadastrar o encarregado (RESPONSAVEL)!");
+                        }
+                }
+                AddUserStudentAccount();
+            }
+
+
+            try {
+                axios.post(FORMURL[0], formData).then((e) => {
+                    console.log(e.data)
+
+                    INPUTS.student_files = Files.length >= 1 ? INPUTS.student_files[0] : [];
+                    if (Files.length >= 1) {
+                        for (let i = 0; i < INPUTS.student_files.length; i++) {
+                            const file = INPUTS.student_files[i];
+                            const fileData = new FormData();
+                            let extension = "pdf" //file.type.split("/")[1] !== "" ? file.type.split("/")[1] : undefined;
+                            fileData.append("file_name", file);
+                            fileData.append("file_code", INPUTS.student_code);
+                            fileData.append("file_size", file.size);
+                            fileData.append("file_type", file.type);
+                            fileData.append("file_use", "student_register");
+                            fileData.append("file_extension", extension);
+                            fileData.append("institute_code", INPUTS.student_code);
+
+                            try {
+                                axios.post(FORMURL[1], fileData)
+                                    .then((e) => {
+                                        //console.log(e.data) 
+                                        if (i === (INPUTS.student_files.length - 1));
+                                    }).catch((error) => {
+                                        toast.error("Lamentamos mas não foi possivel adicionar um dos ficheiros anexados !");
+                                    });
+                            } catch (error) {
+                                toast.error("Lamentamos mas não foi possivel adicionar um dos ficheiros anexados !");
+                                console.clear();
+                                console.log(error.response);
+                            }
+                        }
+                    }
+                    RegisterParents();
+                    toast.success("Estudante registrado com sucesso !");
+                    SetRegisterStatus(2);
+                    setTimeout(() => {
+                        setForm({});
+                        ClearInputs();
+                        ChildRef.current.RemoveImage();
+                        ChildRef2.current.ClearFiles();
+                    }, 1000);
+
+                }).catch((error) => {
+                    const msg = error?.response?.data?.msg || "Lamentamos mas não foi  possivel executar esta ação !";
+                    toast.error(msg);
+                    SetRegisterStatus(1);
+                });
+            } catch (error) {
+                const msg = error?.response?.data?.msg || "Lamentamos mas não foi  possivel executar esta ação !";
+                toast.error(msg);
+                SetRegisterStatus(1);
+            }
+
+        }
+    };
+
+    const DefineStudentGuardion = (e) => {
+        console.log(e.target)
+        switch (e.target.id) {
+            case "mtg":
+                setStudentGuardion(0);
+                setField("student_guardion", 0)
+                INPUTS.student_guardion = 0;
+                break;
+            case "ftg":
+                setStudentGuardion(1);
+                setField("student_guardion", 1)
+                INPUTS.student_guardion = 1;
+                break;
+            case "grg":
+                setStudentGuardion(2);
+                setField("student_guardion", 2)
+                INPUTS.student_guardion = 2;
+                break;
+            default:
+        }
+    }
+
+
+    function hideMessage() {
+        setFormMessage(null);
+        setShow(false);
+    }
+
+
+    async function CheckCurentUserAccount(email) {
+        setFormMessage(null);
+        setStudentCreateAccount(0)
+        setUserCode(null);
+        try {
+            const response = await axios.get(SEARCHURL + email);
+            console.clear();
+            console.log(response.data)
+            if (response.data.length >= 1) {
+                console.clear();
+                console.log(response.data[0])
+                setUserCode(response.data[0].ed_user_account_id)
+                SetData(response.data[0]);
+                setLoaded(true);
+                SetFoundedUserAccount(true);
+                setFormMessage("founded")
+
+            } else {
+                setLoaded(true);
+                SetFoundedUserAccount(false);
+                SetData({});
+                setUserCode(null);
+                setFormMessage("Não existe nenhuma conta de usuário associada a este email !");
+            }
+        } catch (error) {
+            console.clear();
+            console.log(error.response);
+            setLoaded(true);
+            SetData({});
+            setUserCode(null);
+            SetFoundedUserAccount(false);
+            setFormMessage("Não existe nenhuma conta de usuário associada a este email !");
+        }
+    }
+
+
+    const handleInput = (e) => {
+        switch (e.target.id) {
+            case "student_class":
+                setField("student_class", e.target.value)
+                INPUTS.student_class = e.target.value
+                setClass(e.target.value);
+                break;
+            case "student_lastschool":
+                setField("student_lastschool", e.target.value)
+                INPUTS.student_lastschool = e.target.value;
+                break;
+            case "student_lastclass":
+                setField("student_lastclass", e.target.value)
+                INPUTS.student_lastclass = e.target.value;
+                break;
+            case "student_naturalness":
+                setField("student_naturalness", e.target.value)
+                INPUTS.student_naturalness = e.target.value;
+                break;
+            case "student_gender":
+                setField("student_gender", e.target.value)
+                INPUTS.student_gender = e.target.value
+                break;
+            case "student_religion":
+                setField("student_religion", e.target.value)
+                INPUTS.student_religion = e.target.value
+                break;
+            case "student_birthday":
+                setField("student_birthday", e.target.value)
+                INPUTS.student_birthday = e.target.value
+                break;
+            case "student_nacionality":
+                setField("student_nacionality", e.target.value)
+                INPUTS.student_nacionality = e.target.value
+                break;
+            case "student_address":
+                setField("student_address", e.target.value)
+                INPUTS.student_address = e.target.value
+                break;
+            case "student_phone":
+                setField("student_phone", e.target.value)
+                INPUTS.student_phone = e.target.value
+                break;
+            case "student_scholarshipHolder":
+                setField("student_scholarshipHolder", e.target.value)
+                INPUTS.student_scholarshipHolder = e.target.value
+                break;
+            case "student_email":
+                setField("student_email", e.target.value)
+                INPUTS.student_email = e.target.value;
+                CheckCurentUserAccount(e.target.value);
+                break;
+            case "student_name":
+                setField("student_name", e.target.value)
+                INPUTS.student_name = e.target.value
+                break;
+            case "student_identityCard":
+                setField("student_identityCard", e.target.value)
+                INPUTS.student_identityCard = e.target.value
+                break;
+            case "student_status":
+                setField("student_status", e.target.value)
+                INPUTS.student_status = e.target.value
+                break;
+            case "student_health_problems":
+                setField("student_health_problems", e.target.value)
+                INPUTS.student_health_problems = e.target.value
+                setToggleHealth(Math.floor(e.target.value));
+                break;
+                case "student_health_problems_description":
+                    setField("student_health_problems_description", e.target.value)
+                    INPUTS.student_health_problems_description = e.target.value
+                  break;
+            case "guardion_gender":
+                setField("guardion_gender", e.target.value)
+                INPUTS.guardion_gender = e.target.value
+                break;
+            case "guardion_name":
+                setField("guardion_name", e.target.value)
+                INPUTS.guardion_name = e.target.value
+                break;
+            case "guardion_address":
+                setField("guardion_address", e.target.value)
+                INPUTS.guardion_address = e.target.value
+                break;
+            case "guardion_phone":
+                setField("guardion_phone", e.target.value)
+                INPUTS.guardion_phone = e.target.value
+                break;
+            case "guardion_phone2":
+                setField("guardion_phone2", e.target.value)
+                INPUTS.guardion_phone2 = e.target.value
+                break;
+            case "guardion_degree_of_kinship":
+                setField("guardion_degree_of_kinship", e.target.value)
+                INPUTS.guardion_degree_of_kinship = e.target.value
+                break;
+            case "guardion_email":
+                setField("guardion_email", e.target.value)
+                INPUTS.guardion_email = e.target.value
+                break;
+            case "guardion_job":
+                setField("guardion_job", e.target.value)
+                INPUTS.guardion_job = e.target.value
+                break;
+            case "father_gender":
+                setField("father_gender", e.target.value)
+                INPUTS.father_gender = e.target.value
+                break;
+            case "father_name":
+                setField("father_name", e.target.value)
+                INPUTS.father_name = e.target.value
+                break;
+            case "father_address":
+                setField("father_address", e.target.value)
+                INPUTS.father_address = e.target.value
+                break;
+            case "father_phone":
+                setField("father_phone", e.target.value)
+                INPUTS.father_phone = e.target.value
+                break;
+            case "father_phone2":
+                setField("father_phone2", e.target.value)
+                INPUTS.father_phone2 = e.target.value
+                break;
+            case "father_degree_of_kinship":
+                setField("father_degree_of_kinship", e.target.value)
+                INPUTS.father_degree_of_kinship = e.target.value
+                break;
+            case "father_email":
+                setField("father_email", e.target.value)
+                INPUTS.father_email = e.target.value
+                break;
+            case "father_job":
+                setField("father_job", e.target.value)
+                INPUTS.father_job = e.target.value
+                break;
+            case "mother_gender":
+                setField("mother_gender", e.target.value)
+                INPUTS.mother_gender = e.target.value
+                break;
+            case "mother_name":
+                setField("mother_name", e.target.value)
+                INPUTS.mother_name = e.target.value
+                break;
+            case "mother_address":
+                setField("mother_address", e.target.value)
+                INPUTS.mother_address = e.target.value
+                break;
+            case "mother_phone":
+                setField("mother_phone", e.target.value)
+                INPUTS.mother_phone = e.target.value
+                break;
+            case "mother_phone2":
+                setField("mother_phone2", e.target.value)
+                INPUTS.mother_phone2 = e.target.value
+                break;
+            case "mother_degree_of_kinship":
+                setField("mother_degree_of_kinship", e.target.value)
+                INPUTS.mother_degree_of_kinship = e.target.value
+                break;
+            case "mother_email":
+                setField("mother_email", e.target.value)
+                INPUTS.mother_email = e.target.value
+                break;
+            case "mother_job":
+                setField("mother_job", e.target.value)
+                INPUTS.mother_job = e.target.value
+                break;
+            case "student_lastschool_course":
+                setField("student_lastschool_course", e.target.value)
+                INPUTS.student_lastschool_course = e.target.value
+                break;
+            case "student_lastschool_score":
+                setField("student_lastschool_score", e.target.value)
+                INPUTS.student_lastschool_score = e.target.value
+                break;
+            case "student_lastschool_formationfield":
+                setField("student_lastschool_formationfield", e.target.value);
+                INPUTS.student_lastschool_formationfield = e.target.value;
+                break;
+            case "student_lastschool_conclusionyear":
+                setField("student_lastschool_conclusionyear", e.target.value)
+                INPUTS.student_lastschool_conclusionyear = e.target.value
+                break;
+            case "student_lifeconditions":
+                setField("student_lifeconditions", e.target.value)
+                INPUTS.student_lifeconditions = e.target.value
+                break;
+            case "student_socialsecurity":
+                setField("student_socialsecurity", e.target.value)
+                INPUTS.student_socialsecurity = e.target.value
+                break;
+            case "student_sociallevel":
+                setField("student_sociallevel", e.target.value)
+                INPUTS.student_sociallevel = e.target.value
+                break;
+            case "student_workstatus":
+                setField("student_workstatus", e.target.value)
+                INPUTS.student_workstatus = e.target.value;
+                setStudentWorkStatus(e.target.value * 1 === 1 ? true : false);
+                break;
+            case "student_workplace":
+                setField("student_workplace", e.target.value)
+                INPUTS.student_workplace = e.target.value
+                break;
+            case "student_worktitle":
+                setField("student_worktitle", e.target.value)
+                INPUTS.student_worktitle = e.target.value
+                break;
+            default:
+        }
+    }
+
+
+    return (
+        <>
+            <Form onSubmit={FormSubmit} method='post' encType='multipart/form-data'>
+                <div className="box-register">
+                    <div className="ed-space mb-4">
+                        <div className="ed-flex">
+                            <SwitchFromPages link='StudentsGrid' menu="3" menu_item="17"
+                                toggle_btn={<button className='btn btn-icon bg-green-light'>
+                                    <BallotOutlined />
+                                </button>}
+                            />
+                            <SwitchFromPages link='Students' menu="3" menu_item="17"
+                                toggle_btn={<button className='btn ml-2 btn-main bg-main'>
+                                    <SummarizeOutlined /> Lista de estudantes
+                                </button>}
+                            />
+                        </div>
+                        <div className="ed-flex">
+                            <button className="btn bg-danger" type='reset' id='clearForm'>
+                                <Delete />  Limpar
+                            </button>
+                            <SaveButton icon={<Save />} title={'Salvar'} status={RegisterStatus} />
+                        </div>
+                    </div>
+                    <BoxContainer className='boxItem'>
+                        <div className="ed-space mb-4">
+                            <div><h2 className="title" style={{ marginBottom: '0px' }}>Adicionar estudante</h2></div>
+                            <BuildDataHistory />
+                        </div>
+                        <FlexBox>
+                            <ImagePreview ref={ChildRef} Picture={GetAvatarImage} />
+                            <div></div>
+                            <div className="box">
+                                <Form.Group className="mb-3"  >
+                                    <div className="col-12 mt-2">
+                                        <Form.Label>Nome completo <span className="text-danger ml-2">*</span></Form.Label>
+                                        <Form.Control onChange={handleInput} className={!!errors.student_name && 'is-invalid'} value={form.student_name} isInvalid={!!errors.student_name} type="ntext"
+                                            placeholder="" name='student_name' id="student_name" />
+                                        <Form.Control.Feedback type='invalid'>{errors.student_name}</Form.Control.Feedback>
+                                    </div>
+                                    <div className="col-12 mt-4">
+                                        <Form.Label>Nº do documento de identifcação <span className="text-danger ml-2">*</span></Form.Label>
+                                        <Form.Control className={!!errors.student_identityCard && 'is-invalid'} onChange={handleInput} value={form.student_identityCard} isInvalid={!!errors.student_identityCard} type="text"
+                                            placeholder="" name='student_identityCard' id="student_identityCard" />
+                                        <Form.Control.Feedback type='invalid'>{errors.student_identityCard}</Form.Control.Feedback>
+                                    </div>
+                                </Form.Group>
+                            </div>
+                        </FlexBox>
+                        <Form.Group>
+                            <div className="ed-flex col-ip-3 col-12 mt-4">
+                                <div className="block">
+                                    <Form.Label>Nacionalidade <span className="text-danger ml-2">*</span></Form.Label>
+                                    <Form.Control onChange={handleInput} className={!!errors.student_nacionality && 'is-invalid'}
+                                        value={form.student_nacionality} isInvalid={!!errors.student_nacionality}
+                                        placeholder="" name='student_nacionality' id="student_nacionality" />
+                                    <Form.Control.Feedback type='invalid'>{errors.student_nacionality}</Form.Control.Feedback>
+                                </div>
+                                <div className="block ml-2">
+                                    <Form.Label>Morada <span className="text-danger ml-2">*</span></Form.Label>
+                                    <Form.Control onChange={handleInput} className={!!errors.student_address && 'is-invalid'} value={form.student_address} isInvalid={!!errors.student_address}
+                                        type="text" placeholder="" name='student_address' id="student_address" />
+                                    <Form.Control.Feedback type='invalid'>{errors.student_address}</Form.Control.Feedback>
+                                </div>
+                                <div className="block ml-2">
+                                    <Form.Label>Genero <span className="text-danger ml-2">*</span></Form.Label>
+                                    <Form.Select onChange={handleInput} className={!!errors.student_gender && 'is-invalid'} value={form.student_gender} isInvalid={!!errors.student_gender}
+                                        placeholder="" name='student_gender' id="student_gender"  >
+                                        <option disabled selected >Selecionar Genero </option>
+                                        <option value="male">Masculino</option>
+                                        <option value="female">Femenino</option>
+                                    </Form.Select>
+                                    <Form.Control.Feedback type='invalid'>{errors.student_gender}</Form.Control.Feedback>
+                                </div>
+                            </div>
+                        </Form.Group>
+                        <Form.Group>
+                            <div className="ed-flex col-ip-3 col-12 mt-4">
+                                <div className="block">
+                                    <Form.Label>Religião </Form.Label>
+                                    <Form.Select onChange={handleInput} className={!!errors.student_religion && 'is-invalid'}
+                                        value={form.student_religion} isInvalid={!!errors.student_religion}
+                                        name='student_religion' id="student_religion" >
+                                        <option disabled selected> Selecionar religião</option>
+                                        <ReligionOptions />
+                                    </Form.Select>
+                                    <Form.Control.Feedback type='invalid'>{errors.student_religion}</Form.Control.Feedback>
+                                </div>
+                                <div className="block ml-2">
+                                    <Form.Label>Data de aniversario <span className="text-danger ml-2">*</span></Form.Label>
+                                    <Form.Control className={!!errors.student_birthday && 'is-invalid'} onChange={handleInput} value={form.student_birthday} isInvalid={!!errors.student_birthday}
+                                        type="date" name='student_birthday' id="student_birthday" />
+                                    <Form.Control.Feedback type='invalid'>{errors.student_birthday}</Form.Control.Feedback>
+                                </div>
+                                <div className="block ml-2">
+                                    <Form.Label>Telefone <span className="text-danger ml-2">*</span></Form.Label>
+                                    <Form.Control onChange={handleInput} className={!!errors.student_phone && 'is-invalid'} type="number" value={form.student_phone} isInvalid={!!errors.student_phone}
+                                        placeholder="" name='student_phone' id="student_phone" />
+                                    <Form.Control.Feedback type='invalid'>{errors.student_phone}</Form.Control.Feedback>
+                                </div>
+                            </div>
+                            <div className="block mt-3">
+                                <Form.Label>Email</Form.Label>
+                                <Form.Control onChange={handleInput} className={!!errors.student_email && 'is-invalid'} value={form.student_email} isInvalid={!!errors.student_email}
+                                    type="email" name='student_email' id="student_email" placeholder="" />
+                                <Form.Control.Feedback type='invalid'>{errors.student_email}</Form.Control.Feedback>
+                            </div>
+                            <section>
+                                <div className="box-components">
+                                    <div className="form-message">
+                                        {
+                                            FormMessage !== null ? <div className="mt-2">
+                                                <Alert dismissible variant={(FoundedUserAccount === false) ? "danger" : 'primary'} onClose={() => hideMessage()}>
+                                                    <>
+                                                        {FoundedUserAccount === false ?
+                                                            <>
+                                                                <h5 className='text-danger'>{FormMessage}</h5>
+                                                            </> :
+                                                            <>
+                                                                {
+                                                                    FoundedUserAccount === false ?
+                                                                        <h5 className='text-danger'>
+                                                                            <div className='ed-block'>Conta não encontrada !</div>
+                                                                            <div className="mt-2"><small>{FormMessage}</small></div>
+                                                                        </h5> :
+                                                                        <h5>
+                                                                            <>
+                                                                                <div className="ed-flex">
+                                                                                    <Avatar sx={{ width: 70, height: 70 }} src={Hoot() + Data.ed_user_account_picture} />
+                                                                                    <div className="ed-block ml-2">
+                                                                                        <div className="name">{Data.ed_user_account_name} </div>
+                                                                                        <div><small>{Data.ed_user_account_email}</small></div>
+                                                                                    </div>
+                                                                                </div>
+                                                                                <div className="mt-2 ed-block">
+                                                                                    <div>
+                                                                                        <small className="text-main">Permitir á este usuário visualizar as informações de estudante (Notas, Reclamações, Pagamentos, Turmas, Exames ....)</small>
+                                                                                    </div>
+                                                                                    <FormControl id="student_create_account">
+                                                                                        <div className="ed-flex">
+                                                                                            <RadioGroup aria-labelledby="student_create_account" defaultValue={0}
+                                                                                                name="radio-buttons-group" id="student_create_account" onChange={(e) => setStudentCreateAccount(e.target.value * 1)}  >
+                                                                                                <div className="ed-flex">
+                                                                                                    <FormControlLabel value="1" control={<Radio />} label="Sim" />
+                                                                                                    <FormControlLabel value="0" control={<Radio />} label="Não" />
+                                                                                                </div>
+                                                                                            </RadioGroup>
+                                                                                        </div>
+                                                                                    </FormControl>
+                                                                                </div>
+                                                                            </>
+                                                                        </h5>
+                                                                }
+                                                            </>
+                                                        }
+                                                    </>
+                                                </Alert>
+                                            </div> : ''
+                                        }
+                                    </div>
+                                </div>
+                            </section>
+                        </Form.Group>
+                        <Form.Group className='block mt-4'>
+                            <Form.Label>Naturalidade <span className="text-danger ml-2">*</span></Form.Label>
+                            <Form.Control onChange={handleInput} className={!!errors.student_naturalness && 'is-invalid'} value={form.student_naturalness} isInvalid={!!errors.student_naturalness}
+                                type="text" placeholder="" name='student_naturalness' id="student_naturalness" />
+                            <Form.Control.Feedback type='invalid'>{errors.student_naturalness}</Form.Control.Feedback>
+                        </Form.Group>
+                    </BoxContainer>
+                    <br />
+                    <BoxContainer className='boxItem'>
+                        <h2 className="title">Informações de saude</h2>
+                        <Form.Group>
+                            <div className="ed-block  mt-4">
+                                <div className="block">
+                                    <Form.Label>Problemas de saude / Deficiencia <span className="text-danger ml-2">*</span></Form.Label>
+                                    <Form.Select onChange={handleInput} className={!!errors.student_health_problems && 'is-invalid'}
+                                        value={form.student_health_problems} isInvalid={!!errors.student_health_problems} select name='student_health_problems' id="student_health_problems"  >
+                                        <option value="0" selected>Não</option>
+                                        <option value="1">Sim</option>
+                                    </Form.Select>
+                                    <Form.Control.Feedback type='invalid'>{errors.student_health_problems}</Form.Control.Feedback>
+                                </div>
+                                <div className={ToggleHealth === 0 ? "optional-box d-none" : "optional-box"} >
+                                    <div className="block mt-4">
+                                        <Form.Label>Descrição  (<small className='text-danger'>Insira informações como receita , ou descreva de  que se trata o problema do aluno</small>) </Form.Label>
+                                        <textarea id='student_health_problems_description' onChange={handleInput} rows={10} className="form-control"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </Form.Group>
+                    </BoxContainer>
+                    <br />
+                    <BoxContainer className='boxItem'>
+                        <h2 className="title">Informações sobre os Familiares</h2>
+                        <div className="ed-flex custom-title">
+                            <div className="title-badge">Pai</div>
+                            <div className="line"></div>
+                        </div>
+                        <Form.Group>
+                            <div className="ed-flex col-ip-3 col-12 mt-4">
+                                <div className="block">
+                                    <Form.Label>Nome completo</Form.Label>
+                                    <Form.Control onChange={handleInput} type="text" placeholder="" name='father_name' id="father_name" />
+                                </div>
+                                <div className="block ml-2">
+                                    <Form.Label>Nº de Telefone</Form.Label>
+                                    <Form.Control onChange={handleInput} type="number" placeholder="" name='father_phone' id="father_phone" />
+                                </div>
+                                <div className="block ml-2">
+                                    <Form.Label>Email</Form.Label>
+                                    <Form.Control onChange={handleInput} type="email" placeholder="" name='father_email' id="father_email" />
+                                </div>
+                            </div>
+                        </Form.Group>
+                        <Form.Group>
+                            <div className="ed-flex col-ip-3 col-12 mt-4">
+                                <div className="block">
+                                    <Form.Label>Profissão</Form.Label>
+                                    <Form.Control onChange={handleInput} type="text" placeholder="" name='father_job' id="father_job" />
+                                </div>
+                                <div className="block ml-2">
+                                    <Form.Label>Telefone em caso de emergencia</Form.Label>
+                                    <Form.Control onChange={handleInput} type="number" placeholder="" name='father_emergency_phone' id="father_emergency_phone" />
+                                </div>
+                                <div className="block ml-2">
+                                    <Form.Label>Residencia:</Form.Label>
+                                    <Form.Control onChange={handleInput} type="text" placeholder="" name='father_address' id="father_address" />
+                                </div>
+                            </div>
+                        </Form.Group>
+                        {GetTypeOfInstitute() === 0 ? <>
+                            <div className="mt-4 mb-4">
+                                <FormControlLabel onChange={(e) => DefineStudentGuardion(e)} control={<Checkbox checked={StudentGuardion === 1 ? true : false} id='ftg' />} label="Definir como encarregado de educação principal" />
+                            </div>
+                        </> : <></>}
+                        <div className="ed-flex custom-title">
+                            <div className="title-badge">Mãe</div>
+                            <div className="line"></div>
+                        </div>
+                        <Form.Group>
+                            <div className="ed-flex col-ip-3 col-12 mt-4">
+                                <div className="block">
+                                    <Form.Label>Nome completo</Form.Label>
+                                    <Form.Control onChange={handleInput} type="text" placeholder="" name='mother_name' id="mother_name" />
+                                </div>
+                                <div className="block ml-2">
+                                    <Form.Label>Nº de Telefone</Form.Label>
+                                    <Form.Control onChange={handleInput} type="number" placeholder="" name='mother_phone' id="mother_phone" />
+                                </div>
+                                <div className="block ml-2">
+                                    <Form.Label>Email</Form.Label>
+                                    <Form.Control onChange={handleInput} type="email" placeholder="" name='mother_email' id="mother_email" />
+                                </div>
+                            </div>
+                        </Form.Group>
+                        <Form.Group>
+                            <div className="ed-flex col-ip-3 col-12 mt-4">
+                                <div className="block">
+                                    <Form.Label>Profissão</Form.Label>
+                                    <Form.Control onChange={handleInput} type="text" placeholder="" name='mother_job' id="mother_job" />
+                                </div>
+                                <div className="block ml-2">
+                                    <Form.Label>Telefone em caso de emergencia</Form.Label>
+                                    <Form.Control onChange={handleInput} type="number" placeholder="" name='mother_emergency_phone' id="mother_emergency_phone" />
+                                </div>
+                                <div className="block ml-2">
+                                    <Form.Label>Residencia:</Form.Label>
+                                    <Form.Control onChange={handleInput} type="text" placeholder="" name='mother_address' id="mother_address" />
+                                </div>
+                            </div>
+                        </Form.Group>
+                        {GetTypeOfInstitute() === 0 ? <>
+                            <div className="mt-4 mb-4">
+                                <FormControlLabel onChange={(e) => DefineStudentGuardion(e)} control={<Checkbox checked={StudentGuardion === 0 ? true : false} id='mtg' />} label="Definir como encarregado de educação principal" />
+                            </div>
+                        </> : <></>}
+
+
+                        {GetTypeOfInstitute() === 0 ? <>
+                            <div className="ed-flex custom-title">
+                                <div className="title-badge">Responsavel</div>
+                                <div className="line"></div>
+                            </div>
+                            <Form.Group>
+                                <div className="ed-flex col-ip-3 col-12 mt-4">
+                                    <div className="block">
+                                        <Form.Label>Nome completo</Form.Label>
+                                        <Form.Control onChange={handleInput} type="text" placeholder="" name='guardion_name' id="guardion_name" />
+                                    </div>
+                                    <div className="block ml-2">
+                                        <Form.Label>Nº de Telefone</Form.Label>
+                                        <Form.Control onChange={handleInput} type="number" placeholder="" name='guardion_phone' id="guardion_phone" />
+                                    </div>
+                                    <div className="block ml-2">
+                                        <Form.Label>Email</Form.Label>
+                                        <Form.Control onChange={handleInput} type="email" placeholder="" name='guardion_email' id="guardion_email" />
+                                    </div>
+                                </div>
+                            </Form.Group>
+                            <Form.Group>
+                                <div className="ed-flex col-ip-3 col-12 mt-4">
+                                    <div className="block">
+                                        <Form.Label>Profissão</Form.Label>
+                                        <Form.Control onChange={handleInput} type="text" placeholder="" name='guardion_job' id="guardion_job" />
+                                    </div>
+                                    <div className="block ml-2">
+                                        <Form.Label>Telefone em caso de emergencia</Form.Label>
+                                        <Form.Control onChange={handleInput} type="number" placeholder="" name='guardion_emergency_phone' id="guardion_emergency_phone" />
+                                    </div>
+                                    <div className="block ml-2">
+                                        <Form.Label>Residencia:</Form.Label>
+                                        <Form.Control onChange={handleInput} type="text" placeholder="" name='guardion_address' id="guardion_address" />
+                                    </div>
+                                </div>
+                            </Form.Group>
+                            <Form.Group>
+                                <div className="ed-flex fill mt-4">
+                                    <div className="block col-lg-6">
+                                        <Form.Label>Grau parentesco</Form.Label>
+                                        <Form.Select className={!!errors.guardion_degree_of_kinship && 'is-invalid'} onChange={handleInput} value={form.guardion_degree_of_kinship}
+                                            isInvalid={!!errors.guardion_degree_of_kinship} name='guardion_degree_of_kinship' id="guardion_degree_of_kinship">
+                                            <option value="0">Mãe</option>
+                                            <option value="1">Pai</option>
+                                            <option value="2">Irmão</option>
+                                            <option value="3">Tio</option>
+                                            <option value="4">Tia</option>
+                                        </Form.Select>
+                                        <Form.Control.Feedback type='invalid'>{errors.guardion_degree_of_kinship}</Form.Control.Feedback>
+                                    </div>
+                                    <div className="block ml-2 col">
+                                        <Form.Label>Genero</Form.Label>
+                                        <Form.Select className={!!errors.guardion_gender && 'is-invalid'} onChange={handleInput} value={form.guardion_gender}
+                                            isInvalid={!!errors.guardion_gender} name='guardion_gender' id="guardion_gender">
+                                            <option selected value="0">Masculino</option>
+                                            <option value="1">Femenino</option>
+                                        </Form.Select>
+                                        <Form.Control.Feedback type='invalid'>{errors.guardion_gender}</Form.Control.Feedback>
+                                    </div>
+                                </div>
+                            </Form.Group>
+                            <div className="mt-4">
+                                <FormControlLabel onChange={(e) => DefineStudentGuardion(e)} control={<Checkbox checked={StudentGuardion === 2 ? true : false} id='grg' />} label="Definir como encarregado de educação principal" />
+                            </div>
+                        </> : <></>}
+                    </BoxContainer>
+                    <br />
+                    {GetTypeOfInstitute() === 1 ?
+                        <>
+                            <BoxContainer className='boxItem'>
+                                <h2 className="title"> {GetTypeOfInstitute() === 1 ? "Informações do ensino Médio " : "Informações escolares"} </h2>
+                                <Form.Group className='block mt-4'>
+                                    <Form.Label>Nome da ultima escola que frequentou <span className="text-danger ml-2">*</span></Form.Label>
+                                    <Form.Control onChange={handleInput} className={!!errors.student_lastschool && 'is-invalid'} value={form.student_lastschool} isInvalid={!!errors.student_lastschool}
+                                        type="text" placeholder="" name='student_lastschool' id="student_lastschool" />
+                                    <Form.Control.Feedback type='invalid'>{errors.student_lastschool}</Form.Control.Feedback>
+                                </Form.Group>
+                                <Form.Group className='block mt-4'>
+                                    <Form.Label>Ultima classe que frequentou <span className="text-danger ml-2">*</span></Form.Label>
+                                    <Form.Control onChange={handleInput} className={!!errors.student_lastclass && 'is-invalid'} value={form.student_lastclass} isInvalid={!!errors.student_lastclass}
+                                        type="text" placeholder="" name='student_lastclass' id="student_lastclass" />
+                                    <Form.Control.Feedback type='invalid'>{errors.student_lastclass}</Form.Control.Feedback>
+                                </Form.Group>
+                                <Form.Group>
+                                    <div className="ed-flex fill col-12 mt-4">
+                                        <div className="block col">
+                                            <Form.Label>Média final <span className="text-danger ml-2">*</span></Form.Label>
+                                            <Form.Control onChange={handleInput} value={form.student_lastschool_score} className={!!errors.student_lastschool_score && 'is-invalid'}
+                                                isInvalid={!!errors.student_lastschool_score} select name='student_lastschool_score' id="student_lastschool_score" />
+                                            <Form.Control.Feedback type='invalid'>{errors.student_lastschool_score}</Form.Control.Feedback>
+                                        </div>
+                                    </div>
+                                    <div className="ed-flex fill col-12 mt-4">
+                                        <div className="block col-lg-6">
+                                            <Form.Label>Área de formação <span className="text-danger ml-2">*</span></Form.Label>
+                                            <Form.Select onChange={handleInput} className={!!errors.student_lastschool_formationfield && 'is-invalid'} value={form.student_lastschool_formationfield}
+                                                isInvalid={!!errors.student_lastschool_formationfield} select name='student_lastschool_formationfield' id="student_lastschool_formationfield" >
+                                                <option value="0">Ciencias</option>
+                                                <option value="1">Saude</option>
+                                                <option value="2">Engenharia</option>
+                                                <option value="3">Artes</option>
+                                                <option value="4">Literatura</option>
+                                                <option value="5">Outro</option>
+                                            </Form.Select>
+                                            <Form.Control.Feedback type='invalid'>{errors.student_lastschool_formationfield}</Form.Control.Feedback>
+                                        </div>
+                                        <div className="block col ml-2">
+                                            <Form.Label>Curso do Médio <span className="text-danger ml-2">*</span></Form.Label>
+                                            <Form.Control onChange={handleInput} value={form.student_lastschool_course} className={!!errors.student_lastschool_course && 'is-invalid'}
+                                                isInvalid={!!errors.student_lastschool_course} select name='student_lastschool_course' id="student_lastschool_course" />
+                                            <Form.Control.Feedback type='invalid'>{errors.student_lastschool_course}</Form.Control.Feedback>
+                                        </div>
+                                    </div>
+                                    <div className="ed-flex fill col mt-4">
+                                        <div className="block col">
+                                            <Form.Label>Ano de conclusão <span className="text-danger ml-2">*</span></Form.Label>
+                                            <Form.Control onChange={handleInput} className={!!errors.student_lastschool_conclusionyear && 'is-invalid'} value={form.student_lastschool_conclusionyear}
+                                                isInvalid={!!errors.student_lastschool_conclusionyear} select name='student_lastschool_conclusionyear' id="student_lastschool_conclusionyear" />
+                                            <Form.Control.Feedback type='invalid'>{errors.student_lastschool_conclusionyear}</Form.Control.Feedback>
+                                        </div>
+                                    </div>
+                                </Form.Group>
+                            </BoxContainer>
+
+                            <br />
+                            <BoxContainer>
+                                <Form.Group>
+                                    <h2 className="title">Dados do ensino superior</h2>
+                                    <div className="ed-flex fill col-12 mt-4">
+                                        <div className="block col-lg-6">
+                                            <Form.Label>Turma <span className="text-danger ml-2">*</span></Form.Label>
+                                            <Form.Select onChange={handleInput} className={!!errors.student_class && 'is-invalid'} value={form.student_class} isInvalid={!!errors.student_class}
+                                                select name='student_class' id="student_class" >
+                                                <ClassDataOptions />
+                                            </Form.Select>
+                                            <Form.Control.Feedback type='invalid'>{errors.student_class}</Form.Control.Feedback>
+                                        </div>
+                                        <div className="block col ml-2">
+                                            <Form.Label>Estado do aluno na instituição <span className="text-danger ml-2">*</span></Form.Label>
+                                            <Form.Select onChange={handleInput} value={form.student_status} className={!!errors.student_status && 'is-invalid'} isInvalid={!!errors.student_status}
+                                                select name='student_status' id="student_status"  >
+                                                <option value="1" selected>Activo</option>
+                                                <option value="0">Inactivo</option>
+                                            </Form.Select>
+                                            <Form.Control.Feedback type='invalid'>{errors.student_status}</Form.Control.Feedback>
+                                        </div>
+                                    </div>
+                                    {
+                                        Class !== null && Class >= 1 ?
+                                            <>
+                                                {
+                                                    <div className="mt-4 ed-wrap">
+                                                        <div className="badge bg-main mt-2 mr-2">
+                                                            Ano lectivo : <GetAcademicYear_byclass ID={Class} />
+                                                        </div>
+                                                        <div className="badge bg-main mt-2  mr-2">
+                                                            Sala : <GetClassroom_byclass ID={Class} />
+                                                        </div>
+                                                        <div className="badge bg-main mt-2  mr-2">
+                                                            Curso : <GetCourse_byclass ID={Class} />
+                                                        </div>
+                                                        <div className="badge bg-main mt-2 mr-2">
+                                                            Periodo : <GetPeriod_byclass ID={Class} />
+                                                        </div>
+                                                        <div className="badge bg-main mt-2 mr-2">
+                                                            Faculdade : <GetFaculty_byclass ID={Class} />
+                                                        </div>
+                                                        <div className="badge mt-2 bg-main">
+                                                            {ReplaceWord("Classe")} : <GetAcademiclevel_byclass ID={Class} />
+                                                        </div>
+                                                    </div>
+                                                }
+                                            </>
+                                            :
+                                            <></>
+                                    }
+                                </Form.Group>
+                                <Form.Group>
+                                    <div className="col-12 mt-4">
+                                        <Form.Label>Bolseiro <span className="text-danger ml-2">*</span></Form.Label>
+                                        <Form.Select onChange={handleInput} className={!!errors.student_scholarshipHolder && 'is-invalid'}
+                                            value={form.student_scholarshipHolder} isInvalid={!!errors.student_scholarshipHolder} select name='student_scholarshipHolder' id="student_scholarshipHolder"  >
+                                            <option value="0" selected>Não</option>
+                                            <option value="1">Sim</option>
+                                        </Form.Select>
+                                        <Form.Control.Feedback type='invalid'>{errors.student_scholarshipHolder}</Form.Control.Feedback>
+                                    </div>
+                                </Form.Group>
+                            </BoxContainer>
+                            <br />
+
+
+                            <BoxContainer className='boxItem'>
+                                <h2 className="title">Condições socioeconômicas</h2>
+                                <Form.Group className='block mt-4'>
+                                    <Form.Label>Condição de vida</Form.Label>
+                                    <Form.Select onChange={handleInput} className={!!errors.student_lifeconditions && 'is-invalid'} value={form.student_lifeconditions} isInvalid={!!errors.student_lifeconditions}
+                                        placeholder="" name='student_lifeconditions' id="student_lifeconditions" >
+                                        <option value="0">Boa</option>
+                                        <option value="1">Má</option>
+                                        <option value="2">Regular</option>
+                                    </Form.Select>
+                                    <Form.Control.Feedback type='invalid'>{errors.student_lifeconditions}</Form.Control.Feedback>
+                                </Form.Group>
+                                <Form.Group className='block mt-4'>
+                                    <Form.Label>Previdência social</Form.Label>
+                                    <Form.Select onChange={handleInput} className={!!errors.student_socialsecurity && 'is-invalid'}
+                                        value={form.student_socialsecurity} isInvalid={!!errors.student_socialsecurity}
+                                        type="text" placeholder="" name='student_socialsecurity' id="student_socialsecurity" >
+                                        <option value="0">Boa</option>
+                                        <option value="1">Má</option>
+                                        <option value="2">Regular</option>
+                                    </Form.Select>
+                                    <Form.Control.Feedback type='invalid'>{errors.student_socialsecurity}</Form.Control.Feedback>
+                                </Form.Group>
+                                <Form.Group>
+                                    <div className="ed-flex fill col-12 mt-4">
+                                        <div className="block col-lg-6">
+                                            <Form.Label>Nivel social<span className="text-danger ml-2">*</span></Form.Label>
+                                            <Form.Select onChange={handleInput} className={!!errors.student_sociallevel && 'is-invalid'} value={form.student_sociallevel} isInvalid={!!errors.student_sociallevel}
+                                                select name='student_sociallevel' id="student_sociallevel" >
+                                                <option value="0">Bom</option>
+                                                <option value="1">Má</option>
+                                                <option value="2">Regular</option>
+                                            </Form.Select>
+                                            <Form.Control.Feedback type='invalid'>{errors.student_sociallevel}</Form.Control.Feedback>
+                                        </div>
+                                        <div className="block col ml-2">
+                                            <Form.Label>Trabalha <span className="text-danger ml-2">*</span></Form.Label>
+                                            <Form.Select onChange={handleInput} value={form.student_workstatus} className={!!errors.student_workstatus && 'is-invalid'} isInvalid={!!errors.student_workstatus}
+                                                select name='student_workstatus' id="student_workstatus" >
+                                                <option value="1">Sim</option>
+                                                <option value="0" selected>Não</option>
+                                            </Form.Select>
+                                            <Form.Control.Feedback type='invalid'>{errors.student_workstatus}</Form.Control.Feedback>
+                                        </div>
+                                    </div>
+                                </Form.Group>
+                                {StudentWorkStatus === true ?
+                                    <Form.Group>
+                                        <div className="ed-flex fill col-12 mt-4">
+                                            <div className="block col-lg-6">
+                                                <Form.Label>Local de trabalho<span className="text-danger ml-2">*</span></Form.Label>
+                                                <Form.Control onChange={handleInput} className={!!errors.student_workplace && 'is-invalid'} value={form.student_workplace} isInvalid={!!errors.student_workplace}
+                                                    select name='student_workplace' id="student_workplace" />
+                                                <Form.Control.Feedback type='invalid'>{errors.student_workplace}</Form.Control.Feedback>
+                                            </div>
+                                            <div className="block col ml-2">
+                                                <Form.Label>Profissão <span className="text-danger ml-2">*</span></Form.Label>
+                                                <Form.Select onChange={handleInput} value={form.student_worktitle} className={!!errors.student_worktitle && 'is-invalid'} isInvalid={!!errors.student_worktitle}
+                                                    select name='student_worktitle' id="student_worktitle" />
+                                                <Form.Control.Feedback type='invalid'>{errors.student_worktitle}</Form.Control.Feedback>
+                                            </div>
+                                        </div>
+                                    </Form.Group>
+                                    : <></>}
+                            </BoxContainer>
+                        </>
+                        :
+                        <>
+                            <BoxContainer className='boxItem'>
+                                <h2 className="title">Informações escolares</h2>
+                                <Form.Group className='block mt-4'>
+                                    <Form.Label>Nome da ultima escola que frequentou</Form.Label>
+                                    <Form.Control onChange={handleInput} className={!!errors.student_lastschool && 'is-invalid'} value={form.student_lastschool} isInvalid={!!errors.student_lastschool}
+                                        type="text" placeholder="" name='student_lastschool' id="student_lastschool" />
+                                    <Form.Control.Feedback type='invalid'>{errors.student_lastschool}</Form.Control.Feedback>
+                                </Form.Group>
+                                <Form.Group className='block mt-4'>
+                                    <Form.Label>Ultima classe que frequentou </Form.Label>
+                                    <Form.Control onChange={handleInput} className={!!errors.student_lastclass && 'is-invalid'} value={form.student_lastclass} isInvalid={!!errors.student_lastclass}
+                                        type="text" placeholder="" name='student_lastclass' id="student_lastclass" />
+                                    <Form.Control.Feedback type='invalid'>{errors.student_lastclass}</Form.Control.Feedback>
+                                </Form.Group>
+                                <Form.Group>
+                                    <div className="ed-flex fill col-12 mt-4">
+                                        <div className="block col-lg-6">
+                                            <Form.Label>Turma <span className="text-danger ml-2">*</span></Form.Label>
+                                            <Form.Select onChange={handleInput} className={!!errors.student_class && 'is-invalid'} value={form.student_class} isInvalid={!!errors.student_class}
+                                                select name='student_class' id="student_class" >
+                                                <ClassDataOptions />
+                                            </Form.Select>
+                                            <Form.Control.Feedback type='invalid'>{errors.student_class}</Form.Control.Feedback>
+                                        </div>
+                                        <div className="block col ml-2">
+                                            <Form.Label>Estado do aluno na instituição <span className="text-danger ml-2">*</span></Form.Label>
+                                            <Form.Select onChange={handleInput} value={form.student_status} className={!!errors.student_status && 'is-invalid'} isInvalid={!!errors.student_status}
+                                                select name='student_status' id="student_status"  >
+                                                <option value="1" selected>Activo</option>
+                                                <option value="0">Inactivo</option>
+                                            </Form.Select>
+                                            <Form.Control.Feedback type='invalid'>{errors.student_status}</Form.Control.Feedback>
+                                        </div>
+                                    </div>
+                                    {
+                                        Class !== null && Class >= 1 ?
+                                            <>
+                                                {
+                                                    <div className="mt-4 ed-wrap">
+                                                        <div className="badge bg-main mr-2">
+                                                            Ano lectivo : <GetAcademicYear_byclass ID={Class} />
+                                                        </div>
+                                                        <div className="badge bg-main mr-2">
+                                                            Sala : <GetClassroom_byclass ID={Class} />
+                                                        </div>
+                                                        <div className="badge bg-main mr-2">
+                                                            Curso : <GetCourse_byclass ID={Class} />
+                                                        </div>
+                                                        <div className="badge bg-main mr-2">
+                                                            Periodo : <GetPeriod_byclass ID={Class} />
+                                                        </div>
+                                                        <div className="badge bg-main">
+                                                            {ReplaceWord("Classe")} : <GetAcademiclevel_byclass ID={Class} />
+                                                        </div>
+                                                    </div>
+                                                }
+                                            </>
+                                            :
+                                            <></>
+                                    }
+                                </Form.Group>
+                                <Form.Group>
+                                    <div className="col-12 mt-4">
+                                        <Form.Label>Bolseiro <span className="text-danger ml-2">*</span></Form.Label>
+                                        <Form.Select onChange={handleInput} className={!!errors.student_scholarshipHolder && 'is-invalid'}
+                                            value={form.student_scholarshipHolder} isInvalid={!!errors.student_scholarshipHolder} select name='student_scholarshipHolder' id="student_scholarshipHolder"  >
+                                            <option value="0" selected>Não</option>
+                                            <option value="1">Sim</option>
+                                        </Form.Select>
+                                        <Form.Control.Feedback type='invalid'>{errors.student_scholarshipHolder}</Form.Control.Feedback>
+                                    </div>
+                                </Form.Group>
+                            </BoxContainer>
+                        </>}
+                </div>
+                <br />
+                <BoxContainer className='boxItem'>
+                    <h2 className="title">Carregar documentos e Renomear</h2>
+                    <FileUpload input_name="student_files" Icon="0" type_of_files="application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/pdf"
+                        extensions="pdf, docx" Files={GetFiles} ref={ChildRef2} />
+                </BoxContainer>
+                <div className="mt-2 d-none">
+                    <BoxContainer className='boxItem'>
+                        <div className="Camera">
+
+                        </div>
+                    </BoxContainer>
+                </div>
+                <br />
+            </Form>
+        </>
+    )
+}
+
+
+const BoxContainer = styled.div` 
+    width:100%; 
+    border-radius:6px;
+    margin-bottom:20px;  
+    padding:20px;
+    min-height:200px;
+    background:var(--ed-white);  
+    box-shadow:var(--ed-shadow-df); 
+
+    .box-components{
+        display:flex;
+        width:100%; 
+        flex-direction:column;
+
+         .name{
+            font-size:16px;
+         }
+
+         h5{
+              font-size:16px !important;
+              margin:0px !important;
+         }
+
+         small{
+            font-size:14px !important;
+         }
+
+         .alert{
+              padding:10px 20px;
+              margin:0px !important;
+         }
+    }
+
+
+    .Camera{
+        min-height:80vh; 
+        border:2px dashed var(--purple-light);
+    }
+
+
+    .title{
+        font-size:18px;  
+        font-weight:600;
+        margin-top:10px;
+        margin-bottom:25px;
+    }
+
+    .col-ip-3{
+        width:100%;
+
+        .block{
+            width:33.3%;
+        }
+    }
+
+    .box{ 
+        width:100%;
+        display:flex;
+        flex-direction:column;
+
+        .fill{
+            width:100%;
+            display:flex;
+
+            .block{
+                width:50%;
+            }
+        }
+    }
+`;
+
+const FlexBox = styled.div`
+   margin:10px 0;
+   display:flex; 
+`;
+
+
+export default NewStudentBase;
+
+
+
+
+
+Este mdoelo devera servrir não so para eregistro mas tyambem para edição do conteudo casos eja o cenario.
+no caso dos modals , vamos ter como base osenguintee mdoelo:
+
+
+import React, { useEffect, useState } from 'react'
+import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+import { Modal, Form, Button } from 'react-bootstrap'
+import { Save } from '@mui/icons-material';
+import DraggableModal from '../../../General/components/DraggableModal';
+import axios from 'axios';
+import Hoot from '../../../General/components/Hoot';
+import ClearInputs from '../../../General/components/ClearInputs';
+import CRValue from '../../../General/components/CRValue';
+import { toast } from 'react-hot-toast';
+import { Update } from '@material-ui/icons';
+import { GetInstituteCode } from '../../../General/components/InstituteData';
+import RefreshList from '../../../General/components/RefreshList';
+import { FormControl, FormControlLabel, FormLabel, Radio, RadioGroup } from '@mui/material';
+import UserOptionDropDown from '../elements/UserOptionDropDown';
+import SaveButton from '../elements/SaveButton';
+import { ModalAnimationClose, ModalAnimationShow } from '../../../General/components/ModalAnimations';
+import ReplaceWord from '../../../General/components/ReplaceWord';
+
+
+function NewAcademicLevelModal(props) {
+  const [show, setShow] = useState(false);
+  const [form, setForm] = useState({});
+  const [errors, setErrors] = useState({});
+  const [ForExam, setForExam] = useState(0);
+  const [ForFt, setForFt] = useState(0);
+  const [RegisterStatus, setRegisterStatus] = useState(null);
+  const [Founded, SetFounded] = useState(null);
+
+
+  const [showBox, SetshowBox] = useState(false);
+  const handleClose = () => {
+    SetshowBox(false);
+    setTimeout(() => {
+      setShow(false);
+    }, 1200);
+  }
+
+  const handleShow = () => {
+    SetshowBox(true);
+    setShow(true);
+    setTimeout(() => {
+      GET_DATA();
+    }, 1000);
+  };
+
+
+  const INPUTS = {
+    academic_level_title: CRValue("#academic_level_title"),
+    academic_level_forExam: ForExam,
+    academic_level_forFt: ForFt,
+    academic_level_avaliationtype_endat: CRValue("#academic_level_avaliationtype_endat")
+  };
+
+  const FORMURL = [
+    Hoot() + "eduallregisteracademiclevel/post",
+    props.get ? props.get : '',
+    props.url ? props.url : ''
+  ];
+
+  const GET_DATA = async () => {
+    if (props.update) {
+      try {
+        const response = await axios.get(FORMURL[1]);
+        if (response.data.length > 0) {
+          if (response.data[0] !== null) {
+            document.querySelector("#academic_level_title").value = response.data[0].ed_academic_level_title;
+            INPUTS.academic_level_title = response.data[0].ed_academic_level_title;
+
+            document.querySelector("#academic_level_avaliationtype_endat").value = response.data[0].ed_academic_level_avaliationtype_endat;
+            INPUTS.academic_level_avaliationtype_endat = response.data[0].ed_academic_level_avaliationtype_endat;
+          }
+        } else {
+          toast.error("Lamentamos mas não foi  possivel encontrar a informação selecionada !");
+        }
+      } catch (error) {
+        toast.error("Lamentamos mas não foi  possivel encontrar a informação selecionada !");
+      }
+    }
+  }
+
+  const setField = (field, value) => {
+    setForm({
+      ...form,
+      [field]: value
+    })
+
+    if (!!errors[field]) {
+      setErrors({
+        ...errors,
+        [field]: null
+      });
+    }
+  }
+
+
+  const validateForm = () => {
+    const { academic_level_title, academic_level_avaliationtype_endat } = form;
+    const NewErrors = {};
+    setRegisterStatus(0);
+
+    if (INPUTS.academic_level_title === "" || INPUTS.academic_level_title === " ") {
+      if (!academic_level_title || academic_level_title === '') NewErrors.academic_level_title = ReplaceWord("Classe") + ' invalida !';
+    } else { if (!academic_level_title) { setField("academic_level_title", INPUTS.academic_level_title); } }
+
+    if (INPUTS.academic_level_avaliationtype_endat === "" || INPUTS.academic_level_avaliationtype_endat === " ") {
+      if (!academic_level_title || academic_level_title === '') NewErrors.academic_level_avaliationtype_endat = 'Informação Invalida !';
+    } else { if (!academic_level_title) { setField("academic_level_title", INPUTS.academic_level_avaliationtype_endat); } }
+    return NewErrors;
+  }
+
+
+  const FormSubmit = (e) => {
+    e.preventDefault();
+    const formErrors = validateForm();
+    if (Object.keys(formErrors).length > 0) {
+      setErrors(formErrors);
+      toast.error("Verifique todos os  campos");
+      setRegisterStatus(1);
+    } else {
+      if (!props.update) {
+        try {
+          axios.post(FORMURL[0], INPUTS).then(() => {
+            toast.success(ReplaceWord("Classe") + " registrada com sucesso !");
+            setForm({});
+            ClearInputs();
+            RefreshList(`.el-refresh-list`);
+            setRegisterStatus(2);
+          }).catch((error) => {
+        const msg = error?.response?.data?.msg || "Lamentamos mas não foi  possivel executar esta ação !";
+        toast.error(msg);
+            setRegisterStatus(1);
+          });
+        } catch (error) {
+        const msg = error?.response?.data?.msg || "Lamentamos mas não foi  possivel executar esta ação !";
+        toast.error(msg);
+          setRegisterStatus(1);
+        }
+      } else {
+        try {
+          axios.put(FORMURL[2], INPUTS)
+            .then(() => {
+              toast.success(ReplaceWord("Classe") + " atualizada com sucesso !");
+              setForm({});
+              ClearInputs();
+              RefreshList(`.el-refresh-list`)
+              setRegisterStatus(2);
+            }).catch((error) => {
+        const msg = error?.response?.data?.msg || "Lamentamos mas não foi  possivel executar esta ação !";
+        toast.error(msg);
+              setRegisterStatus(1);
+            });
+        } catch (error) {
+        const msg = error?.response?.data?.msg || "Lamentamos mas não foi  possivel executar esta ação !";
+        toast.error(msg);
+          setRegisterStatus(1);
+        }
+      }
+    }
+  };
+
+
+  const handleInput = (e) => {
+    switch (e.target.id) {
+      case "academic_level_title":
+        INPUTS.academic_level_title = e.target.value
+        setField("academic_level_title", e.target.value);
+        break;
+      case "academic_level_avaliationtype_endat":
+        INPUTS.academic_level_avaliationtype_endat = e.target.value
+        setField("academic_level_avaliationtype_endat", e.target.value);
+        break;
+      default:
+    }
+  }
+
+
+  const handleInput1 = (e) => {
+    setForFt(e.target.value);
+    setField("academic_level_forFt", e.target.value);
+  }
+
+  const handleInput2 = (e) => {
+    setForExam(e.target.value);
+    setField("academic_level_forExam", e.target.value);
+  }
+
+  return (
+    <div>
+      <div onClick={handleShow}>
+        {
+          props.toggle_btn ? props.toggle_btn : <button className='btn btn-main bg-main'><AddCircleOutlineIcon /> Registrar {ReplaceWord("Classe")}</button>
+        }
+      </div>
+      <Modal size='lg' className={showBox ? ModalAnimationShow() : ModalAnimationClose()} centered dialogAs={DraggableModal} show={show} onHide={handleClose}>
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <div className="ed-wrap align-center">
+              <UserOptionDropDown />
+              <h5>{props.title ? props.title : 'Registrar '} {ReplaceWord("Classe")}</h5>
+            </div>
+          </Modal.Title>
+        </Modal.Header>
+        <Form onSubmit={FormSubmit}>
+          <Modal.Body className='scrollLimit'>
+            <Form.Group className="mb-3" >
+              <Form.Label>Nome da {ReplaceWord("Classe", true)}<span className='text-danger ml-2'>*</span></Form.Label>
+              <Form.Control required placeholder={'Ex: 1ª ' + ReplaceWord("Classe", true)} onChange={handleInput} className={!!errors.academic_level_title && 'is-invalid'} value={form.academic_level_title} isInvalid={!!errors.academic_level_title}
+                type="text" id="academic_level_title" />
+              <Form.Control.Feedback type='invalid'>{errors.academic_level_title}</Form.Control.Feedback>
+            </Form.Group>
+            <Form.Group className='mb-3'>
+              <FormControl id="academic_level_forExam">
+                <div className="ed-flex">
+                  <FormLabel className='text-main' id="academic_level_forExam">Definir como {ReplaceWord("Classe", true)} de exame :</FormLabel>
+                  <RadioGroup aria-labelledby="academic_level_forExam" defaultValue={ForExam}
+                    name="radio-buttons-group" id="academic_level_forExam" onChange={handleInput2}  >
+                    <div className="ml-2 ed-flex">
+                      <FormControlLabel value="1" control={<Radio />} label="Sim" />
+                      <FormControlLabel value="0" control={<Radio />} label="Não" />
+                    </div>
+                  </RadioGroup>
+                  <Form.Control.Feedback type='invalid'>{errors.academic_level_forExam}</Form.Control.Feedback>
+                </div>
+              </FormControl>
+              <FormControl id="academic_level_forFt">
+                <div className="ed-flex">
+                  <FormLabel className='text-main' id="academic_level_forFt">Definir como {ReplaceWord("Classe", true)} de recurso :</FormLabel>
+                  <RadioGroup aria-labelledby="academic_level_forFt" defaultValue={ForFt}
+                    name="radio-buttons-group" id="academic_level_forFt" onChange={handleInput1}  >
+                    <div className="ml-2 ed-flex">
+                      <FormControlLabel value="1" control={<Radio />} label="Sim" />
+                      <FormControlLabel value="0" control={<Radio />} label="Não" />
+                    </div>
+                  </RadioGroup>
+                  <Form.Control.Feedback type='invalid'>{errors.academic_level_forFt}</Form.Control.Feedback>
+                </div>
+              </FormControl>
+            </Form.Group>
+            <Form.Group>
+              <div className="ed-flex mt-2">
+                <div className="text-main mr-2">Começar á avaliar dos</div>
+                <div style={{ width: "60px" }}>
+                  <Form.Control placeholder='0' readOnly type="number" />
+                </div>
+                <div className="text-main ml-2 mr-2">aos</div>
+                <div style={{ width: "60px" }}>
+                  <Form.Control
+                    placeholder="10"
+                    type="number"
+                    min={10}
+                    max={20}
+                    onChange={handleInput}
+                    className={!!errors.academic_level_avaliationtype_endat && 'is-invalid'}
+                    value={form.academic_level_avaliationtype_endat}
+                    isInvalid={!!errors.academic_level_avaliationtype_endat}
+                    id="academic_level_avaliationtype_endat"
+                  />
+
+                </div>
+                <div className="text-main ml-2">valores</div>
+              </div>
+              <Form.Control.Feedback type='invalid'>{errors.academic_level_avaliationtype_endat}</Form.Control.Feedback>
+            </Form.Group>
+          </Modal.Body>
+          <Modal.Footer>
+            <div className="ed-space">
+              <div className="ed-flex"></div>
+              <div className="ed-flex">
+                <Button className='bg-light text-dark' onClick={handleClose}> Cancelar </Button>
+                {props.update ? (Founded === false ? <div></div> :
+                  <SaveButton icon={props.title ? <Update /> : <Save />} title={props.title ? props.title : 'Salvar'} status={RegisterStatus} />) :
+                  <SaveButton icon={props.title ? <Update /> : <Save />} title={props.title ? props.title : 'Salvar'} status={RegisterStatus} />}
+              </div>
+            </div>
+          </Modal.Footer>
+        </Form>
+      </Modal>
+    </div>
+  )
+}
+
+export default NewAcademicLevelModal
+
+
+
+
+de igual modo este modleo acima vai servir para editar e criar conteudo dos nossos formularios.
+relativamente a listagems dos componenets no nosso siste e epossiblidades de exportara os dados eme excel farmos com base no seguinte modleo de lioegatem de dados e exportação de excel tendo em conta este modelo:
+
+import React , {useState, useEffect} from 'react'
+import { Avatar } from '@mui/material';
+import { flexbox } from '@mui/system';
+import { Link } from 'react-router-dom';
+import Table from './Table';
+import axios from 'axios';
+import { Delete, Description, Edit, PreviewOutlined, Refresh} from '@mui/icons-material';
+import Hoot from '../../../General/components/Hoot';
+import { GetAcademiclevel_byclass, GetCicle_byclass, GetClass, GetClasstitle_byclass } from '../../../General/components/InstituteData';
+import SwitchFromPages from '../../../General/components/SwitchFromPages';
+import DeleteModal from '../elements/DeleteModal';
+import TableGrid from '../../../General/components/TableGrid';
+import { Badge } from 'react-bootstrap';
+import CalcAgeByBirthday from '../../../General/components/CalcAgeByBirthday';
+import RefreshButton from '../../../General/components/RefreshButton';
+import { DeleteButton, EditButton, PrintButton, PreviewButton } from '../../../General/components/Buttons/TableButtons';
+import ExportDataForTablesExcel from '../../../General/components/ExportDataForTablesExcel';
+import { PiFilePdfDuotone, PiMicrosoftExcelLogoDuotone } from 'react-icons/pi';
+import { ExportDataToTablesToPdf } from '../../../General/components/ExportDataToTablesToPdf';
+
+
+const TABLEURL = Hoot()+"eduallstudentsapi/get/";
+
+
+const columns = [ 
+  { field: 'index',
+   headerName: 'Nº de matrícula',  
+   resizable: true,
+    cellRenderer:(props)=>{
+      return  <SwitchFromPages link={`studentinfo/${props.data.id}`}
+      menu='3'  menu_item='17'  toggle_btn={  <span  className='text-dark'>{props.data.id}</span>} />
+   }
+  },
+  {
+    field: 'name',
+    headerName: 'Nome', 
+    resizable: true, 
+    width:400,
+    cellRenderer:(props)=>{
+       return    <SwitchFromPages link={`studentinfo/${props.data.id}`}
+       menu='3'  menu_item='17'  toggle_btn={
+       <div className='ed-flex'>
+         <Avatar alt={props.data.name} className='df' src={props.data.picture !== ""  ?  Hoot()+props.data.picture : ""} /> 
+         <span className='ml-2'>{props.data.name}</span>
+       </div>
+     } />
+    }
+   }, 
+    {
+    field: 'class',
+    headerName: 'Turma',
+    resizable: true, 
+    width:120 
+  }, 
+  {
+    field: 'cicle',
+    headerName: 'Ciclo',
+    resizable: true 
+  },
+  {
+    field: 'gender',
+    headerName: 'Genero',
+    resizable: true,
+    width:140,
+    cellRenderer:(props)=>{
+        return props.data.gender === "female" ?
+          <Badge bg='danger'>Femenino</Badge>
+        : <Badge bg='info'>Masculino</Badge>
+    }
+  },
+  {
+    field: 'age',
+    headerName: 'Idade',
+    sortable:false, 
+    resizable: true,
+    width:100,
+  },
+  {
+    field: 'status',
+    headerName: 'Status',
+     resizable: true, 
+     width:120,
+     cellRenderer:(props)=>{
+      return  Math.floor(props.data.status) === 1 ? 
+      <Badge bg='info'><div className="text-dark">Activo</div></Badge> :
+      <Badge bg='danger'><div className="text-dark">Inactivo</div></Badge>
+    }
+  }, 
+  {
+    field: 'action',
+    headerName: 'Ação', 
+     resizable: true, 
+     cellRenderer:(props) => { 
+      return <div className="ed-flex">
+          <Link to={`/updatestudent/${props.data.id}`}>
+             <button  className="btn-circle bg-success text-light">
+                <Edit/>
+            </button>  
+          </Link> 
+          <DeleteModal title='este estudante' url={Hoot()+`eduallstudentdelete/delete/${props.data.id}`} 
+           message='Estudante deletado com sucesso' toggle_btn={
+            <button  className="btn-circle bg-danger ml-2 text-light">
+               <Delete/>
+            </button>
+           }/> 
+        </div> ;
+    }
+  } 
+];
+
+
+ 
+
+function StudentList() { 
+  const [data, setData] = useState([]);
+  const [load, setLoaded] = useState(false);
+  const [LoadStatus, setLoadStatus] = useState(null);
+
+
+  async function loadData(){
+    setLoadStatus(0); 
+    try {
+      setLoaded(false);
+      const response = await axios.get(TABLEURL); 
+      const rows = [];
+      response.data.map((item, index)=>{  
+        rows.push({
+          index:index+1,
+          id:item.ed_student_id,
+          picture:item.ed_student_picture,
+          name:item.ed_student_name,  
+          age:CalcAgeByBirthday(item.ed_student_birthday)+ " anos",  
+          class:item.ed_class_title,
+          cicle:item.ed_cicle_title,
+          status:item.ed_student_status,
+          gender:item.ed_student_gender, 
+          action:'',  
+       }) 
+    }); 
+      setData(rows);
+     setTimeout(() => {
+       setLoaded(true);
+     }, 200); 
+     setLoadStatus(2); 
+    } catch (error) {
+      setLoadStatus(1); 
+      setLoaded(true);
+    }
+  }
+
+  useEffect(()=>{
+      loadData(); 
+  },[]);
+
+  
+
+if(load){
+      return (
+      <div id='ed-custom-table-data' >
+        <TableGrid
+            TableHead={columns}
+            TableBody={data} 
+            TableTitle='Lista dos estudantes' 
+            TableBtn={
+              <div className='ed-flex' >
+                <button id='ed-custom-table-data-btn'
+                  onClick={() =>
+                    ExportDataToTablesToPdf({
+                      fileName: "Lista dos estudantes",
+                      headerId: null,
+                      contentId: "ed-custom-table-data",
+                      footerId: null,
+                      rotation: "landscape",
+                      buttonId: "ed-custom-table-data-btn",
+                      customHeader: "Lista dos estudantes",
+                      excludedColumns:["Ação"]
+                    })
+                  }
+                  className='btn-icon ed-flex ed-center btn btn-export-data ml-2 bg-white'><PiFilePdfDuotone />
+                </button>
+                <button className='btn-icon btn btn-export-data ml-2'
+                  onClick={() => ExportDataForTablesExcel("lista dos estudanets", ["Ação"])}><PiMicrosoftExcelLogoDuotone />
+                </button>
+                <RefreshButton action={loadData} status={LoadStatus} />
+              </div>
+            }
+          /> 
+    </div>
+    )
+  }else{
+    return (
+      <div>
+        <div className="d-none">*</div>
+        <TableGrid
+            TableHead={columns}
+            TableBody={data} 
+            TableTitle='Lista dos estudantes'
+            TableBtn={<RefreshButton action={loadData} status={LoadStatus} />}
+        />
+    </div>
+    )
+  }
+  
+}
+
+export default StudentList;
+
+
+
+este mdoelos vai servir como base para lsiatar os nosos dados e ter a opção de exportara os emmsso dados da tabela.
+se possivel no momento do uario defirni ou criara so formualrios podemros ter aopção e mover o reorfdnera a posição dos formualrios ou componenetes.
+
+
+
+Realativamnete ao backend , quero que tenhas como base o code abaixo, paar teres nososçãod e como criares sos controlers, lemnbara que o s nososos forms ,s eraoa difrenciados,
+e custumizaveis , podenso ser mduadasos pelo usre m, com possiblidade usar radios buttons, images comopoennes, files, richtexteditor.
+se as tabela snão existuirem paar criação dos form s da instituição criar elas usando o executequery, elesas deveraão seguir o memso padraão, eduall_nomedatabela, ed_nomedacoluna.
+e para cirea isso vou deixar o modleo d eum file que devera ser criado para o backend do nosos formbuilder supercomplexo:
+
+
+
+
+
+
+const multer = require(`multer`);
+const path = require(`path`);
+const CheckInternet = require("../config/CheckInternet");
+const { DB_SQLITE, DATABASE } = require("../config/Database");
+const { GetCurrentUserData } = require("./GetCurrentUserData");
+const ExecuteQuery = require("../Functions/ExecuteQuery");
+const { RegisterAuditAction } = require("./Auditory");
+ 
+const GetStudents = async (req, res) => {
+   try {
+       const instituteCode = req.session.user.eduall_user_session_curentinstitute;
+       let query, PARAMS;
+
+       if (req.session.user.eduall_user_session_curentinstitute_type * 1 === 0) {
+           query = `SELECT * FROM eduall_students 
+                    LEFT JOIN eduall_class ON eduall_students.ed_student_class = eduall_class.ed_class_id  
+                    LEFT JOIN eduall_cicles ON ed_cicle_id = eduall_class.ed_class_cicle  
+                    WHERE ed_student_deleted = 0 AND eduall_students.ed_student_institute_code = ? 
+                    ORDER BY ed_student_name ASC`;
+           PARAMS = [instituteCode];
+       } else {
+           query = `SELECT * FROM eduall_students 
+                    LEFT JOIN eduall_class ON eduall_students.ed_student_class = eduall_class.ed_class_id  
+                    LEFT JOIN eduall_cicles ON ed_cicle_id = eduall_class.ed_class_cicle 
+                    LEFT JOIN eduall_students_details ON eduall_students_details.ed_detail_student_code = eduall_students.ed_student_id
+                    WHERE ed_student_deleted = 0 AND eduall_students.ed_student_institute_code = ?  
+                    ORDER BY ed_student_name ASC`;
+           PARAMS = [instituteCode];
+       }
+
+       const rows = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_students", type: "select", data: req });
+       res.status(200).json(rows);
+   } catch (error) {
+       res.status(500).json({ success: false, message: "Failed to fetch students!", error: error.message });
+   }
+};
+
+const GetSTDS = async (req, res) => {
+   try {
+       const query = `SELECT * FROM eduall_students 
+                      LEFT JOIN eduall_class ON eduall_students.ed_student_class = eduall_class.ed_class_id  
+                      LEFT JOIN eduall_cicles ON ed_cicle_id = eduall_class.ed_class_cicle  
+                      WHERE ed_student_deleted = 0 
+                      ORDER BY ed_student_name ASC`;
+       const PARAMS = [];
+       const rows = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_students", type: "select", data: req });
+       res.status(200).json(rows);
+   } catch (error) {
+       res.status(500).json({ success: false, message: "Failed to fetch student details!", error: error.message });
+   }
+};
+
+const GetStudentsByInstitute = async (req, res) => {
+   try {
+       const { CODE } = req.params;
+       const instituteCode = req.session.user.eduall_user_session_curentinstitute;
+       const instituteType = req.session.user.eduall_user_session_curentinstitute_type;
+       let query, PARAMS;
+
+       if (instituteType * 1 === 0) {
+           query = `SELECT * FROM eduall_students 
+                    LEFT JOIN eduall_class ON eduall_students.ed_student_class = eduall_class.ed_class_id  
+                    LEFT JOIN eduall_cicles ON ed_cicle_id = eduall_class.ed_class_cicle 
+                    WHERE ed_student_deleted = 0 AND eduall_students.ed_student_institute_code = ? 
+                    ORDER BY ed_student_name ASC`;
+           PARAMS = [CODE];
+       } else {
+           query = `SELECT * FROM eduall_students 
+                    LEFT JOIN eduall_class ON eduall_students.ed_student_class = eduall_class.ed_class_id  
+                    LEFT JOIN eduall_cicles ON ed_cicle_id = eduall_class.ed_class_cicle 
+                    LEFT JOIN eduall_students_details ON eduall_students_details.ed_detail_student_code = eduall_students.ed_student_id
+                    WHERE ed_student_deleted = 0 AND eduall_students.ed_student_institute_code = ?  
+                    AND eduall_students_details.ed_detail_deleted = 0 
+                    ORDER BY ed_student_name ASC`;
+           PARAMS = [CODE];
+       }
+
+       const rows = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_students", type: "select", data: req });
+       res.status(200).json(rows);
+   } catch (error) {
+       res.status(500).json({ success: false, message: "Failed to fetch students by institute!", error: error.message });
+   }
+};
+
+const GetSingleStudent = async (req, res) => {
+   try {
+     const { ID } = req.params;
+     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
+     const instituteType = req.session.user.eduall_user_session_curentinstitute_type;
+     let query, PARAMS;
+ 
+     if (instituteType * 1 === 0) {
+       query = `
+         SELECT * FROM eduall_students
+         LEFT JOIN eduall_institutes ON ed_institute_code = ed_student_institute_code
+         LEFT JOIN eduall_class ON ed_class_id = ed_student_class AND ed_class_deleted = 0
+         LEFT JOIN eduall_faculty ON ed_faculty_id = ed_class_faculty AND ed_faculty_deleted = 0
+         LEFT JOIN eduall_classrooms ON ed_classroom_id = ed_class_room AND ed_classroom_deleted = 0
+         LEFT JOIN eduall_cicles ON ed_cicle_id = ed_class_cicle AND ed_cicle_deleted = 0
+         LEFT JOIN eduall_courses ON ed_course_id = ed_class_course AND ed_course_deleted = 0
+         LEFT JOIN eduall_academic_level ON ed_academic_level_id = ed_class_academic_level AND ed_academic_level_deleted = 0
+         LEFT JOIN eduall_academic_year ON ed_academic_year_id = ed_class_year AND ed_academic_year_deleted = 0
+         WHERE ed_student_deleted = 0 AND ed_student_id = ? AND ed_student_institute_code = ?
+       `;
+       PARAMS = [ID, instituteCode];
+     } else {
+       query = `
+         SELECT * FROM eduall_students
+         LEFT JOIN eduall_students_details ON eduall_students_details.ed_detail_student_code = eduall_students.ed_student_id
+         LEFT JOIN eduall_institutes ON ed_institute_code = ed_student_institute_code
+         LEFT JOIN eduall_class ON ed_class_id = ed_student_class AND ed_class_deleted = 0
+         LEFT JOIN eduall_faculty ON ed_faculty_id = ed_class_faculty AND ed_faculty_deleted = 0
+         LEFT JOIN eduall_classrooms ON ed_classroom_id = ed_class_room AND ed_classroom_deleted = 0
+         LEFT JOIN eduall_cicles ON ed_cicle_id = ed_class_cicle AND ed_cicle_deleted = 0
+         LEFT JOIN eduall_courses ON ed_course_id = ed_class_course AND ed_course_deleted = 0
+         LEFT JOIN eduall_academic_level ON ed_academic_level_id = ed_class_academic_level AND ed_academic_level_deleted = 0
+         LEFT JOIN eduall_academic_year ON ed_academic_year_id = ed_class_year AND ed_academic_year_deleted = 0
+         WHERE ed_student_deleted = 0 AND ed_student_id = ? AND ed_student_institute_code = ?
+       `;
+       PARAMS = [ID, instituteCode];
+     }
+ 
+     const rows = await ExecuteQuery(res, query, PARAMS, true, {
+       db: "eduall_students",
+       type: "select",
+       data: req,
+     });
+ 
+     res.status(200).json(rows);
+   } catch (error) {
+     res.status(500).json({
+       success: false,
+       message: "Failed to fetch student!",
+       error: error.message,
+     });
+   }
+ };
+ 
+
+const GetSingleStudentByIdentityCard = async (req, res) => {
+   try {
+       const { IDENTITITYCARD } = req.params;
+       const instituteCode = req.session.user.eduall_user_session_curentinstitute;
+       const instituteType = req.session.user.eduall_user_session_curentinstitute_type;
+       const identityCard = IDENTITITYCARD.toLowerCase();
+       let query, PARAMS;
+
+       if (instituteType * 1 === 0) {
+           query = `SELECT * FROM eduall_students 
+                    WHERE ed_student_deleted = 0 AND ed_student_identityCard = ? 
+                    AND ed_student_institute_code = ?`;
+           PARAMS = [identityCard, instituteCode];
+       } else {
+           query = `SELECT * FROM eduall_students 
+                    LEFT JOIN eduall_students_details ON eduall_students_details.ed_detail_student_code = eduall_students.ed_student_id
+                    WHERE ed_student_deleted = 0 AND ed_student_identityCard = ? 
+                    AND eduall_students_details.ed_detail_deleted = 0 
+                    AND ed_student_institute_code = ?`;
+           PARAMS = [identityCard, instituteCode];
+       }
+
+       const rows = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_students", type: "select", data: req });
+       res.status(200).json(rows);
+   } catch (error) {
+       res.status(500).json({ success: false, message: "Failed to fetch student by identity card!", error: error.message });
+   }
+};
+
+
+
+
+const GetSingleStudentByCode = async (req, res) => {
+   try {
+      const { CODE } = req.params;
+      let query, PARAMS;
+
+      if (req.session.user.eduall_user_session_curentinstitute_type * 1 === 0) {
+         query = `SELECT * FROM eduall_students WHERE ed_student_deleted = 0 AND ed_student_code = ?`;
+         PARAMS = [CODE];
+      } else {
+         query = `SELECT * FROM eduall_students LEFT JOIN eduall_students_details 
+                  ON eduall_students_details.ed_detail_student_code = eduall_students.ed_student_id
+                  WHERE ed_student_deleted = 0 AND eduall_students_details.ed_detail_deleted = 0 AND ed_student_code = ?`;
+         PARAMS = [CODE];
+      }
+
+      const rows = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_students", type: "select", data: req });
+      res.status(200).json(rows);
+   } catch (error) {
+      res.status(500).json({ success: false, message: "Failed to fetch student by code!", error: error.message });
+   }
+};
+
+const GetStudentsByClass = async (req, res) => {
+   try {
+      const { CLASS } = req.params;
+      let query, PARAMS;
+
+      if (req.session.user.eduall_user_session_curentinstitute_type * 1 === 0) {
+         query = `SELECT * FROM eduall_students 
+                  LEFT JOIN eduall_class ON eduall_students.ed_student_class = eduall_class.ed_class_id  
+                  LEFT JOIN eduall_transport_passengers ON eduall_transport_passengers.ed_transport_passenger_code = eduall_students.ed_student_id  
+                  WHERE eduall_students.ed_student_deleted = 0 
+                  AND eduall_class.ed_class_id = ? AND eduall_students.ed_student_class = ? 
+                  AND eduall_students.ed_student_institute_code = ? ORDER BY eduall_students.ed_student_name ASC`;
+         PARAMS = [CLASS, CLASS, req.session.user.eduall_user_session_curentinstitute];
+      } else {
+         query = `SELECT * FROM eduall_students 
+                  LEFT JOIN eduall_class ON eduall_students.ed_student_class = eduall_class.ed_class_id  
+                  LEFT JOIN eduall_transport_passengers ON eduall_transport_passengers.ed_transport_passenger_code = eduall_students.ed_student_id  
+                  LEFT JOIN eduall_students_details ON eduall_students_details.ed_detail_student_code = eduall_students.ed_student_id
+                  WHERE eduall_students.ed_student_deleted = 0 AND eduall_class.ed_class_id = ? 
+                  AND eduall_students.ed_student_class = ? AND eduall_students.ed_student_institute_code = ? 
+                  ORDER BY eduall_students.ed_student_name ASC`;
+         PARAMS = [CLASS, CLASS, req.session.user.eduall_user_session_curentinstitute];
+      }
+
+      const rows = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_students", type: "select", data: req });
+      res.status(200).json(rows);
+   } catch (error) {
+      res.status(500).json({ success: false, message: "Failed to fetch students by class!", error: error.message });
+   }
+};
+
+
+
+const GetTransportPassengersByClass = async (req, res) => {
+  try {
+    const { CLASS } = req.params; // ID da turma (opcional, se quiser filtrar por turma)
+    const institute = req.session.user.eduall_user_session_curentinstitute;
+
+    let query = `
+      SELECT tp.ed_transport_passenger_id, tp.ed_transport_passenger_code, tp.ed_transport_passenger_startMonth,
+             s.ed_student_id, s.ed_student_name, s.ed_student_class, s.ed_student_picture,
+             c.ed_class_title
+      FROM eduall_transport_passengers tp
+      INNER JOIN eduall_students s ON s.ed_student_id = tp.ed_transport_passenger_code
+      INNER JOIN eduall_class c ON s.ed_student_class = c.ed_class_id
+      WHERE tp.ed_transport_passenger_deleted = 0
+        AND s.ed_student_deleted = 0
+        AND tp.ed_transport_passenger_institute_code = ?
+        AND s.ed_student_institute_code = ?
+    `;
+    
+    const params = [institute, institute];
+
+    if (CLASS) {
+      query += ` AND s.ed_student_class = ?`;
+      params.push(CLASS);
+    }
+
+    query += ` ORDER BY s.ed_student_name ASC`;
+
+    const rows = await ExecuteQuery(res, query, params, true, { db: "eduall_students", type: "select", data: req });
+    res.status(200).json(rows);
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Erro ao buscar passageiros da turma!", error: error.message });
+  }
+};
+
+
+
+
+
+const RegisterStudent = async (req, res) => {
+  // ========= helpers curtas =========
+  const pad = (n, w = 6) => String(n).padStart(w, "0");
+
+  // Cria schema/índices se faltar (idempotente)
+  const ensureSchema = async () => {
+    
+    
+  await ExecuteQuery(res, `
+    CREATE TABLE IF NOT EXISTS eduall_institute_counters (
+      ed_institute_code VARCHAR(100) PRIMARY KEY,
+      ed_lastest_student_code BIGINT NOT NULL DEFAULT 0
+    ) ENGINE=InnoDB
+  `, [], false, { db: "eduall_institute_counters", type: "schema", data: req });
+
+
+
+
+    // índice único por escola+código (evita duplicados)
+    await ExecuteQuery(res, `
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_students_institute_code
+      ON eduall_students (ed_student_institute_code, ed_student_code)
+    `, [], false, { db: "eduall_students", type: "index", data: req });
+  };
+
+  // Garante linha do contador
+  const ensureCounterRow = async (inst) => {
+    await ExecuteQuery(res, `
+      INSERT INTO eduall_institute_counters (ed_institute_code, ed_lastest_student_code)
+      VALUES (?, 0)
+      ON DUPLICATE KEY UPDATE ed_lastest_student_code = ed_lastest_student_code
+    `, [inst], false, { db: "eduall_institute_counters", type: "upsert", data: req });
+  };
+
+  // Aloca código sem consumir (só confirma após INSERT)
+  const lockAndProposeCode = async (inst, incomingCode) => {
+    // lock linha do contador (rápido e evita corrida)
+    const row = await ExecuteQuery(
+      res,
+      `SELECT ed_lastest_student_code FROM eduall_institute_counters WHERE ed_institute_code = ? FOR UPDATE`,
+      [inst],
+      true,
+      { db: "eduall_institute_counters", type: "select-for-update", data: req }
+    );
+
+    let last = (row[0]?.ed_lastest_student_code ?? 0) * 1;
+
+    if (incomingCode && String(incomingCode).trim() !== "") {
+      const raw = String(incomingCode).trim();
+      const num = parseInt(raw.replace(/\D/g, ""), 10);
+      if (!Number.isFinite(num) || num < 0) throw new Error("Código de matrícula inválido.");
+      const width = Math.max(6, raw.length);
+      const codeStr = pad(num, width);
+
+      // Não atualiza aqui o contador; só depois do INSERT ok
+      return { codeNum: num, codeStr, width, shouldBumpTo: Math.max(last, num) };
+    } else {
+      const next = last + 1;
+      const codeStr = pad(next, 6);
+      return { codeNum: next, codeStr, width: 6, shouldBumpTo: next };
+    }
+  };
+
+  try {
+    await ensureSchema();
+
+    // ---- valida idade
+    const birthday = new Date(req.body.student_birthday);
+    const today = new Date();
+    const twoYearsAgo = new Date(); twoYearsAgo.setFullYear(today.getFullYear() - 2);
+    if (isNaN(birthday.getTime()) || birthday > today || birthday > twoYearsAgo) {
+      return res.status(400).json({ success: false, msg: "Data de nascimento inválida! O estudante deve ter pelo menos 2 anos de idade !" });
+    }
+
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
+    const instituteType = req.session.user.eduall_user_session_curentinstitute_type * 1;
+
+    // ---- duplicado de BI por escola? Se sim, sai… (NÃO toca no contador)
+    const dupBI = await ExecuteQuery(
+      res,
+      `SELECT 1 FROM eduall_students WHERE ed_student_deleted = 0 AND ed_student_identityCard = ? AND ed_student_institute_code = ? LIMIT 1`,
+      [String(req.body.student_identityCard || "").toLowerCase(), instituteCode],
+      true,
+      { db: "eduall_students", type: "select", data: req }
+    );
+    if (dupBI.length > 0) {
+      return res.status(400).json({ success: false, msg: "Já existe um estudante cadastrado na instituição com este BI" });
+    }
+
+    // ---- transação: só confirma contador após INSERT
+    await ExecuteQuery(res, `START TRANSACTION`, [], false, { db: "tx", type: "begin", data: req });
+    try {
+      await ensureCounterRow(instituteCode);
+
+      // bloquear linha do contador e propor código
+      const incomingCode = req.body.student_code;
+      const { codeStr, codeNum, shouldBumpTo } = await lockAndProposeCode(instituteCode, incomingCode);
+
+      // garantir unicidade por escola (raro precisar se índice existir)
+      const dupCode = await ExecuteQuery(
+        res,
+        `SELECT 1 FROM eduall_students WHERE ed_student_deleted = 0 AND ed_student_code = ? AND ed_student_institute_code = ? LIMIT 1`,
+        [codeStr, instituteCode],
+        true,
+        { db: "eduall_students", type: "select", data: req }
+      );
+      if (dupCode.length > 0) {
+
+        // gera fallback rápido: last+1
+        const row = await ExecuteQuery(
+          res,
+          `SELECT ed_lastest_student_code FROM eduall_institute_counters WHERE ed_institute_code = ? FOR UPDATE`,
+          [instituteCode],
+          true,
+          { db: "eduall_institute_counters", type: "select-for-update", data: req }
+        );
+        const fallbackNum = (row[0]?.ed_lastest_student_code ?? 0) + 1;
+        req.body.student_code = pad(fallbackNum, Math.max(6, String(codeStr).length));
+      } else {
+        req.body.student_code = codeStr;
+      }
+
+      // INSERT estudante
+      const insertQuery = `
+        INSERT INTO eduall_students(
+          ed_student_name, ed_student_address, ed_student_nacionality, ed_student_gender,
+          ed_student_religion, ed_student_birthday, ed_student_phone, ed_student_email,
+          ed_student_class, ed_student_code, ed_student_picture, ed_student_identityCard,
+          ed_student_health_problems, ed_student_health_problems_description, ed_student_status,
+          ed_student_naturalness, ed_student_institute_code, ed_student_type
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `;
+      const insertParams = [
+        req.body.student_name, req.body.student_address, req.body.student_nacionality, req.body.student_gender,
+        req.body.student_religion, req.body.student_birthday, req.body.student_phone, req.body.student_email,
+        req.body.student_class, req.body.student_code, (req.file ? "images/students/" + req.file.filename : ""),
+        req.body.student_identityCard, req.body.student_health_problems, req.body.student_health_problems_description,
+        req.body.student_status, req.body.student_naturalness, instituteCode, instituteType
+      ];
+      const studentInsertResult = await ExecuteQuery(res, insertQuery, insertParams, false, { db: "eduall_students", type: "insert", data: req });
+
+      // details
+      const {
+        student_lastschool_course, student_lastschool_score, student_lastschool_formationfield, student_lastschool_conclusionyear,
+        student_lifeconditions, student_socialsecurity, student_sociallevel, student_workstatus, student_workplace, student_worktitle
+      } = req.body;
+
+      await ExecuteQuery(
+        res,
+        `INSERT INTO eduall_students_details(
+           ed_detail_student_code, ed_detail_lastschool_course, ed_detail_lastschool_score,
+           ed_detail_lastschool_formationfield, ed_detail_lastschool_conclusionyear, ed_detail_lifeconditions,
+           ed_detail_socialsecurity, ed_detail_sociallevel, ed_detail_work, ed_detail_workplace, ed_detail_workfunction
+         ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          studentInsertResult.insertId, student_lastschool_course, student_lastschool_score, student_lastschool_formationfield,
+          student_lastschool_conclusionyear, student_lifeconditions, student_socialsecurity, student_sociallevel,
+          student_workstatus, student_workplace, student_worktitle
+        ],
+        false,
+        { db: "eduall_students_details", type: "insert", data: req }
+      );
+
+      // auditoria
+      await RegisterAuditAction({
+        session: req.session,
+        action: 1,
+        form: "Estudantes",
+        description: `Registrou estudante - (${req.body.student_name})`,
+      });
+
+      // Atualiza contador PARA O VALOR USADO (só agora!)
+      await ExecuteQuery(
+        res,
+        `UPDATE eduall_institute_counters
+         SET ed_lastest_student_code = GREATEST(ed_lastest_student_code, ?)
+         WHERE ed_institute_code = ?`,
+        [codeNum, instituteCode],
+        false,
+        { db: "eduall_institute_counters", type: "update", data: req }
+      );
+
+      await ExecuteQuery(res, `COMMIT`, [], false, { db: "tx", type: "commit", data: req });
+
+      return res.status(201).json({ success: true, message: "Student registered successfully!", student_code: req.body.student_code });
+    } catch (e) {
+      await ExecuteQuery(res, `ROLLBACK`, [], false, { db: "tx", type: "rollback", data: req });
+      // erros claros
+      if (/duplic/i.test(e.message)) {
+        return res.status(409).json({ success: false, msg: "Código de matrícula já existe nesta escola." });
+      }
+      return res.status(500).json({ success: false, msg: "Falha ao registar estudante.", error: e.message });
+    }
+  } catch (error) {
+    return res.status(500).json({ success: false, msg: "Erro interno.", error: error.message });
+  }
+};
+
+
+
+const StudentDelete = async (req, res) => {
+   try {
+      const { ID } = req.params;
+      const query = `UPDATE eduall_students SET ed_student_deleted = 1 WHERE ed_student_deleted = 0 AND ed_student_id = ? AND ed_student_institute_code = ?`;
+      const PARAMS = [ID, req.session.user.eduall_user_session_curentinstitute];
+   
+      const query1 = `UPDATE eduall_students_details SET ed_detail_deleted = 1 WHERE ed_detail_deleted = 0 AND ed_detail_student_code = ?`;
+      const PARAMS1 = [ID];
+   
+      await ExecuteQuery(res, query1, PARAMS1, false, { db: "eduall_students_details", type: "update", data: req });
+     const resp =  await ExecuteQuery(res, query, PARAMS, false, {
+         db: "eduall_students",
+         type: "update",
+         data: req,
+       }); 
+               
+      await RegisterAuditAction({
+         session: req.session,
+         action: 3,  // Ação de delete
+         form: "Estudantes",
+         description: `Removeu um  estudante com o nº de matrícula #${ID}`,
+       });
+       
+      const query3 = `SELECT * FROM eduall_students WHERE ed_student_id = ?`;
+      const PARAMS3 = [ID]; 
+      const rows = await ExecuteQuery(res, query3, PARAMS3, true, { db: "eduall_students", type: "select", data: req });
+
+      console.log(" res = ", resp); 
+      res.status(200).json({ success: true, msg: "Student successfully deleted." });
+   } catch (err) {
+      res.status(400).json({ status: 300, success: false, msg: err.message });
+   }
+};
+
+const StudentUpdate = async (req, res) => { 
+   try {
+      const { ID } = req.params;
+      const {
+         student_name, student_age, student_address, student_nacionality, student_gender, student_religion,
+         student_birthday, student_phone, student_phone2, student_email, student_class, student_code,
+         student_identityCard, student_health_problems, student_naturalness, student_health_problems_description, student_status,
+         student_lastschool_course, student_lastschool_score, student_lastschool_formationfield, student_lastschool_conclusionyear,
+         student_lifeconditions, student_socialsecurity, student_sociallevel, student_workstatus, student_workplace, student_worktitle
+      } = req.body;
+
+      // Validação da data de nascimento
+      if (!student_birthday || isNaN(new Date(student_birthday).getTime())) {
+         return res.status(400).json({ success: false, msg: "Data de nascimento inválida." });
+      }
+
+      const birthdayDate = new Date(student_birthday);
+      const today = new Date();
+      if (birthdayDate > today) {
+         return res.status(400).json({ success: false, msg: "A data de nascimento não pode ser no futuro." });
+      }
+
+      let query = ``;
+      let PARAMS = ``;
+
+      if (req.file) {
+         query = `UPDATE eduall_students SET ed_student_name = ?, ed_student_address = ?, ed_student_nacionality = ?, ed_student_gender = ?, ed_student_religion = ?, 
+         ed_student_birthday = ?, ed_student_phone = ?, ed_student_phone2 = ?, ed_student_email = ?, ed_student_class = ?, ed_student_code = ?, ed_student_picture = ?,
+         ed_student_identityCard = ?, ed_student_health_problems = ?, ed_student_health_problems_description = ?, ed_student_status = ?, ed_student_naturalness = ?
+         WHERE ed_student_deleted = 0 AND ed_student_id = ? AND ed_student_institute_code = ?`;
+         PARAMS = [student_name, student_address, student_nacionality, student_gender, student_religion,
+            student_birthday, student_phone, student_phone2, student_email, student_class, student_code,
+            "images/students/" + req.file.filename, student_identityCard, student_health_problems,
+            student_health_problems_description, student_status, student_naturalness, ID, req.session.user.eduall_user_session_curentinstitute];
+      } else {
+         query = `UPDATE eduall_students SET ed_student_name = ?, ed_student_address = ?, ed_student_nacionality = ?, ed_student_gender = ?, ed_student_religion = ?, 
+         ed_student_birthday = ?, ed_student_phone = ?, ed_student_phone2 = ?, ed_student_email = ?, ed_student_class = ?, ed_student_code = ?, 
+         ed_student_identityCard = ?, ed_student_health_problems = ?, ed_student_health_problems_description = ?, ed_student_status = ?, ed_student_naturalness = ?
+         WHERE ed_student_deleted = 0 AND ed_student_id = ? AND ed_student_institute_code = ?`;
+         PARAMS = [student_name, student_address, student_nacionality, student_gender, student_religion,
+            student_birthday, student_phone, student_phone2, student_email, student_class, student_code,
+            student_identityCard, student_health_problems, student_health_problems_description, student_status, student_naturalness,
+            ID, req.session.user.eduall_user_session_curentinstitute];
+      }
+
+      await ExecuteQuery(res, query, PARAMS, false, { db: "eduall_students", type: "update", data: req });
+
+      const query3 = `SELECT * FROM eduall_students_details WHERE ed_detail_deleted = 0 AND ed_detail_student_code = ?`;
+      const PARAMS3 = [ID];
+
+      const rows = await ExecuteQuery(res, query3, PARAMS3, true, { db: "eduall_students_details", type: "select", data: req });
+
+      if (rows.length === 0) {
+         const query2 = `INSERT INTO eduall_students_details(ed_detail_student_code, ed_detail_lastschool_course, ed_detail_lastschool_score,
+         ed_detail_lastschool_formationfield, ed_detail_lastschool_conclusionyear, ed_detail_lifeconditions, ed_detail_socialsecurity,
+         ed_detail_sociallevel, ed_detail_work, ed_detail_workplace, ed_detail_workfunction) VALUES (?,?,?,?,?,?,?,?,?,?,?)`;
+         const PARAMS1 = [ID, student_lastschool_course, student_lastschool_score, student_lastschool_formationfield,
+            student_lastschool_conclusionyear, student_lifeconditions, student_socialsecurity, student_sociallevel,
+            student_workstatus, student_workplace, student_worktitle];
+         await ExecuteQuery(res, query2, PARAMS1, false, { db: "eduall_students_details", type: "insert", data: req });
+      } else {
+         const query2 = `UPDATE eduall_students_details SET ed_detail_lastschool_course = ?, ed_detail_lastschool_score = ?,
+         ed_detail_lastschool_formationfield = ?, ed_detail_lastschool_conclusionyear = ?, ed_detail_lifeconditions = ?, ed_detail_socialsecurity = ?,
+         ed_detail_sociallevel = ?, ed_detail_work = ?, ed_detail_workplace = ?, ed_detail_workfunction = ?
+         WHERE ed_detail_student_code = ? AND ed_detail_deleted = 0`;
+         const PARAMS1 = [student_lastschool_course, student_lastschool_score, student_lastschool_formationfield,
+            student_lastschool_conclusionyear, student_lifeconditions, student_socialsecurity, student_sociallevel,
+            student_workstatus, student_workplace, student_worktitle, ID];
+         await ExecuteQuery(res, query2, PARAMS1, false, { db: "eduall_students_details", type: "update", data: req });
+      }
+
+      await RegisterAuditAction({
+         session: req.session,
+         action: 2,  // Ação de atualização
+         form: "Estudantes",
+         description: `Atualizou os dados do estudante com o nº de matrícula #${ID}`,
+       });
+      res.status(200).json({ success: true, msg: "Estudante atualizado com sucesso." });
+   } catch (err) {
+      res.status(400).json({ status: 300, success: false, msg: err.message });
+   }
+};
+
+
+const StudentUpdateClass = async (req, res) => {
+   try {
+      const { ID } = req.params;
+      const { student_class } = req.body;
+   
+      const query = `UPDATE eduall_students SET ed_student_class = ?
+      WHERE ed_student_deleted = 0 AND ed_student_id = ?  AND ed_student_institute_code = ?`;
+      const PARAMS = [student_class, ID, req.session.user.eduall_user_session_curentinstitute];
+   
+      await ExecuteQuery(res, query, PARAMS, false, { db: "eduall_students", type: "update", data: req });
+
+      await RegisterAuditAction({
+         session: req.session,
+         action: 2,  // Ação de atualização
+         form: "Estudantes",
+         description: `Atualizou a turma do estudante com o nº de matrícula #${ID}`,
+       });
+      res.status(200).json({ success: true, msg: "Student class updated successfully." });
+   } catch (err) {
+      res.status(400).json({ status: 300, success: false, msg: err.message });
+   }
+};
+
+const StudentUpdateEnrollment = async (req, res) => {
+   try {
+      const { ID } = req.params;
+      const { enrollment_service, enrollment_class } = req.body; 
+      const query = `UPDATE eduall_students SET ed_student_enrolled_service = ?, 
+       ed_student_class = ?, ed_student_enrolled = 1
+       WHERE ed_student_deleted = 0 AND ed_student_id = ? AND ed_student_institute_code = ?`;
+      const PARAMS = [enrollment_service, enrollment_class, ID, req.session.user.eduall_user_session_curentinstitute]; 
+      await ExecuteQuery(res, query, PARAMS, false, { db: "eduall_students", type: "update", data: req });
+
+      
+      await RegisterAuditAction({
+         session: req.session,
+         action: 2,  // Ação de atualização
+         form: "Estudantes",
+         description: `Atualizou os dados de matrícula do estudante com o nº de matrícula #${ID}`,
+       });
+      res.status(200).json({ success: true, msg: "Student enrollment updated successfully." });
+   } catch (err) {
+      res.status(400).json({ status: 300, success: false, msg: err.message });
+   }
+};
+ 
+
+const StudentEnrollmentConfirmationUpdate = async (req, res) => {
+   try {
+      const { ID } = req.params;
+      const { enrollment_service_code, enrollment_class } = req.body;
+      const query = `UPDATE eduall_students SET ed_student_enrolled = 2, ed_student_enrolledConfirmation_service = ?,
+      ed_student_class = ? WHERE ed_student_deleted = 0 AND ed_student_id = ?`;
+      const PARAMS = [enrollment_service_code, enrollment_class, ID];
+      await ExecuteQuery(res, query, PARAMS, false, { db: "eduall_students", type: "update", data: req });
+      await RegisterAuditAction({
+         session: req.session,
+         action: 2,  // Ação de atualização
+         form: "Estudantes",
+         description: `Atualizou os dados de confirmação de matrícula do estudante com o nº de matrícula #${ID}`,
+       });
+      res.status(200).json({ success: true, msg: "Enrollment confirmation updated successfully." });
+   } catch (err) {
+      res.status(400).json({ status: 300, success: false, msg: err.message });
+   }
+};
+
+
+async function getSingleStudentByInstitute(instituteCode, instituteType, ID) {
+   try {
+     let query, PARAMS;
+ 
+     if (parseInt(instituteType) === 0) {
+       query = `
+         SELECT * FROM eduall_students 
+         WHERE ed_student_deleted = 0 AND ed_student_id = ? AND ed_student_institute_code = ?
+       `;
+       PARAMS = [ID, instituteCode];
+     } else {
+       query = `
+         SELECT * FROM eduall_students 
+         LEFT JOIN eduall_students_details 
+         ON eduall_students_details.ed_detail_student_code = eduall_students.ed_student_id
+         WHERE ed_student_deleted = 0 AND ed_student_id = ? AND ed_student_institute_code = ?
+       `;
+       PARAMS = [ID, instituteCode];
+     }
+ 
+     const rows = await ExecuteQuery(null, query, PARAMS, true, {
+       db: "eduall_students",
+       type: "select",
+     });
+ 
+     return rows;
+   } catch (error) {
+     throw new Error(`Erro ao buscar estudante: ${error.message}`);
+   }
+ }
+
+const storage = multer.diskStorage({
+   destination: path.join(__dirname, `./../images/students/`),
+   filename: (req, file, cb) => {
+      return cb(null, `eduall_file_${file.fieldname}_${Date.now()}_${Math.random(1, 389398393993100012002)}_${path.extname(file.originalname)}`)
+   }
+});
+
+const uploadStudentPicture = multer({
+   storage: storage
+}).single(`student_picture`);
+
+
+
+
+const GetEmails = async (req, res) => {
+   const query = `SELECT * FROM eduall_schools`;
+   DATABASERUN(res, query, [], 0);
+}
+
+module.exports = {
+   GetStudents, GetSingleStudent,
+   GetSingleStudentByCode, GetStudentsByClass,
+   RegisterStudent, StudentDelete,
+   getSingleStudentByInstitute,
+   StudentUpdate, StudentUpdateClass,
+   StudentUpdateEnrollment, StudentEnrollmentConfirmationUpdate,
+   uploadStudentPicture, GetSingleStudentByIdentityCard, GetEmails,
+   GetStudentsByInstitute, GetSTDS, GetTransportPassengersByClass
+}

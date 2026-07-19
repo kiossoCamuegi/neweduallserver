@@ -1,0 +1,748 @@
+[2026-07-14T11:42:17.581Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T11:42:17.587Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 100,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T11:42:17.587Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T11:42:17.591Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T11:42:17.591Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T11:42:17.591Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T11:42:17.591Z] [INFO   ] 📈 Analisar: node server.js analyze all
+[2026-07-14T11:42:20.351Z] [INFO   ] Socket conectado
+{
+  "socketId": "fexlOSgv_ehcg7krAAAB"
+}
+[2026-07-14T11:42:21.343Z] [INFO   ] Socket conectado
+{
+  "socketId": "Jw0e5x1k_V2AXTybAAAD"
+}
+[2026-07-14T11:42:21.356Z] [INFO   ] Socket conectado
+{
+  "socketId": "JCzmo6m7PzIocho6AAAF"
+}
+[2026-07-14T11:42:21.366Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/notifications/unread-count"
+}
+[2026-07-14T11:42:23.342Z] [INFO   ] Socket conectado
+{
+  "socketId": "mSFup4Nch18UcYu1AAAH"
+}
+[2026-07-14T11:42:37.816Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/edualltransportpaymentsapi/get/"
+}
+[2026-07-14T11:42:37.849Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/eduallservicepaymentsapi/get"
+}
+[2026-07-14T11:42:37.850Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/eduallgetallproductsales/get/"
+}
+[2026-07-14T11:42:37.850Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/eduallfeepaymentsapi/get/"
+}
+[2026-07-14T11:42:57.743Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/edualltransportpaymentsapi/get/"
+}
+[2026-07-14T11:42:57.745Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/eduallfeepaymentsapi/get/"
+}
+[2026-07-14T11:42:57.745Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/eduallservicepaymentsapi/get"
+}
+[2026-07-14T11:42:57.746Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/eduallgetallproductsales/get/"
+}
+[2026-07-14T11:44:36.960Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/eduallfeepaymentsapi/get/"
+}
+[2026-07-14T11:44:36.961Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/edualltransportpaymentsapi/get/"
+}
+[2026-07-14T11:44:36.963Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/eduallservicepaymentsapi/get"
+}
+[2026-07-14T11:44:36.964Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/eduallgetallproductsales/get/"
+}
+[2026-07-14T11:44:43.528Z] [INFO   ] Socket desconectado
+{
+  "socketId": "JCzmo6m7PzIocho6AAAF"
+}
+[2026-07-14T11:44:43.529Z] [INFO   ] Socket desconectado
+{
+  "socketId": "mSFup4Nch18UcYu1AAAH"
+}
+[2026-07-14T11:44:43.529Z] [INFO   ] Socket desconectado
+{
+  "socketId": "Jw0e5x1k_V2AXTybAAAD"
+}
+[2026-07-14T11:44:43.529Z] [INFO   ] Socket desconectado
+{
+  "socketId": "fexlOSgv_ehcg7krAAAB"
+}
+[2026-07-14T11:44:46.170Z] [INFO   ] Socket conectado
+{
+  "socketId": "6M41yHhGcdvPPaLMAAAL"
+}
+[2026-07-14T11:44:46.173Z] [INFO   ] Socket conectado
+{
+  "socketId": "CXG4HxWEo6TClbMzAAAM"
+}
+[2026-07-14T11:44:46.183Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/token"
+}
+[2026-07-14T11:44:46.248Z] [INFO   ] Socket conectado
+{
+  "socketId": "t5je_VvQJz1WJ4r7AAAN"
+}
+[2026-07-14T11:44:46.307Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/token"
+}
+[2026-07-14T11:44:46.317Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/logout"
+}
+[2026-07-14T11:44:46.323Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/token"
+}
+[2026-07-14T11:44:46.353Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/logout"
+}
+[2026-07-14T11:44:46.357Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/token"
+}
+[2026-07-14T11:44:46.362Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/logout"
+}
+[2026-07-14T11:44:46.370Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/token"
+}
+[2026-07-14T11:44:46.379Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/logout"
+}
+[2026-07-14T11:44:46.383Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/token"
+}
+[2026-07-14T11:44:46.401Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/logout"
+}
+[2026-07-14T11:44:46.437Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/token"
+}
+[2026-07-14T11:44:54.562Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/login"
+}
+[2026-07-14T11:50:44.921Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T11:50:44.927Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 100,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T11:50:44.928Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T11:50:44.932Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T11:50:44.932Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T11:50:44.932Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T11:50:44.932Z] [INFO   ] 📝 Erros MD: GET /health/errors.md
+[2026-07-14T11:50:44.932Z] [INFO   ] 📈 Analisar: node server.js analyze all
+[2026-07-14T11:50:44.932Z] [INFO   ] 📄 Gerar Erros: node server.js generate-error-md
+[2026-07-14T11:50:46.366Z] [INFO   ] Socket conectado
+{
+  "socketId": "pwg3VvVhYD81ogrmAAAC"
+}
+[2026-07-14T11:50:46.369Z] [INFO   ] Socket conectado
+{
+  "socketId": "4fumuDplCJxO_339AAAD"
+}
+[2026-07-14T11:50:49.354Z] [INFO   ] Socket conectado
+{
+  "socketId": "Zj2DlX4nw7wzYVEfAAAF"
+}
+[2026-07-14T11:52:14.332Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T11:52:14.335Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 100,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T11:52:14.335Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T11:52:14.338Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T11:52:14.338Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T11:52:14.338Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T11:52:14.338Z] [INFO   ] 📝 Erros MD: GET /health/errors.md
+[2026-07-14T11:52:14.338Z] [INFO   ] 📈 Analisar: node server.js analyze all
+[2026-07-14T11:52:14.338Z] [INFO   ] 📄 Gerar Erros: node server.js generate-error-md
+[2026-07-14T11:52:15.360Z] [INFO   ] Socket conectado
+{
+  "socketId": "PmHh2fMLwB-_Sg2lAAAB"
+}
+[2026-07-14T11:52:15.780Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T11:52:15.783Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 100,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T11:52:15.783Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T11:52:15.810Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T11:52:15.810Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T11:52:15.810Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T11:52:15.810Z] [INFO   ] 📝 Erros MD: GET /health/errors.md
+[2026-07-14T11:52:15.810Z] [INFO   ] 📈 Analisar: node server.js analyze all
+[2026-07-14T11:52:15.810Z] [INFO   ] 📄 Gerar Erros: node server.js generate-error-md
+[2026-07-14T11:52:16.359Z] [INFO   ] Socket conectado
+{
+  "socketId": "85WhzandhOKecKmRAAAB"
+}
+[2026-07-14T11:52:16.366Z] [INFO   ] Socket conectado
+{
+  "socketId": "5Z5EbRWchsV7PustAAAD"
+}
+[2026-07-14T11:52:17.356Z] [INFO   ] Socket conectado
+{
+  "socketId": "n9-XTxC0ZQMyxo4qAAAF"
+}
+[2026-07-14T11:52:26.169Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T11:52:26.172Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 100,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T11:52:26.173Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T11:52:26.475Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T11:52:26.475Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T11:52:26.476Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T11:52:26.476Z] [INFO   ] 📝 Erros MD: GET /health/errors.md
+[2026-07-14T11:52:26.476Z] [INFO   ] 📈 Analisar: node server.js analyze all
+[2026-07-14T11:52:26.476Z] [INFO   ] 📄 Gerar Erros: node server.js generate-error-md
+[2026-07-14T11:52:27.365Z] [INFO   ] Socket conectado
+{
+  "socketId": "uHwTzMwpjiJdzavXAAAC"
+}
+[2026-07-14T11:52:27.369Z] [INFO   ] Socket conectado
+{
+  "socketId": "ShXr7nupzm2LdLBoAAAD"
+}
+[2026-07-14T11:52:28.350Z] [INFO   ] Socket conectado
+{
+  "socketId": "L9VnQugkqOk9QG9gAAAF"
+}
+[2026-07-14T11:52:30.970Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T11:52:30.973Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 100,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T11:52:30.974Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T11:52:31.133Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T11:52:31.133Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T11:52:31.133Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T11:52:31.133Z] [INFO   ] 📝 Erros MD: GET /health/errors.md
+[2026-07-14T11:52:31.133Z] [INFO   ] 📈 Analisar: node server.js analyze all
+[2026-07-14T11:52:31.133Z] [INFO   ] 📄 Gerar Erros: node server.js generate-error-md
+[2026-07-14T11:52:32.163Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T11:52:32.166Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 100,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T11:52:32.166Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T11:52:32.319Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T11:52:32.319Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T11:52:32.319Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T11:52:32.319Z] [INFO   ] 📝 Erros MD: GET /health/errors.md
+[2026-07-14T11:52:32.319Z] [INFO   ] 📈 Analisar: node server.js analyze all
+[2026-07-14T11:52:32.319Z] [INFO   ] 📄 Gerar Erros: node server.js generate-error-md
+[2026-07-14T11:52:32.361Z] [INFO   ] Socket conectado
+{
+  "socketId": "B3FZc2aW8ImoJeQxAAAD"
+}
+[2026-07-14T11:52:32.362Z] [INFO   ] Socket conectado
+{
+  "socketId": "KLv5XSvD0FhVYqpIAAAE"
+}
+[2026-07-14T11:52:32.363Z] [INFO   ] Socket conectado
+{
+  "socketId": "4oNxmmse8wBfk2iiAAAF"
+}
+[2026-07-14T11:52:36.696Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T11:52:36.699Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 100,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T11:52:36.699Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T11:52:36.849Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T11:52:36.849Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T11:52:36.850Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T11:52:36.850Z] [INFO   ] 📝 Erros MD: GET /health/errors.md
+[2026-07-14T11:52:36.850Z] [INFO   ] 📈 Analisar: node server.js analyze all
+[2026-07-14T11:52:36.850Z] [INFO   ] 📄 Gerar Erros: node server.js generate-error-md
+[2026-07-14T11:52:37.364Z] [INFO   ] Socket conectado
+{
+  "socketId": "R3mw4uBeYBG9vurVAAAB"
+}
+[2026-07-14T11:52:38.357Z] [INFO   ] Socket conectado
+{
+  "socketId": "oCU0RF6W5UyUwZ80AAAE"
+}
+[2026-07-14T11:52:38.360Z] [INFO   ] Socket conectado
+{
+  "socketId": "OZ0N11juYV3FcQNEAAAF"
+}
+[2026-07-14T11:52:44.523Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T11:52:44.526Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 100,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T11:52:44.526Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T11:52:44.680Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T11:52:44.680Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T11:52:44.680Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T11:52:44.680Z] [INFO   ] 📝 Erros MD: GET /health/errors.md
+[2026-07-14T11:52:44.680Z] [INFO   ] 📈 Analisar: node server.js analyze all
+[2026-07-14T11:52:44.680Z] [INFO   ] 📄 Gerar Erros: node server.js generate-error-md
+[2026-07-14T11:52:46.367Z] [INFO   ] Socket conectado
+{
+  "socketId": "E9-2GgQDd11gB5dOAAAC"
+}
+[2026-07-14T11:52:46.370Z] [INFO   ] Socket conectado
+{
+  "socketId": "uu6MKDaaR4Xto-N-AAAE"
+}
+[2026-07-14T11:52:46.372Z] [INFO   ] Socket conectado
+{
+  "socketId": "O2XaGWrysVePBHJXAAAF"
+}
+[2026-07-14T11:53:03.333Z] [INFO   ] Socket conectado
+{
+  "socketId": "t1gHlK3aBpyASElvAAAI"
+}
+[2026-07-14T11:53:03.616Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/undefined"
+}
+[2026-07-14T11:53:03.619Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/me/notifications"
+}
+[2026-07-14T11:53:03.635Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/notifications/unread-count"
+}
+[2026-07-14T11:53:03.681Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/me/notifications"
+}
+[2026-07-14T11:53:19.335Z] [INFO   ] Socket desconectado
+{
+  "socketId": "t1gHlK3aBpyASElvAAAI"
+}
+[2026-07-14T11:53:19.344Z] [INFO   ] Socket conectado
+{
+  "socketId": "H2HSndVdZ3m7-9TzAAAK"
+}
+[2026-07-14T11:53:19.367Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/me/notifications"
+}
+[2026-07-14T11:53:19.370Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/notifications/unread-count"
+}
+[2026-07-14T11:53:20.613Z] [INFO   ] Socket desconectado
+{
+  "socketId": "H2HSndVdZ3m7-9TzAAAK"
+}
+[2026-07-14T11:53:20.625Z] [INFO   ] Socket conectado
+{
+  "socketId": "z2RCEF1XEvZWYNylAAAM"
+}
+[2026-07-14T11:53:20.658Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/me/notifications"
+}
+[2026-07-14T11:53:20.676Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/notifications/unread-count"
+}
+[2026-07-14T11:53:22.597Z] [INFO   ] Socket desconectado
+{
+  "socketId": "z2RCEF1XEvZWYNylAAAM"
+}
+[2026-07-14T11:53:22.599Z] [INFO   ] Socket conectado
+{
+  "socketId": "ckKvHtrF9eBJS9XSAAAO"
+}
+[2026-07-14T11:53:22.608Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/me/notifications"
+}
+[2026-07-14T11:53:22.610Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/notifications/unread-count"
+}
+[2026-07-14T11:53:30.654Z] [INFO   ] Socket desconectado
+{
+  "socketId": "ckKvHtrF9eBJS9XSAAAO"
+}
+[2026-07-14T11:53:30.656Z] [INFO   ] Socket conectado
+{
+  "socketId": "ADGOCkppoRXVOdhiAAAQ"
+}
+[2026-07-14T11:53:30.665Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/me/notifications"
+}
+[2026-07-14T11:53:30.668Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/notifications/unread-count"
+}
+[2026-07-14T11:53:34.112Z] [INFO   ] Socket desconectado
+{
+  "socketId": "ADGOCkppoRXVOdhiAAAQ"
+}
+[2026-07-14T11:53:34.117Z] [INFO   ] Socket conectado
+{
+  "socketId": "H8G0fOC60J3vLrscAAAS"
+}
+[2026-07-14T11:53:34.124Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/me/notifications"
+}
+[2026-07-14T11:53:34.131Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/notifications/unread-count"
+}
+[2026-07-14T11:53:35.901Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/me/notifications"
+}
+[2026-07-14T11:53:35.907Z] [INFO   ] Socket desconectado
+{
+  "socketId": "H8G0fOC60J3vLrscAAAS"
+}
+[2026-07-14T11:53:35.924Z] [INFO   ] Socket conectado
+{
+  "socketId": "xrT4rc8INqZLHipdAAAU"
+}
+[2026-07-14T11:53:36.023Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/notifications/unread-count"
+}
+[2026-07-14T11:58:28.594Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T11:58:28.596Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 100,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T11:58:28.597Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T11:58:28.884Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T11:58:28.884Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T11:58:28.884Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T11:58:28.884Z] [INFO   ] 📝 Erros MD: GET /health/errors.md
+[2026-07-14T11:58:28.884Z] [INFO   ] 📈 Analisar: node server.js analyze all
+[2026-07-14T11:58:28.884Z] [INFO   ] 📄 Gerar Erros: node server.js generate-error-md
+[2026-07-14T11:58:30.079Z] [INFO   ] Socket conectado
+{
+  "socketId": "4DWzCRCRxY_IjAgkAAAB"
+}
+[2026-07-14T11:58:31.372Z] [INFO   ] Socket conectado
+{
+  "socketId": "_NC_6iedxUzpW_4_AAAE"
+}
+[2026-07-14T11:58:31.377Z] [INFO   ] Socket conectado
+{
+  "socketId": "bU1agwzMS4r3_3TGAAAF"
+}
+[2026-07-14T11:58:31.493Z] [INFO   ] Socket conectado
+{
+  "socketId": "Rz54x4hZBgzBSQDFAAAH"
+}
+[2026-07-14T11:58:31.539Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/notifications/unread-count"
+}
+[2026-07-14T11:59:30.217Z] [INFO   ] Socket desconectado
+{
+  "socketId": "Rz54x4hZBgzBSQDFAAAH"
+}
+[2026-07-14T11:59:30.222Z] [INFO   ] Socket conectado
+{
+  "socketId": "nCT3jFz6fsG3UCRXAAAJ"
+}
+[2026-07-14T11:59:30.249Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/me/notifications"
+}
+[2026-07-14T11:59:30.313Z] [WARN   ] 404 - Rota não encontrada
+{
+  "path": "/api/notifications/unread-count"
+}
+[2026-07-14T11:59:33.885Z] [INFO   ] Socket desconectado
+{
+  "socketId": "nCT3jFz6fsG3UCRXAAAJ"
+}
+[2026-07-14T11:59:33.890Z] [INFO   ] Socket conectado
+{
+  "socketId": "75xWsimUMZbVFrUmAAAL"
+}
+[2026-07-14T12:23:19.242Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T12:23:19.252Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 100,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T12:23:19.253Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T12:23:19.256Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T12:23:19.256Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T12:23:19.256Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T12:23:19.256Z] [INFO   ] 📝 Erros MD: node server.js generate-error-md
+[2026-07-14T12:25:27.998Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T12:25:28.001Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 100,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T12:25:28.001Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T12:25:28.004Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T12:25:28.004Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T12:25:28.004Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T12:25:28.004Z] [INFO   ] 📝 Erros MD: node server.js generate-error-md
+[2026-07-14T12:26:07.118Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T12:26:07.121Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 1000,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T12:26:07.121Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T12:26:07.124Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T12:26:07.124Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T12:26:07.124Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T12:26:07.124Z] [INFO   ] 📝 Erros MD: node server.js generate-error-md
+[2026-07-14T12:27:25.567Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T12:27:25.570Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 1000,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T12:27:25.571Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T12:27:25.876Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T12:27:25.876Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T12:27:25.876Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T12:27:25.877Z] [INFO   ] 📝 Erros MD: node server.js generate-error-md
+[2026-07-14T12:27:27.394Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T12:27:27.397Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 1000,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T12:27:27.398Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T12:27:27.552Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T12:27:27.553Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T12:27:27.553Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T12:27:27.553Z] [INFO   ] 📝 Erros MD: node server.js generate-error-md
+[2026-07-14T12:27:33.423Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T12:27:33.426Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 1000,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T12:27:33.426Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T12:27:33.579Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T12:27:33.579Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T12:27:33.579Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T12:27:33.579Z] [INFO   ] 📝 Erros MD: node server.js generate-error-md
+[2026-07-14T12:27:48.923Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T12:27:48.926Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 1000,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T12:27:48.927Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T12:27:49.152Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T12:27:49.152Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T12:27:49.152Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T12:27:49.152Z] [INFO   ] 📝 Erros MD: node server.js generate-error-md
+[2026-07-14T12:27:52.818Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T12:27:52.821Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 1000,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T12:27:52.821Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T12:27:52.975Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T12:27:52.975Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T12:27:52.975Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T12:27:52.975Z] [INFO   ] 📝 Erros MD: node server.js generate-error-md
+[2026-07-14T12:28:07.875Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T12:28:07.878Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 1000,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T12:28:07.878Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T12:28:08.100Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T12:28:08.100Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T12:28:08.101Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T12:28:08.101Z] [INFO   ] 📝 Erros MD: node server.js generate-error-md
+[2026-07-14T12:28:15.801Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T12:28:15.804Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 1000,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T12:28:15.804Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T12:28:16.028Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T12:28:16.028Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T12:28:16.029Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T12:28:16.029Z] [INFO   ] 📝 Erros MD: node server.js generate-error-md
+[2026-07-14T12:50:34.427Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T12:50:34.432Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 1000,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T12:50:34.432Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T12:50:34.729Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T12:50:34.729Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T12:50:34.729Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T12:50:34.729Z] [INFO   ] 📝 Erros MD: node server.js generate-error-md
+[2026-07-14T13:28:04.658Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T13:28:04.661Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 1000,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T13:28:04.661Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T13:28:04.969Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T13:28:04.969Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T13:28:04.969Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T13:28:04.969Z] [INFO   ] 📝 Erros MD: node server.js generate-error-md
+[2026-07-14T18:08:53.426Z] [ERROR  ] UnhandledRejection Error: getaddrinfo ENOTFOUND cpanel154.dnscpanel.com
+[2026-07-14T19:44:25.875Z] [INFO   ] 🚀 Iniciando servidor
+{
+  "env": "development",
+  "port": "7500"
+}
+[2026-07-14T19:44:25.881Z] [INFO   ] ✅ Pools de BD inicializados
+{
+  "dataPoolLimit": 1000,
+  "sessionPoolLimit": 100
+}
+[2026-07-14T19:44:25.881Z] [INFO   ] ✅ Session store inicializado
+[2026-07-14T19:44:26.182Z] [SUCCESS] ✓ Servidor na porta 7500
+[2026-07-14T19:44:26.182Z] [INFO   ] 📊 Logs em: ./logs/
+[2026-07-14T19:44:26.182Z] [INFO   ] 🔍 Diagnosticos: GET /health/logs
+[2026-07-14T19:44:26.182Z] [INFO   ] 📝 Erros MD: node server.js generate-error-md

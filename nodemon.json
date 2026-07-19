@@ -1,0 +1,48 @@
+{
+  "watch": [
+    "."
+  ],
+  "ignore": [
+    "node_modules",
+    "dist",
+    "build",
+    ".git",
+    ".env",
+    ".env.local",
+    ".env.*.local",
+    "*.log",
+    "logs/",
+    "tmp/",
+    "temp/",
+    ".DS_Store",
+    ".vscode/",
+    ".idea/",
+    "*.swp",
+    "*.swo",
+    "*~",
+    "coverage/",
+    ".nyc_output/",
+    
+    "saf-t.xml",
+    "saf-t-*.xml",
+    "*.xml.tmp",
+    
+    "images/",
+    "files/",
+    "videos/",
+    "assets/",
+    "public/",
+    "uploads/",
+    
+    "cache/",
+    "cache.db",
+    "*.sqlite",
+    "*.sqlite3",
+    
+    "seed*.lock",
+    "*.lock.json"
+  ],
+  "ext": "js,json,jsx,ts,tsx",
+  "delay": 500,
+  "legacyWatch": false
+}

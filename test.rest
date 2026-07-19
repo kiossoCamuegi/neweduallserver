@@ -1,0 +1,24 @@
+### VENDUS API TEST
+### Substitui API_KEY pela tua chave
+### Click "Send Request"
+
+@apiKey = c8029d1e9e6d01b312e09aad711310ad
+@auth = Basic c8029d1e9e6d01b312e09aad711310ad:
+
+ 
+GET https://www.vendus.co.ao/ws/v1.1/registers
+Authorization: @auth
+
+ 
+###
+GET https://www.vendus.co.ao/ws/v1.1/account
+Authorization: @auth
+
+ 
+###
+GET https://www.vendus.co.ao/ws/v1.1/registers/113682273
+Authorization: @auth
+ 
+###
+GET https://www.vendus.pt/ws/v1.1/registers
+Authorization: @auth

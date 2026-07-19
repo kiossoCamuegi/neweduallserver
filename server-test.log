@@ -1,0 +1,317 @@
+
+> eduall_server@0.0.0 start
+> node --max-old-space-size=4096 app.js
+
+[CACHE] CacheRoutes.js carregado — instância xvbjun — /Users/kiosso/Desktop/Meus Projetos/server/Functions/CacheRoutes.js
+[FineCron] Cron registado — execução diária às 08:00 (Africa/Luanda).
+<ref *1> Server {
+  _events: [Object: null prototype] {},
+  _eventsCount: 0,
+  _maxListeners: undefined,
+  _nsps: Map(1) {
+    '/' => Namespace {
+      _events: [Object: null prototype],
+      _eventsCount: 1,
+      _maxListeners: undefined,
+      sockets: Map(0) {},
+      _fns: [],
+      _ids: 0,
+      server: [Circular *1],
+      name: '/',
+      adapter: [Adapter],
+      [Symbol(shapeMode)]: false,
+      [Symbol(kCapture)]: false
+    }
+  },
+  parentNsps: Map(0) {},
+  parentNamespacesFromRegExp: Map(0) {},
+  _path: '/socket.io',
+  clientPathRegex: /^\/socket\.io\/socket\.io(\.msgpack|\.esm)?(\.min)?\.js(\.map)?(?:\?|$)/,
+  _connectTimeout: 45000,
+  _serveClient: true,
+  _parser: {
+    protocol: 5,
+    PacketType: {
+      '0': 'CONNECT',
+      '1': 'DISCONNECT',
+      '2': 'EVENT',
+      '3': 'ACK',
+      '4': 'CONNECT_ERROR',
+      '5': 'BINARY_EVENT',
+      '6': 'BINARY_ACK',
+      CONNECT: 0,
+      DISCONNECT: 1,
+      EVENT: 2,
+      ACK: 3,
+      CONNECT_ERROR: 4,
+      BINARY_EVENT: 5,
+      BINARY_ACK: 6
+    },
+    Encoder: [class Encoder],
+    Decoder: [class Decoder extends Emitter]
+  },
+  encoder: Encoder { replacer: undefined },
+  opts: {
+    cors: { origin: true, credentials: true },
+    cleanupEmptyChildNamespaces: false
+  },
+  _adapter: [class Adapter extends EventEmitter],
+  sockets: <ref *2> Namespace {
+    _events: [Object: null prototype] { connection: [Function (anonymous)] },
+    _eventsCount: 1,
+    _maxListeners: undefined,
+    sockets: Map(0) {},
+    _fns: [],
+    _ids: 0,
+    server: [Circular *1],
+    name: '/',
+    adapter: Adapter {
+      _events: [Object: null prototype] {},
+      _eventsCount: 0,
+      _maxListeners: undefined,
+      nsp: [Circular *2],
+      rooms: Map(0) {},
+      sids: Map(0) {},
+      encoder: [Encoder],
+      [Symbol(shapeMode)]: false,
+      [Symbol(kCapture)]: false
+    },
+    [Symbol(shapeMode)]: false,
+    [Symbol(kCapture)]: false
+  },
+  eio: Server {
+    _events: [Object: null prototype] {
+      connection: [Function: bound onconnection]
+    },
+    _eventsCount: 1,
+    _maxListeners: undefined,
+    middlewares: [ [Function: corsMiddleware] ],
+    clients: {},
+    clientsCount: 0,
+    opts: {
+      wsEngine: [class WebSocketServer extends EventEmitter],
+      pingTimeout: 20000,
+      pingInterval: 25000,
+      upgradeTimeout: 10000,
+      maxHttpBufferSize: 1000000,
+      transports: [Array],
+      allowUpgrades: true,
+      httpCompression: [Object],
+      cors: [Object],
+      allowEIO3: false,
+      cleanupEmptyChildNamespaces: false,
+      path: '/socket.io'
+    },
+    ws: WebSocketServer {
+      _events: [Object: null prototype],
+      _eventsCount: 1,
+      _maxListeners: undefined,
+      options: [Object],
+      _state: 0,
+      [Symbol(shapeMode)]: false,
+      [Symbol(kCapture)]: false
+    },
+    [Symbol(shapeMode)]: false,
+    [Symbol(kCapture)]: false
+  },
+  httpServer: <ref *3> Server {
+    _events: [Object: null prototype] {},
+    _eventsCount: 0,
+    _maxListeners: undefined,
+    _nsps: Map(1) { '/' => [Namespace] },
+    parentNsps: Map(0) {},
+    parentNamespacesFromRegExp: Map(0) {},
+    _path: '/socket.io',
+    clientPathRegex: /^\/socket\.io\/socket\.io(\.msgpack|\.esm)?(\.min)?\.js(\.map)?(?:\?|$)/,
+    _connectTimeout: 45000,
+    _serveClient: true,
+    _parser: {
+      protocol: 5,
+      PacketType: [Object],
+      Encoder: [class Encoder],
+      Decoder: [class Decoder extends Emitter]
+    },
+    encoder: Encoder { replacer: undefined },
+    opts: { cors: [Object], cleanupEmptyChildNamespaces: false },
+    _adapter: [class Adapter extends EventEmitter],
+    sockets: Namespace {
+      _events: [Object: null prototype],
+      _eventsCount: 4,
+      _maxListeners: undefined,
+      sockets: Map(0) {},
+      _fns: [],
+      _ids: 0,
+      server: [Circular *3],
+      name: '/',
+      adapter: [Adapter],
+      [Symbol(shapeMode)]: false,
+      [Symbol(kCapture)]: false
+    },
+    eio: Server {
+      _events: [Object: null prototype],
+      _eventsCount: 1,
+      _maxListeners: undefined,
+      middlewares: [Array],
+      clients: {},
+      clientsCount: 0,
+      opts: [Object],
+      ws: [WebSocketServer],
+      [Symbol(shapeMode)]: false,
+      [Symbol(kCapture)]: false
+    },
+    httpServer: Server {
+      maxHeaderSize: undefined,
+      insecureHTTPParser: undefined,
+      requestTimeout: 300000,
+      headersTimeout: 66000,
+      keepAliveTimeout: 65000,
+      connectionsCheckingInterval: 30000,
+      requireHostHeader: true,
+      joinDuplicateHeaders: undefined,
+      rejectNonStandardBodyWrites: false,
+      _events: [Object: null prototype],
+      _eventsCount: 5,
+      _maxListeners: undefined,
+      _connections: 0,
+      _handle: null,
+      _usingWorkers: false,
+      _workers: [],
+      _unref: false,
+      _listeningId: 1,
+      allowHalfOpen: true,
+      pauseOnConnect: false,
+      noDelay: true,
+      keepAlive: false,
+      keepAliveInitialDelay: 0,
+      highWaterMark: 16384,
+      httpAllowHalfOpen: false,
+      timeout: 0,
+      maxHeadersCount: null,
+      maxRequestsPerSocket: 0,
+      [Symbol(IncomingMessage)]: [Function: IncomingMessage],
+      [Symbol(ServerResponse)]: [Function: ServerResponse],
+      [Symbol(shapeMode)]: false,
+      [Symbol(kCapture)]: false,
+      [Symbol(async_id_symbol)]: -1,
+      [Symbol(kUniqueHeaders)]: null
+    },
+    engine: Server {
+      _events: [Object: null prototype],
+      _eventsCount: 1,
+      _maxListeners: undefined,
+      middlewares: [Array],
+      clients: {},
+      clientsCount: 0,
+      opts: [Object],
+      ws: [WebSocketServer],
+      [Symbol(shapeMode)]: false,
+      [Symbol(kCapture)]: false
+    },
+    _corsMiddleware: [Function: corsMiddleware],
+    [Symbol(shapeMode)]: false,
+    [Symbol(kCapture)]: false
+  },
+  engine: Server {
+    _events: [Object: null prototype] {
+      connection: [Function: bound onconnection]
+    },
+    _eventsCount: 1,
+    _maxListeners: undefined,
+    middlewares: [ [Function: corsMiddleware] ],
+    clients: {},
+    clientsCount: 0,
+    opts: {
+      wsEngine: [class WebSocketServer extends EventEmitter],
+      pingTimeout: 20000,
+      pingInterval: 25000,
+      upgradeTimeout: 10000,
+      maxHttpBufferSize: 1000000,
+      transports: [Array],
+      allowUpgrades: true,
+      httpCompression: [Object],
+      cors: [Object],
+      allowEIO3: false,
+      cleanupEmptyChildNamespaces: false,
+      path: '/socket.io'
+    },
+    ws: WebSocketServer {
+      _events: [Object: null prototype],
+      _eventsCount: 1,
+      _maxListeners: undefined,
+      options: [Object],
+      _state: 0,
+      [Symbol(shapeMode)]: false,
+      [Symbol(kCapture)]: false
+    },
+    [Symbol(shapeMode)]: false,
+    [Symbol(kCapture)]: false
+  },
+  _corsMiddleware: [Function: corsMiddleware],
+  [Symbol(shapeMode)]: false,
+  [Symbol(kCapture)]: false
+}
+[34m[VENDUS][0m Carregando configuração de criptografia...
+[35m🟣 [VENDUS] Chaves cripto já carregadas no process.env[0m
+(node:88905) Warning: Accessing non-existent property 'HTTPApp' of module exports inside circular dependency
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:88905) Warning: Accessing non-existent property 'SharedSocketSession' of module exports inside circular dependency
+(node:88905) Warning: Accessing non-existent property 'SocketCors' of module exports inside circular dependency
+(node:88905) Warning: Accessing non-existent property 'HTTPApp' of module exports inside circular dependency
+(node:88905) Warning: Accessing non-existent property 'SharedSocketSession' of module exports inside circular dependency
+(node:88905) Warning: Accessing non-existent property 'SocketCors' of module exports inside circular dependency
+(node:88905) Warning: Accessing non-existent property 'HTTPApp' of module exports inside circular dependency
+(node:88905) Warning: Accessing non-existent property 'SharedSocketSession' of module exports inside circular dependency
+(node:88905) Warning: Accessing non-existent property 'SocketCors' of module exports inside circular dependency
+(node:88905) Warning: Accessing non-existent property 'HTTPApp' of module exports inside circular dependency
+(node:88905) Warning: Accessing non-existent property 'SharedSocketSession' of module exports inside circular dependency
+(node:88905) Warning: Accessing non-existent property 'SocketCors' of module exports inside circular dependency
+(node:88905) Warning: Accessing non-existent property 'HTTPApp' of module exports inside circular dependency
+(node:88905) Warning: Accessing non-existent property 'SharedSocketSession' of module exports inside circular dependency
+(node:88905) Warning: Accessing non-existent property 'SocketCors' of module exports inside circular dependency
+[34m[SAF-T][0m Preparando diretório de SAF-T...
+[2026-07-17T08:41:43.886Z] [CACHE:xvbjun] A usar adapter: SQLite
+[2026-07-17T08:41:43.889Z] [CACHE:xvbjun] ✅ Self-test PASSOU — cache operacional (driver: sqlite)
+[32m[1m✅ Servidor na porta 7500[0m [90m[09:41:43][0m
+💛🧡❤ Database connected successfully!
+[90m[TCP #1] nova ligação de ::1:51118 [09:41:44][0m
+[90m[TCP #2] nova ligação de ::1:51119 [09:41:44][0m
+[90m[TCP #3] nova ligação de ::1:51120 [09:41:44][0m
+🔌 Socket conectado: HelTp22jRr6owUc1AAAC
+🔌 Socket conectado: pJg-PY-p62aVpTdwAAAE
+[90m[TCP #4] nova ligação de ::1:51121 [09:41:44][0m
+[38;5;208m[1m→ IN [0m[38;5;208mGET[0m /api/notifications/unread-count [90m[09:41:44][0m
+🔌 Socket conectado: ZHuGGbdMibnUvnezAAAF
+[90m[TCP #5] nova ligação de ::1:51122 [09:41:44][0m
+[90m[TCP #6] nova ligação de ::1:51123 [09:41:44][0m
+🔌 Socket conectado: BWm0cVHbGhtTAqfKAAAH
+[90m[TCP #7] nova ligação de ::1:51125 [09:41:44][0m
+[90m[TCP #8] nova ligação de ::1:51126 [09:41:44][0m
+[34m[1m✦ 404[0m[34m GET[0m /api/notifications/unread-count [34m404[0m [1m[34m0.304s[0m
+[0mGET /api/notifications/unread-count [33m404 [0m168.079 ms - 32[0m
+[90m[TCP #9] nova ligação de ::ffff:127.0.0.1:51127 [09:41:44][0m
+[90m[TCP #10] nova ligação de ::ffff:127.0.0.1:51128 [09:41:44][0m
+🔌 Socket conectado: 7m4s88whSkIKxqOTAAAK
+🔌 Socket conectado: 2osT704NadQIlz3nAAAL
+[90m[TCP #11] nova ligação de ::ffff:127.0.0.1:51129 [09:41:44][0m
+🔌 Socket conectado: 1YiiZYvg8N6NhPTwAAAN
+[90m[TCP #12] nova ligação de ::ffff:127.0.0.1:51130 [09:41:44][0m
+🔌 Socket conectado: mITkap0Z7sjDfwazAAAP
+[90m[TCP #13] nova ligação de ::ffff:127.0.0.1:51131 [09:41:44][0m
+🔌 Socket conectado: xsy71VNJHgc8Q4U7AAAR
+[90m[TCP #14] nova ligação de ::ffff:127.0.0.1:51132 [09:41:44][0m
+[90m[TCP #15] nova ligação de ::ffff:127.0.0.1:51133 [09:41:44][0m
+[90m[TCP #16] nova ligação de ::ffff:127.0.0.1:51134 [09:41:44][0m
+[38;5;208m[1m→ IN [0m[38;5;208mGET[0m /api/notifications/unread-count [90m[09:41:44][0m
+[34m[1m✦ 404[0m[34m GET[0m /api/notifications/unread-count [34m404[0m [1m[34m0.105s[0m
+[0mGET /api/notifications/unread-count [33m404 [0m75.598 ms - 32[0m
+🔌 Socket conectado: Lm1G0Pvne7oWw013AAAT
+[90m[TCP #17] nova ligação de ::ffff:127.0.0.1:51136 [09:41:45][0m
+🔌 Socket conectado: iWrVzgEJUYfDbvDgAAAV
+[90m[TCP #18] nova ligação de ::ffff:127.0.0.1:51137 [09:41:46][0m
+[90m[TCP #16] ligação fechada  [09:42:50][0m
+[90m[TCP #2] ligação fechada  [09:42:50][0m
+[90m[TCP #5] ligação fechada  [09:42:50][0m
+[90m[TCP #3] ligação fechada  [09:42:50][0m
+[90m[TCP #4] ligação fechada  [09:42:50][0m
+[90m[TCP #9] ligação fechada  [09:42:52][0m
+[90m[TCP #10] ligação fechada  [09:42:52][0m

@@ -1,0 +1,3561 @@
+ 
+
+
+
+
+
+ const ExecuteQuery = require("../Functions/ExecuteQuery");
+const { FACTPLUS_GenerateDocumentBody, FACTPLUS_decodificarMesEAno, FACTPLUS_formatarPreco, FACTPLUS_createDocumentFunction } = require("../Functions/FACTPLUS_HELPERS");
+const { VENDUS_CreateInvoiceCodeAndDoc } = require("../Functions/VENDUS");
+const { RegisterAuditAction } = require("./Auditory");
+const { getSingleStudentByInstitute } = require("./Students");
+ 
+const PAYMENT_TYPE_BALANCE = 4;  
+
+  
+ async function getOperatorData(res, userId) {
+   if (!userId) return null;
+ 
+   try {
+     const query = `
+       SELECT ed_user_account_id, ed_user_account_name
+       FROM eduall_user_accounts
+       WHERE ed_user_account_id = ?
+         AND ed_user_account_deleted = 0
+       LIMIT 1
+     `;
+ 
+     const [operator] = await ExecuteQuery(res, query, [userId], true, {
+       db: "eduall_user_accounts",
+       type: "select",
+       data: { operatorLookup: true }
+     });
+ 
+     if (operator) {
+       return {
+         id: operator.ed_user_account_id,
+         name: operator.ed_user_account_name || "Operador Desconhecido"
+       };
+     }
+ 
+     return null;
+   } catch (error) {
+     console.warn("Erro ao buscar dados do operador:", error.message);
+     return null;
+   }
+ }
+  
+ // ════════════════════════════════════════════════════════════════════════════════
+ // 3. PAGAMENTO DE PROPINAS
+ // ════════════════════════════════════════════════════════════════════════════════
+ 
+ const GetFeepayments = async (req, res) => {
+   try {
+     const institute = req.session.user.eduall_user_session_curentinstitute;
+     const operatorId = req.session?.user?.eduall_user_session_ID;
+     const operator = await getOperatorData(res, operatorId);
+ 
+     const query = `
+       SELECT 
+         efp.*,
+         st.ed_student_id,
+         st.ed_student_name,
+         st.ed_student_code,
+         s.ed_service_id,
+         s.ed_service_title,
+         c.ed_coin_code,
+         c.ed_coin_code,
+         ua.ed_user_account_name AS operator_name,
+         ua.ed_user_account_id AS operator_id,
+         (
+           SELECT JSON_ARRAYAGG(
+             JSON_OBJECT(
+               'id', ex.ed_fee_additional_id,
+               'description', ex.description,
+               'amount', ex.amount,
+               'created_at', ex.created_at
+             )
+           )
+           FROM eduall_fee_additional_items ex
+           WHERE ex.invoice_code = efp.ed_fee_payment_invoiceCode
+             AND ex.institute_code = efp.ed_fee_payment_institute_code
+             AND COALESCE(ex.ed_fee_additional_deleted,0)=0
+         ) AS extras
+       FROM eduall_fees_payments efp
+       LEFT JOIN eduall_students st
+         ON efp.ed_fee_payment_student = st.ed_student_id
+         AND st.ed_student_deleted = 0
+       LEFT JOIN eduall_services s
+         ON efp.ed_fee_payment_service = s.ed_service_id
+         AND s.ed_service_deleted = 0
+       LEFT JOIN eduall_coins c
+         ON c.ed_coin_institute_code = ?
+       LEFT JOIN eduall_user_accounts ua
+         ON ua.ed_user_account_id = ?
+         AND ua.ed_user_account_deleted = 0
+       WHERE efp.ed_fee_payment_deleted = 0
+         AND efp.ed_fee_payment_institute_code = ?
+       ORDER BY efp.ed_fee_payment_registerDate DESC
+     `;
+ 
+     const PARAMS = [institute, operatorId, institute];
+ 
+     const rows = await ExecuteQuery(res, query, PARAMS, true, {
+       db: "eduall_fees_payments",
+       type: "select",
+       data: req
+     });
+ 
+     // Adicionar informação de operador
+     const enrichedRows = rows.map(row => ({
+       ...row,
+       operator: operator?.name || "operator:null",
+       operator_id: operator?.id || null
+     }));
+ 
+     res.status(200).json(enrichedRows);
+   } catch (error) {
+     res.status(500).json({
+       success: false,
+       message: "Falha ao buscar os pagamentos de taxa!",
+       error: error.message
+     });
+   }
+ };
+ 
+ 
+
+const RegisterFeepayment = async (req, res) => {
+ 
+  // ── Helpers internos ────────────────────────────────────────────────────────
+  
+  /**
+   * Calcula totais de uma linha (desconto, multa, IVA)
+   */
+  function computeItemTotals({ 
+    price, 
+    discountPct = 0, 
+    fineType = 0, 
+    fineValue = 0, 
+    applyIVA = false, 
+    instituteIVAPct = 0 
+  }) {
+    const discountAmount     = discountPct > 0 ? (price * discountPct) / 100 : 0;
+    const priceAfterDiscount = Math.max(0, price - discountAmount);
+    const fineAmount         = fineType * 1 === 1
+      ? fineValue * 1
+      : fineValue > 0 ? (priceAfterDiscount * fineValue) / 100 : 0;
+    const ivaAmount          = applyIVA ? (priceAfterDiscount * instituteIVAPct) / 100 : 0;
+    const lineTotal          = priceAfterDiscount + fineAmount + ivaAmount;
+    
+    return { 
+      discountAmount, 
+      fineAmount, 
+      ivaAmount, 
+      lineTotal, 
+      baseAfterDiscount: priceAfterDiscount 
+    };
+  }
+ 
+  /**
+   * Formata mês (formato: "0.2025" → "Janeiro / 2025")
+   */
+  function monthLabel(mdotY) {
+    const m = String(mdotY).split(".")[0] * 1;
+    const y = String(mdotY).split(".")[1] * 1;
+    const N = [
+      "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    ];
+    if (Number.isFinite(m) && Number.isFinite(y)) return `${N[m]} / ${y}`;
+    return String(mdotY);
+  }
+ 
+  /**
+   * Valida e sanitiza serviços extras
+   */
+  function sanitizeExtras(extras) {
+    if (!Array.isArray(extras)) return [];
+    return extras
+      .map((e) => ({
+        name:  String(e?.name  || "").trim(),
+        value: Number(String(e?.value ?? "").toString().replace(",", ".")),
+      }))
+      .filter((e) => e.name.length > 0 && Number.isFinite(e.value) && e.value > 0);
+  }
+ 
+  // ── Corpo principal ─────────────────────────────────────────────────────────
+  try {
+    const sessionInstitute = req.session?.user?.eduall_user_session_curentinstitute;
+    const operatorId       = req.session?.user?.eduall_user_session_ID;
+    const operator         = await getOperatorData(res, operatorId);
+ 
+    if (!sessionInstitute) {
+      return res.status(401).json({ success: false, msg: "Sessão inválida." });
+    }
+ 
+    const {
+      studentId, 
+      academicYearId, 
+      paymentType,
+      bankName     = "",
+      paymentPlace = "",
+      bordereux    = "",
+      items        = [],
+      extraServices = [],
+      balanceUsed  = 0,  // ← NOVO: créditos aplicados pelo utilizador (pode ser PARCIAL)
+    } = req.body || {};
+ 
+    if (!studentId || !academicYearId || !Array.isArray(items) || !items.length) {
+      return res.status(400).json({ success: false, msg: "Dados incompletos." });
+    }
+ 
+    // Sanitizar e normalizar entrada
+    const addons      = sanitizeExtras(extraServices);
+    const balanceUsedValue = Math.max(0, parseFloat(balanceUsed) || 0);
+ 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 1) BUSCAR DADOS DO ALUNO
+    // ─────────────────────────────────────────────────────────────────────────
+    const studentSql = `
+      SELECT
+        s.ed_student_id, s.ed_student_code, s.ed_student_name, s.ed_student_identityCard,
+        s.ed_student_address, s.ed_student_email, s.ed_student_class, s.ed_student_institute_code,
+        cls.ed_class_title, room.ed_classroom_title, crs.ed_course_title, ay.ed_academic_year_title
+      FROM eduall_students s
+      LEFT JOIN eduall_class cls ON cls.ed_class_id = s.ed_student_class AND COALESCE(cls.ed_class_deleted,0)=0
+      LEFT JOIN eduall_classrooms room ON room.ed_classroom_id = cls.ed_class_room AND COALESCE(room.ed_classroom_deleted,0)=0
+      LEFT JOIN eduall_courses crs ON crs.ed_course_id = cls.ed_class_course AND COALESCE(crs.ed_course_deleted,0)=0
+      LEFT JOIN eduall_academic_year ay ON ay.ed_academic_year_id = cls.ed_class_year AND COALESCE(ay.ed_academic_year_deleted,0)=0
+      WHERE COALESCE(s.ed_student_deleted,0)=0
+        AND s.ed_student_id = ?
+        AND s.ed_student_institute_code = ?
+      LIMIT 1
+    `;
+    const [student] = await ExecuteQuery(res, studentSql, [studentId, sessionInstitute], true);
+    if (!student) {
+      return res.status(404).json({ success: false, msg: "Estudante não encontrado." });
+    }
+ 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 2) VERIFICAR DUPLICATAS DE MESES
+    // ─────────────────────────────────────────────────────────────────────────
+    const months        = [...new Set(items.map((i) => i.month))];
+    const placeholdersM = months.map((_) => "?").join(",");
+    const dupSql        = `
+      SELECT ed_fee_payment_month AS month
+      FROM eduall_fees_payments
+      WHERE ed_fee_payment_institute_code = ?
+        AND ed_fee_payment_student        = ?
+        AND ed_fee_payment_academic_year  = ?
+        AND ed_fee_payment_month IN (${placeholdersM})
+        AND COALESCE(ed_fee_payment_deleted,0) = 0
+      GROUP BY ed_fee_payment_month
+    `;
+    const dupRows = await ExecuteQuery(
+      res, 
+      dupSql, 
+      [sessionInstitute, studentId, academicYearId, ...months], 
+      true
+    );
+    if (dupRows?.length) {
+      const paidLabels = dupRows.map((r) => monthLabel(r.month));
+      return res.status(409).json({
+        success: false,
+        code: "DUPLICATE_MONTHS",
+        msg: `Os seguintes meses já foram pagos: ${paidLabels.join(", ")}.`,
+        monthsPaid: dupRows.map((r) => String(r.month)),
+      });
+    }
+ 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 3) BUSCAR IVA DA INSTITUIÇÃO
+    // ─────────────────────────────────────────────────────────────────────────
+    const ivaSql      = `SELECT COALESCE(ed_institute_iva_value,0) AS iva, ed_institute_name FROM eduall_institutes WHERE ed_institute_code=? LIMIT 1`;
+    const [ivaRow]    = await ExecuteQuery(res, ivaSql, [sessionInstitute], true);
+    const instituteIVAPct = ivaRow?.iva * 1 || 0;
+    const instituteName   = ivaRow?.ed_institute_name || "";
+ 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 4) CALCULAR TOTAIS POR LINHA E SOMAR TOTAL GERAL
+    // ─────────────────────────────────────────────────────────────────────────
+    const invoiceLines = [];
+    const dbRows       = [];
+    let grandTotal     = 0;
+ 
+    for (const it of items) {
+      const { serviceId, month, price, discountPct = 0, fineType = 0, fineValue = 0, applyIVA = 0 } = it;
+      const calc = computeItemTotals({
+        price: price * 1, 
+        discountPct, 
+        fineType, 
+        fineValue,
+        applyIVA: !!applyIVA, 
+        instituteIVAPct,
+      });
+ 
+      // Linha da propina
+      invoiceLines.push({
+        itemcode: `EDSERV-${serviceId}`,
+        title:    `Propina ${monthLabel(month)}`,
+        price:    Number(calc.baseAfterDiscount.toFixed(2)),
+        tax:      applyIVA ? 1 : 0,
+        discount: 0,
+        quantity: "1",
+      });
+ 
+      // Linha da multa (se houver)
+      if (calc.fineAmount > 0) {
+        invoiceLines.push({
+          itemcode: "FINE001",
+          title:    "Multa por atraso",
+          price:    Number(calc.fineAmount.toFixed(2)),
+          tax:      0, 
+          discount: 0, 
+          quantity: "1",
+        });
+      }
+ 
+      grandTotal += calc.lineTotal;
+ 
+      // Registar para inserção na BD
+      dbRows.push({
+        studentId, 
+        serviceId,
+        price:       price * 1,
+        month,
+        discountPct,
+        type:        paymentType,
+        bankName,
+        academicYearId,
+        place:       paymentPlace,
+        balance:     Number(calc.lineTotal.toFixed(2)),
+        bordereux,
+        ivaPct:      applyIVA ? instituteIVAPct : 0,
+        fineType,
+        fineValue:   Number(calc.fineAmount.toFixed(2)),
+      });
+    }
+ 
+    // Adicionar serviços extras ao total
+    if (addons.length) {
+      addons.forEach((ex, idx) => {
+        invoiceLines.push({
+          itemcode: `EXTRA-${String(idx + 1).padStart(2, "0")}`,
+          title:    ex.name,
+          price:    Number(Number(ex.value).toFixed(2)),
+          tax:      0, 
+          discount: 0, 
+          quantity: "1",
+        });
+        grandTotal += ex.value * 1;
+      });
+    }
+ 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 5) CONSTRUIR OBSERVAÇÕES (inclui detalhes do saldo PARCIAL se aplicável)
+    // ─────────────────────────────────────────────────────────────────────────
+    const obsParts = [];
+    obsParts.push(`Nº matrícula: ${student.ed_student_code || "-"}`);
+    if (student.ed_class_title)        obsParts.push(`Turma: ${student.ed_class_title}`);
+    if (student.ed_classroom_title)    obsParts.push(`Sala: ${student.ed_classroom_title}`);
+    if (student.ed_course_title)       obsParts.push(`Curso: ${student.ed_course_title}`);
+    if (student.ed_academic_year_title) obsParts.push(`Ano letivo: ${student.ed_academic_year_title}`);
+    if (instituteName)                 obsParts.push(`Instituição: ${instituteName}`);
+    if (operator)                      obsParts.push(`Operador: ${operator.name}`);
+ 
+    // ── BLOCO CRÍTICO: DETALHAR O SALDO PARCIAL ──────────────────────────────
+    if (Number(paymentType) === PAYMENT_TYPE_BALANCE && balanceUsedValue > 0) {
+      const coin            = ""; // A moeda vem do campo da fatura; aqui apenas numérico
+      const totalFormatted  = grandTotal.toFixed(2);
+      const balanceFormatted = balanceUsedValue.toFixed(2);
+      const remaining       = Math.max(0, grandTotal - balanceUsedValue);
+ 
+      obsParts.push("---");
+      obsParts.push("Forma de pagamento: Saldo do aluno (PARCIAL)");
+      obsParts.push(`Total da fatura: ${totalFormatted}`);
+      obsParts.push(`Saldo do aluno utilizado: ${balanceFormatted}`);
+ 
+      if (remaining > 0) {
+        obsParts.push(`Valor restante (a cobrar por outro método): ${remaining.toFixed(2)}`);
+      } else {
+        obsParts.push("Fatura totalmente coberta pelo saldo do aluno.");
+      }
+    }
+ 
+    const obs = obsParts.join("\n");
+ 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 6) DADOS DO CLIENTE PARA A FATURA
+    // ─────────────────────────────────────────────────────────────────────────
+    const customer = {
+      name:      student.ed_student_name         || "",
+      fiscal_id: student.ed_student_identityCard || "",
+      address:   student.ed_student_address      || "",
+      email:     student.ed_student_email        || "",
+    };
+ 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 7) CRIAR FATURA (Vendus / sistema de faturação externo)
+    // ─────────────────────────────────────────────────────────────────────────
+    const vendus = await VENDUS_CreateInvoiceCodeAndDoc(
+      req, 
+      customer, 
+      invoiceLines, 
+      paymentType, 
+      obs
+    );
+    if (!vendus?.number) {
+      return res.status(500).json({ success: false, msg: "Falha ao criar fatura." });
+    }
+ 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 8) TRANSAÇÃO NA BASE DE DADOS
+    // ─────────────────────────────────────────────────────────────────────────
+    await ExecuteQuery(res, "START TRANSACTION", [], false);
+ 
+    try {
+      // 8.a) INSERIR LINHAS DE PROPINA
+      const insertSql = `
+        INSERT INTO eduall_fees_payments (
+          ed_fee_payment_student,
+          ed_fee_payment_service,
+          ed_fee_payment_price,
+          ed_fee_payment_month,
+          ed_fee_payment_discount,
+          ed_fee_payment_type,
+          ed_fee_payment_bank,
+          ed_fee_payment_academic_year,
+          ed_fee_payment_place,
+          ed_fee_payment_balance,
+          ed_fee_payment_bordereux,
+          ed_fee_payment_iva,
+          ed_fee_payment_code,
+          ed_fee_payment_fineType,
+          ed_fee_payment_fineValue,
+          ed_fee_payment_invoiceCode,
+          ed_fee_payment_invoiceFile,
+          ed_fee_payment_institute_code,
+          ed_fee_payment_operator,
+          ed_fee_payment_operator_id
+        ) VALUES
+        ${dbRows.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(",")}
+      `;
+      const params = [];
+      for (const r of dbRows) {
+        params.push(
+          r.studentId, 
+          r.serviceId, 
+          r.price, 
+          r.month, 
+          r.discountPct, 
+          r.type, 
+          r.bankName,
+          r.academicYearId, 
+          r.place, 
+          r.balance, 
+          r.bordereux, 
+          r.ivaPct, 
+          null, 
+          r.fineType,
+          r.fineValue, 
+          vendus.number, 
+          vendus.id, 
+          sessionInstitute,
+          operator?.name || "operator:null",
+          operator?.id   || null
+        );
+      }
+      await ExecuteQuery(res, insertSql, params, false);
+ 
+      // 8.b) PERSISTIR EXTRAS
+      if (addons.length) {
+        try {
+          const addSql = `
+            INSERT INTO eduall_fee_additional_items
+              (student_id, academic_year_id, description, amount, invoice_code, invoice_id, institute_code, operator, operator_id)
+            VALUES
+              ${addons.map(() => "(?,?,?,?,?,?,?,?,?)").join(",")}
+          `;
+          const addParams = [];
+          addons.forEach((a) => {
+            addParams.push(
+              studentId, 
+              academicYearId, 
+              a.name,
+              Number(Number(a.value).toFixed(2)),
+              vendus.number, 
+              vendus.id, 
+              sessionInstitute,
+              operator?.name || "operator:null",
+              operator?.id   || null
+            );
+          });
+          await ExecuteQuery(res, addSql, addParams, false);
+        } catch (auxErr) {
+          console.warn("Persistência de extras ignorada:", auxErr?.message || auxErr);
+        }
+      }
+ 
+      // ─────────────────────────────────────────────────────────────────────
+      // 8.c) DEBITAR SALDO DO ALUNO (SE PAGAMENTO POR SALDO & SALDO > 0)
+      // ─────────────────────────────────────────────────────────────────────
+      if (Number(paymentType) === PAYMENT_TYPE_BALANCE && balanceUsedValue > 0) {
+        try {
+          await ensureBalanceRow(res, studentId, sessionInstitute);
+ 
+          // LOCK + LER SALDO ATUAL
+          const [current] = await ExecuteQuery(
+            res,
+            `SELECT sb_balance, sb_currency FROM eduall_student_balance
+             WHERE sb_student_id = ? AND sb_institute_code = ? FOR UPDATE`,
+            [studentId, sessionInstitute],
+            true
+          );
+ 
+          const balanceBefore = parseFloat(current?.sb_balance ?? 0);
+          const currency      = current?.sb_currency || "AOA";
+ 
+          // ✓ VALIDAÇÃO CRÍTICA: saldo disponível ≥ saldo a usar
+          if (balanceUsedValue > balanceBefore) {
+            // Rejeitar se operador tentar usar mais do que existe
+            await ExecuteQuery(res, "ROLLBACK", [], false);
+            return res.status(422).json({
+              success: false,
+              msg: `Saldo insuficiente. Saldo atual: ${balanceBefore} ${currency}. Tentou usar: ${balanceUsedValue} ${currency}.`,
+              balance: balanceBefore,
+              requested: balanceUsedValue,
+            });
+          }
+ 
+          const balanceAfter = Number((balanceBefore - balanceUsedValue).toFixed(2));
+          const remaining    = Math.max(0, grandTotal - balanceUsedValue);
+ 
+          // ─ DESCRIÇÃO DETALHADA DO LOG ─
+          let deductDesc = `Pagamento parcial de propina(s) — Fatura ${vendus.number}. `;
+          deductDesc    += `Créditos usados: ${balanceUsedValue.toFixed(2)} ${currency}`;
+          deductDesc    += ` (total da fatura: ${grandTotal.toFixed(2)} ${currency})`;
+          if (remaining > 0) {
+            deductDesc  += `. Restante a pagar por outro método: ${remaining.toFixed(2)} ${currency}.`;
+          } else {
+            deductDesc  += `. Fatura totalmente coberta pelo saldo.`;
+          }
+ 
+          // ATUALIZAR SALDO
+          await ExecuteQuery(
+            res,
+            `UPDATE eduall_student_balance SET sb_balance = ?
+             WHERE sb_student_id = ? AND sb_institute_code = ?`,
+            [balanceAfter, studentId, sessionInstitute],
+            false
+          );
+ 
+          // REGISTAR LOG DETALHADO
+          await ExecuteQuery(
+            res,
+            `INSERT INTO eduall_student_balance_logs
+               (sb_log_student_id, sb_log_institute, sb_log_type, sb_log_category,
+                sb_log_amount, sb_log_balance_before, sb_log_balance_after,
+                sb_log_description, sb_log_reference, sb_log_user_id)
+             VALUES (?,?,?,?,?,?,?,?,?,?)`,
+            [
+              studentId, 
+              sessionInstitute, 
+              "deduct", 
+              "propinas",
+              balanceUsedValue, 
+              balanceBefore, 
+              balanceAfter,
+              deductDesc, 
+              vendus.number || null,
+              operatorId || null,
+            ],
+            false
+          );
+ 
+        } catch (balanceErr) {
+          // Falha não-crítica no saldo — apenas registar aviso
+          console.error(
+            "Erro ao debitar saldo (não crítico):", 
+            balanceErr?.message || balanceErr
+          );
+        }
+      }
+ 
+      // ─────────────────────────────────────────────────────────────────────
+      // 9) AUDITORIA
+      // ─────────────────────────────────────────────────────────────────────
+      const auditDesc = `[${operator?.name || "Desconhecido"}] Registou ${dbRows.length} linha(s) + ${addons.length} extra(s) para aluno ${student.ed_student_code}. Fatura ${vendus.number}. Total: ${grandTotal.toFixed(2)}${balanceUsedValue > 0 ? `. Saldo usado: ${balanceUsedValue.toFixed(2)}` : ""}.`;
+      
+      await RegisterAuditAction({
+        session:     req.session,
+        action:      1,
+        form:        "Pagamentos de propinas (lote)",
+        description: auditDesc,
+      });
+ 
+      // COMMIT DA TRANSAÇÃO
+      await ExecuteQuery(res, "COMMIT", [], false);
+ 
+      // ─────────────────────────────────────────────────────────────────────
+      // 10) RESPOSTA AO CLIENTE
+      // ─────────────────────────────────────────────────────────────────────
+      return res.status(200).json({
+        success:        true,
+        invoice:        vendus,
+        inserted:       dbRows.length,
+        extrasInserted: addons.length,
+        extras:         addons,
+        total:          Number(grandTotal.toFixed(2)),
+        balanceUsed:    balanceUsedValue > 0 ? Number(balanceUsedValue.toFixed(2)) : 0,
+        remaining:      Math.max(0, grandTotal - balanceUsedValue),
+        operator:       operator?.name || "operator:null",
+      });
+ 
+    } catch (txErr) {
+      // Falha na transação — fazer rollback
+      await ExecuteQuery(res, "ROLLBACK", [], false);
+      throw txErr;
+    }
+ 
+  } catch (err) {
+    try { await ExecuteQuery(res, "ROLLBACK", [], false); } catch {}
+    console.error("RegisterFeepayment error:", err);
+    return res.status(500).json({ 
+      success: false, 
+      msg: "Erro no processamento.", 
+      error: String(err?.message || err) 
+    });
+  }
+};
+ 
+
+
+const GetSingleFeepayment = async (req, res) => {
+  try {
+    const { ID } = req.params;
+    const institute = req.session.user.eduall_user_session_curentinstitute;
+
+    const query = `
+      SELECT 
+        p.*, srv.ed_service_title, c.ed_coin_code,
+        (
+          SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', ex.ed_fee_additional_id,
+              'description', ex.description,
+              'amount', ex.amount
+            )
+          )
+          FROM eduall_fee_additional_items ex
+          WHERE ex.invoice_code = p.ed_fee_payment_invoiceCode
+            AND ex.institute_code = p.ed_fee_payment_institute_code
+            AND COALESCE(ex.ed_fee_additional_deleted,0)=0
+        ) AS extras
+      FROM eduall_fees_payments p
+      LEFT JOIN eduall_services srv ON p.ed_fee_payment_service = srv.ed_service_id
+      LEFT JOIN eduall_coins c ON c.ed_coin_institute_code = ?
+      WHERE p.ed_fee_payment_deleted = 0
+        AND p.ed_fee_payment_id = ?
+        AND p.ed_fee_payment_institute_code = ?
+      LIMIT 1;
+    `;
+
+    const PARAMS = [institute, ID, institute];
+    const rows = await ExecuteQuery(res, query, PARAMS, true, {
+      db: "eduall_fees_payments", type: "select", data: req
+    });
+
+    res.status(200).json(rows[0] || {});
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Falha ao buscar o pagamento de taxa!",
+      error: error.message
+    });
+  }
+};
+
+
+const GetSinglePaidMonth = async (req, res) => {
+  try {
+    const { MONTH, STUDENTCODE } = req.params;
+    const institute = req.session.user.eduall_user_session_curentinstitute;
+
+    const query = `
+      SELECT 
+        p.*, srv.ed_service_title, c.ed_coin_code,
+        (
+          SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', ex.ed_fee_additional_id,
+              'description', ex.description,
+              'amount', ex.amount
+            )
+          )
+          FROM eduall_fee_additional_items ex
+          WHERE ex.invoice_code = p.ed_fee_payment_invoiceCode
+            AND ex.institute_code = p.ed_fee_payment_institute_code
+            AND COALESCE(ex.ed_fee_additional_deleted,0)=0
+        ) AS extras
+      FROM eduall_fees_payments p
+      LEFT JOIN eduall_services srv ON p.ed_fee_payment_service = srv.ed_service_id
+      LEFT JOIN eduall_coins c ON c.ed_coin_id = srv.ed_service_coin
+      WHERE p.ed_fee_payment_deleted = 0
+        AND p.ed_fee_payment_month = ?
+        AND p.ed_fee_payment_student = ?
+        AND p.ed_fee_payment_institute_code = ?;
+    `;
+
+    const PARAMS = [MONTH, STUDENTCODE, institute];
+    const rows = await ExecuteQuery(res, query, PARAMS, true, {
+      db: "eduall_fees_payments", type: "select", data: req
+    });
+
+    res.status(200).json(rows);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Falha ao buscar o pagamento do mês!",
+      error: error.message
+    });
+  }
+};
+
+
+
+ const GetSinglePayment = async (req, res) => {
+  try {
+    const { ID } = req.params;
+    const institute = req.session.user.eduall_user_session_curentinstitute;
+
+    const query = `
+      SELECT 
+        p.*, s.ed_student_name, srv.ed_service_title, c.ed_coin_code,
+        (
+          SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', ex.ed_fee_additional_id,
+              'description', ex.description,
+              'amount', ex.amount
+            )
+          )
+          FROM eduall_fee_additional_items ex
+          WHERE ex.invoice_code = p.ed_fee_payment_invoiceCode
+            AND ex.institute_code = p.ed_fee_payment_institute_code
+            AND COALESCE(ex.ed_fee_additional_deleted,0)=0
+        ) AS extras
+      FROM eduall_fees_payments p
+      LEFT JOIN eduall_students s ON p.ed_fee_payment_student = s.ed_student_id
+      LEFT JOIN eduall_services srv ON p.ed_fee_payment_service = srv.ed_service_id
+      LEFT JOIN eduall_coins c ON c.ed_coin_id = srv.ed_service_coin
+      WHERE p.ed_fee_payment_deleted = 0
+        AND p.ed_fee_payment_id = ?
+        AND p.ed_fee_payment_institute_code = ?;
+    `;
+
+    const PARAMS = [ID, institute];
+    const rows = await ExecuteQuery(res, query, PARAMS, true, {
+      db: "eduall_fees_payments", type: "select", data: req
+    });
+
+    res.status(200).json(rows);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Falha ao buscar o pagamento!",
+      error: error.message
+    });
+  }
+};
+
+
+
+const GetPaymentsByInvoiceCode = async (req, res) => {
+    try {
+        const { ID } = req.params;
+ 
+        const paymentQuery = `SELECT * FROM eduall_fees_payments 
+        WHERE ed_fee_payment_deleted = 0 AND ed_fee_payment_id = ? AND ed_fee_payment_institute_code = ?`;
+
+        const PARAMS = [ID, req.session.user.eduall_user_session_curentinstitute];
+        const paymentRows = await ExecuteQuery(res, paymentQuery, PARAMS, true, { db: "eduall_fees_payments", type: "select", data: req });
+ 
+        if (paymentRows.length === 0) {
+            return res.status(404).json({ success: false, message: "Pagamento não encontrado." });
+        }
+
+        const invoiceCode = paymentRows[0].ed_fee_payment_invoiceCode;  
+
+         
+        const query = `SELECT * FROM eduall_fees_payments 
+        LEFT JOIN eduall_students ON eduall_fees_payments.ed_fee_payment_student = eduall_students.ed_student_id
+        LEFT JOIN eduall_services ON eduall_fees_payments.ed_fee_payment_service = eduall_services.ed_service_id
+        LEFT JOIN eduall_coins ON eduall_coins.ed_coin_id = eduall_services.ed_service_coin 
+        WHERE ed_fee_payment_deleted = 0 AND ed_fee_payment_invoiceCode = ? AND ed_fee_payment_institute_code = ?`;
+
+        const paymentDetails = await ExecuteQuery(res, query, [invoiceCode, req.session.user.eduall_user_session_curentinstitute], true, { db: "eduall_fees_payments", type: "select", data: req });
+
+        res.status(200).json(paymentDetails);  
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Falha ao buscar os pagamentos!", error: error.message });
+    }
+};
+
+
+
+
+const GetSingleStudentFees = async (req, res) => {
+  try {
+    const { ACADEMICYEAR, STUDENTCODE } = req.params;
+    const institute = req.session.user.eduall_user_session_curentinstitute;
+
+    const query = `
+      SELECT 
+        eduall_fees_payments.*,
+        eduall_services.*,
+        eduall_students.*,
+        eduall_coins.*,
+        (
+          SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', ex.ed_fee_additional_id,
+              'description', ex.description,
+              'amount', ex.amount,
+              'created_at', ex.created_at
+            )
+          )
+          FROM eduall_fee_additional_items ex
+          WHERE ex.invoice_code = eduall_fees_payments.ed_fee_payment_invoiceCode
+            AND ex.institute_code = eduall_fees_payments.ed_fee_payment_institute_code
+            AND COALESCE(ex.ed_fee_additional_deleted,0)=0
+        ) AS extras
+      FROM eduall_fees_payments
+      LEFT JOIN eduall_services 
+        ON eduall_fees_payments.ed_fee_payment_service = eduall_services.ed_service_id
+      LEFT JOIN eduall_coins 
+        ON eduall_coins.ed_coin_id = eduall_services.ed_service_coin
+      LEFT JOIN eduall_students 
+        ON eduall_students.ed_student_id = eduall_fees_payments.ed_fee_payment_student
+      WHERE eduall_fees_payments.ed_fee_payment_deleted = 0
+        AND eduall_fees_payments.ed_fee_payment_student = ?
+        AND eduall_fees_payments.ed_fee_payment_academic_year = ?
+        AND eduall_fees_payments.ed_fee_payment_institute_code = ?
+      ORDER BY eduall_fees_payments.ed_fee_payment_registerDate DESC;
+    `;
+
+    const PARAMS = [STUDENTCODE, ACADEMICYEAR, institute];
+
+    const rows = await ExecuteQuery(res, query, PARAMS, true, { 
+      db: "eduall_fees_payments",
+      type: "select",
+      data: req
+    });
+
+    res.status(200).json(rows);
+
+  } catch (error) {
+    console.error(" ERRO GetSingleStudentFees:", error);
+    res.status(500).json({
+      success: false,
+      message: "Falha ao buscar taxas do estudante!",
+      error: error.message
+    });
+  }
+};
+
+
+
+  
+
+ 
+const FeePaymentDelete = async (req, res) => {
+  const { ID } = req.params;
+  const institute = req.session?.user?.eduall_user_session_curentinstitute;
+
+  if (!institute) {
+    return res.status(400).json({ success: false, message: "Instituto inválido na sessão." });
+  }
+
+  try {
+    // Inicia transação
+    await ExecuteQuery(res, "START TRANSACTION", [], false, { db: "", type: "tx-begin" });
+
+    // 1️⃣ Buscar o código da fatura (invoice_code) antes de marcar como deletado
+    const findInvoiceSQL = `
+      SELECT ed_fee_payment_invoiceCode AS invoice_code
+      FROM eduall_fees_payments
+      WHERE ed_fee_payment_id = ? 
+        AND ed_fee_payment_institute_code = ? 
+        AND COALESCE(ed_fee_payment_deleted,0)=0
+      LIMIT 1;
+    `;
+    const [payment] = await ExecuteQuery(res, findInvoiceSQL, [ID, institute], true, {
+      db: "eduall_fees_payments", type: "select", data: req
+    });
+
+    if (!payment) {
+      await ExecuteQuery(res, "ROLLBACK", [], false, { db: "", type: "tx-rollback" });
+      return res.status(404).json({ success: false, message: "Pagamento não encontrado ou já eliminado." });
+    }
+
+    const invoiceCode = payment.invoice_code;
+
+    // 2️⃣ Marcar o pagamento como deletado
+    const deletePaymentSQL = `
+      UPDATE eduall_fees_payments 
+      SET ed_fee_payment_deleted = 1
+      WHERE ed_fee_payment_id = ? 
+        AND ed_fee_payment_institute_code = ? 
+        AND COALESCE(ed_fee_payment_deleted,0)=0;
+    `;
+    await ExecuteQuery(res, deletePaymentSQL, [ID, institute], false, { db: "eduall_fees_payments", type: "update", data: req });
+
+    // 3️⃣ Marcar serviços adicionais ligados à mesma fatura
+    if (invoiceCode) {
+      const deleteExtrasSQL = `
+        UPDATE eduall_fee_additional_items
+        SET ed_fee_additional_deleted = 1
+        WHERE invoice_code = ?
+          AND institute_code = ?
+          AND COALESCE(ed_fee_additional_deleted,0)=0;
+      `;
+      await ExecuteQuery(res, deleteExtrasSQL, [invoiceCode, institute], false, { db: "eduall_fee_additional_items", type: "update", data: req });
+    }
+
+    // 4️⃣ Registrar ação de auditoria
+    await RegisterAuditAction({
+      session: req.session,
+      action: 3, // Eliminação
+      form: "Pagamentos de propinas",
+      description: `Eliminou o pagamento de propina com ID ${ID}${invoiceCode ? ` (fatura ${invoiceCode})` : ""}, incluindo serviços adicionais.`
+    });
+
+    // 5️⃣ Commit
+    await ExecuteQuery(res, "COMMIT", [], false, { db: "", type: "tx-commit" });
+
+    res.status(200).json({
+      success: true,
+      message: `Pagamento (ID ${ID}) e serviços adicionais associados eliminados com sucesso.`,
+    });
+
+  } catch (error) {
+    try { await ExecuteQuery(res, "ROLLBACK", [], false, { db: "", type: "tx-rollback" }); } catch {}
+    console.error("❌ Erro ao deletar pagamento:", error);
+    res.status(500).json({
+      success: false,
+      message: "Falha ao deletar o pagamento e seus serviços adicionais!",
+      error: error.message || error
+    });
+  }
+};
+
+
+const FeePaymentUpdate = async (req, res) => {
+    try {
+        const { ID } = req.params;
+        const { feepayment_student_code, feepayment_servicecode, feepayment_price, feepayment_months, feepayment_discount, 
+            feepayment_type, feepayment_bank , feepayment_academic_year, feepayment_place, feepayment_balance, feepayment_bordereux_number,
+            feepayment_iva , feepayment_fineType, feepayment_fineValue } = req.body;
+        
+        const query = `UPDATE eduall_fees_payments SET ed_fee_payment_student = ?, ed_fee_payment_service = ?, ed_fee_payment_price = ?, ed_fee_payment_month = ?,
+        ed_fee_payment_discount = ?, ed_fee_payment_type = ?, ed_fee_payment_bank = ?, ed_fee_payment_academic_year = ?,
+        ed_fee_payment_place =  ?, ed_fee_payment_balance = ?, ed_fee_payment_bordereux = ? , ed_fee_payment_iva = ?,
+        ed_fee_payment_fineType = ?, ed_fee_payment_fineValue = ? WHERE ed_fee_payment_deleted = 0 AND ed_fee_payment_id = ?  AND ed_fee_payment_institute_code = ?`;
+ 
+        const PARAMS = [
+            feepayment_student_code, feepayment_servicecode, feepayment_price, feepayment_months, feepayment_discount,
+            feepayment_type, feepayment_bank, feepayment_academic_year, feepayment_place, feepayment_balance,
+            feepayment_bordereux_number, feepayment_iva, feepayment_fineType, feepayment_fineValue, ID, req.session.user.eduall_user_session_curentinstitute
+        ];
+        
+        const rows = await ExecuteQuery(res, query, PARAMS, false, { db: "eduall_fees_payments", type: "update", data: req });
+
+        // Registrar ação de auditoria
+        await RegisterAuditAction({
+            session: req.session,
+            action: 2,  // Ação de atualização
+            form: "Pagamentos de propinas",
+            description: `Atualizou o pagamento de propina com ID ${ID}, para o estudante com o nº de matrícula #${feepayment_student_code}`,
+        }); 
+ 
+        res.status(200).json(rows);
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Falha ao atualizar o pagamento da taxa!", error: error.message });
+    }
+}; 
+
+
+/// paara pegar so d eum alauno o que deves mduar
+const GetSingleStudentPaymentStatus = async (req, res) => {
+  const timerLabel = `GetSingleStudentPaymentStatus_${Date.now()}`;
+  console.time(timerLabel);
+
+  try {
+    const institute = req.session?.user?.eduall_user_session_curentinstitute;
+    if (!institute) {
+      console.warn("⚠️ Instituto não encontrado na sessão."); 
+      return res.status(400).json({ success: false, message: "Instituto inválido na sessão." });
+    }
+
+    const { ano } = req.query;
+    const { studentCode } = req.params;
+
+    if (!studentCode || !ano) { 
+      return res.status(400).json({
+        success: false,
+        message: "Parâmetros inválidos: envie o código do aluno e o ano letivo (?ano=2025)."
+      });
+    }
+
+    // === Buscar aluno + dados de turma + ano letivo em única query ===
+    const studentQuery = `
+      SELECT 
+        s.ed_student_id, s.ed_student_code, s.ed_student_name, s.ed_student_picture,
+        c.ed_class_title, c.ed_class_year, 
+        y.ed_academic_year_title, y.ed_academic_year_startDate, y.ed_academic_year_endDate,
+        crs.ed_course_title,
+        lvl.ed_academic_level_title,
+        cic.ed_cicle_title,
+        room.ed_classroom_title,
+        fac.ed_faculty_title
+      FROM eduall_students s
+      INNER JOIN eduall_class c 
+          ON c.ed_class_id = s.ed_student_class AND COALESCE(c.ed_class_deleted,0)=0
+      INNER JOIN eduall_academic_year y 
+          ON y.ed_academic_year_id = c.ed_class_year AND COALESCE(y.ed_academic_year_deleted,0)=0
+      LEFT JOIN eduall_classrooms room 
+          ON room.ed_classroom_id = c.ed_class_room AND COALESCE(room.ed_classroom_deleted,0)=0
+      LEFT JOIN eduall_courses crs 
+          ON crs.ed_course_id = c.ed_class_course AND COALESCE(crs.ed_course_deleted,0)=0
+      LEFT JOIN eduall_academic_level lvl 
+          ON lvl.ed_academic_level_id = c.ed_class_academic_level AND COALESCE(lvl.ed_academic_level_deleted,0)=0
+      LEFT JOIN eduall_cicles cic 
+          ON cic.ed_cicle_id = c.ed_class_cicle AND COALESCE(cic.ed_cicle_deleted,0)=0
+      LEFT JOIN eduall_faculty fac 
+          ON fac.ed_faculty_id = c.ed_class_faculty AND COALESCE(fac.ed_faculty_deleted,0)=0
+      WHERE 
+        s.ed_student_id = ? 
+        AND s.ed_student_institute_code = ?
+        AND COALESCE(s.ed_student_deleted,0) = 0
+      LIMIT 1;
+    `;
+
+    const [student] = await ExecuteQuery(res, studentQuery, [studentCode, institute], true, {
+      db: "eduall_students", type: "select", data: req
+    });
+
+    if (!student) {
+      
+      return res.status(404).json({ success: false, message: "Aluno não encontrado." });
+    }
+
+    // === Buscar pagamentos do aluno diretamente (apenas colunas necessárias) ===
+    const paymentsQuery = `
+      SELECT ed_fee_payment_month
+      FROM eduall_fees_payments
+      WHERE ed_fee_payment_deleted = 0
+        AND ed_fee_payment_student = ?
+        AND ed_fee_payment_institute_code = ?
+        AND ed_fee_payment_academic_year = ?;
+    `;
+
+    const payments = await ExecuteQuery(res, paymentsQuery, [student.ed_student_id, institute, ano], true, {
+      db: "eduall_fees_payments", type: "select", data: req
+    });
+
+    // Transformar pagamentos em um Set (busca O(1))
+    const paidMonthsSet = new Set(payments.map(p => parseFloat(p.ed_fee_payment_month)));
+
+    // === Gerar meses de forma mais direta (sem loops desnecessários) ===
+    const MonthsList = [
+      "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+      "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"
+    ];
+
+    const buildMonths = (start, end) => {
+      if (!start || !end || !start.includes("-") || !end.includes("-")) return [];
+      const [Y1, M1] = start.split("-").map(Number);
+      const [Y2, M2] = end.split("-").map(Number);
+
+      const months = [];
+      const pushMonth = (m, y) => months.push({ 
+        month: `${MonthsList[m]} de ${y}`, 
+        code: parseFloat(`${m}.${y}`) 
+      });
+
+      if (Y1 === Y2) {
+        for (let m = M1 - 1; m <= M2 - 1; m++) pushMonth(m, Y1);
+      } else {
+        for (let m = M1 - 1; m <= 11; m++) pushMonth(m, Y1);
+        for (let m = 0; m <= M2 - 1; m++) pushMonth(m, Y2);
+      }
+
+      return months;
+    };
+
+    const months = buildMonths(student.ed_academic_year_startDate, student.ed_academic_year_endDate);
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth();
+
+    // === Determinar status de cada mês ===
+    const monthsStatus = months.map(m => {
+      const paid = paidMonthsSet.has(m.code);
+      const [monthIndex, year] = m.code.toString().split(".").map(Number);
+
+      let status = "other";
+      if (paid) status = "paid";
+      else if (year < curYear || (year === curYear && monthIndex < curMonth)) status = "notpaid";
+
+      return { ...m, status };
+    });
+
+    // === Resultado final ===
+    const result = {
+      student: {
+        id: student.ed_student_id,
+        code: student.ed_student_code,
+        name: student.ed_student_name,
+        picture: student.ed_student_picture,
+        class_title: student.ed_class_title,
+        course_title: student.ed_course_title,
+        classroom_title: student.ed_classroom_title,
+        level_title: student.ed_academic_level_title,
+        cicle_title: student.ed_cicle_title,
+        faculty_title: student.ed_faculty_title,
+        year_title: student.ed_academic_year_title,
+        academic_year: ano
+      },
+      months: monthsStatus
+    };
+
+    
+    return res.status(200).json({ success: true, data: result });
+
+  } catch (error) {
+    console.error("❌ ERRO em GetSingleStudentPaymentStatus:", error);
+    
+    return res.status(500).json({
+      success: false,
+      message: "Erro ao carregar estado de pagamento do aluno!",
+      error: error.message || error
+    });
+  }
+};
+ 
+
+
+const GetSingleStudentPaymentStatusByRFID = async (req, res) => {
+  const timerLabel = `GetSingleStudentPaymentStatusByRFID_${Date.now()}`;
+  console.time(timerLabel);
+
+  try {
+    const institute = req.session?.user?.eduall_user_session_curentinstitute;
+    if (!institute) {
+      console.warn("⚠️ Instituto não encontrado na sessão.");
+      
+      return res.status(400).json({ success: false, message: "Instituto inválido na sessão." });
+    }
+
+    const { rfidCode } = req.params;
+    const code = (rfidCode || "").trim();
+
+    if (!code) {
+      
+      return res.status(400).json({
+        success: false,
+        message: "Parâmetros inválidos: envie o RFID do aluno."
+      });
+    }
+
+    /**
+     * 1) Buscar aluno pelo RFID + já pegar turma/ano letivo atual (c.ed_class_year)
+     */
+    const studentQuery = `
+      SELECT 
+        s.ed_student_id, s.ed_student_code, s.ed_student_name, s.ed_student_picture,
+        c.ed_class_title, c.ed_class_year, 
+        y.ed_academic_year_title, y.ed_academic_year_startDate, y.ed_academic_year_endDate,
+        crs.ed_course_title,
+        lvl.ed_academic_level_title,
+        cic.ed_cicle_title,
+        room.ed_classroom_title,
+        fac.ed_faculty_title
+      FROM eduall_students s
+      INNER JOIN eduall_class c 
+          ON c.ed_class_id = s.ed_student_class AND COALESCE(c.ed_class_deleted,0)=0
+      INNER JOIN eduall_academic_year y 
+          ON y.ed_academic_year_id = c.ed_class_year AND COALESCE(y.ed_academic_year_deleted,0)=0
+      LEFT JOIN eduall_classrooms room 
+          ON room.ed_classroom_id = c.ed_class_room AND COALESCE(room.ed_classroom_deleted,0)=0
+      LEFT JOIN eduall_courses crs 
+          ON crs.ed_course_id = c.ed_class_course AND COALESCE(crs.ed_course_deleted,0)=0
+      LEFT JOIN eduall_academic_level lvl 
+          ON lvl.ed_academic_level_id = c.ed_class_academic_level AND COALESCE(lvl.ed_academic_level_deleted,0)=0
+      LEFT JOIN eduall_cicles cic 
+          ON cic.ed_cicle_id = c.ed_class_cicle AND COALESCE(cic.ed_cicle_deleted,0)=0
+      LEFT JOIN eduall_faculty fac 
+          ON fac.ed_faculty_id = c.ed_class_faculty AND COALESCE(fac.ed_faculty_deleted,0)=0
+      WHERE 
+        s.ed_student_rfid_code = ?
+        AND s.ed_student_institute_code = ?
+        AND COALESCE(s.ed_student_deleted,0) = 0
+      LIMIT 1;
+    `;
+
+    const [student] = await ExecuteQuery(res, studentQuery, [code, institute], true, {
+      db: "eduall_students", type: "select", data: req
+    });
+
+    if (!student) {
+      
+      return res.status(404).json({ success: false, message: "Cartão não associado a nenhum aluno." });
+    }
+
+    // Ano lectivo atual do aluno (da turma)
+    const ano = student.ed_class_year;
+    if (!ano) {
+      
+      return res.status(400).json({ success: false, message: "Ano lectivo atual do aluno não encontrado." });
+    }
+
+    /**
+     * 2) Buscar pagamentos do aluno para esse ano
+     */
+    const paymentsQuery = `
+      SELECT ed_fee_payment_month
+      FROM eduall_fees_payments
+      WHERE ed_fee_payment_deleted = 0
+        AND ed_fee_payment_student = ?
+        AND ed_fee_payment_institute_code = ?
+        AND ed_fee_payment_academic_year = ?;
+    `;
+
+    const payments = await ExecuteQuery(res, paymentsQuery, [student.ed_student_id, institute, ano], true, {
+      db: "eduall_fees_payments", type: "select", data: req
+    });
+
+    const paidMonthsSet = new Set((payments || []).map(p => parseFloat(p.ed_fee_payment_month)));
+
+    const MonthsList = [
+      "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+      "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"
+    ];
+
+    const buildMonths = (start, end) => {
+      if (!start || !end || !start.includes("-") || !end.includes("-")) return [];
+      const [Y1, M1] = start.split("-").map(Number);
+      const [Y2, M2] = end.split("-").map(Number);
+
+      const months = [];
+      const pushMonth = (m, y) => months.push({
+        month: `${MonthsList[m]} de ${y}`,
+        code: parseFloat(`${m}.${y}`)
+      });
+
+      if (Y1 === Y2) {
+        for (let m = M1 - 1; m <= M2 - 1; m++) pushMonth(m, Y1);
+      } else {
+        for (let m = M1 - 1; m <= 11; m++) pushMonth(m, Y1);
+        for (let m = 0; m <= M2 - 1; m++) pushMonth(m, Y2);
+      }
+
+      return months;
+    };
+
+    const months = buildMonths(student.ed_academic_year_startDate, student.ed_academic_year_endDate);
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth();
+
+    const monthsStatus = months.map(m => {
+      const paid = paidMonthsSet.has(m.code);
+      const [monthIndex, year] = m.code.toString().split(".").map(Number);
+
+      let status = "other";
+      if (paid) status = "paid";
+      else if (year < curYear || (year === curYear && monthIndex < curMonth)) status = "notpaid";
+
+      return { ...m, status };
+    });
+
+    const result = {
+      student: {
+        id: student.ed_student_id,
+        code: student.ed_student_code,
+        name: student.ed_student_name,
+        picture: student.ed_student_picture,
+        class_title: student.ed_class_title,
+        course_title: student.ed_course_title,
+        classroom_title: student.ed_classroom_title,
+        level_title: student.ed_academic_level_title,
+        cicle_title: student.ed_cicle_title,
+        faculty_title: student.ed_faculty_title,
+        year_title: student.ed_academic_year_title,
+        academic_year: ano
+      },
+      months: monthsStatus
+    };
+
+    
+    return res.status(200).json({
+      success: true,
+      data: result,
+      meta: { source: "rfid", academicYear: ano }
+    });
+
+  } catch (error) {
+    console.error("❌ ERRO em GetSingleStudentPaymentStatusByRFID:", error);
+    
+    return res.status(500).json({
+      success: false,
+      message: "Erro ao carregar estado de pagamento do aluno (RFID)!",
+      error: error.message || error
+    });
+  }
+};
+
+
+const GetAllClassesPaymentsStatus = async (req, res) => {
+  try {
+    console.time("GetAllClassesPaymentsStatus");
+    const institute = req.session?.user?.eduall_user_session_curentinstitute;
+
+    if (!institute) {
+      return res.status(400).json({ success: false, message: "Instituto inválido na sessão." });
+    }
+
+    const MonthsList = [
+      "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+      "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"
+    ];
+
+    // Meses zero-based (Janeiro = 0)
+    const buildMonths = (yearData) => {
+      const { ed_academic_year_startDate: start, ed_academic_year_endDate: end } = yearData || {};
+      if (!start || !end) return [];
+
+      const [Y1, M1] = start.split("-").map(Number);
+      const [Y2, M2] = end.split("-").map(Number);
+
+      const startMonthIndex = M1 - 1;
+      const endMonthIndex = M2 - 1;
+      const months = [];
+
+      if (Y2 > Y1) {
+        for (let i = startMonthIndex; i <= 11; i++) {
+          months.push({ month: `${MonthsList[i]} de ${Y1}`, code: parseFloat(`${i}.${Y1}`), status: "other" });
+        }
+        for (let i = 0; i <= endMonthIndex; i++) {
+          months.push({ month: `${MonthsList[i]} de ${Y2}`, code: parseFloat(`${i}.${Y2}`), status: "other" });
+        }
+      } else {
+        for (let i = startMonthIndex; i <= endMonthIndex; i++) {
+          months.push({ month: `${MonthsList[i]} de ${Y1}`, code: parseFloat(`${i}.${Y1}`), status: "other" });
+        }
+      }
+      return months;
+    };
+
+    // Buscar turmas e anos letivos
+    const classQuery = `
+      SELECT c.*, y.ed_academic_year_id, y.ed_academic_year_startDate, y.ed_academic_year_endDate
+      FROM eduall_class c
+      INNER JOIN eduall_academic_year y ON y.ed_academic_year_id = c.ed_class_year
+      WHERE c.ed_class_deleted = 0 
+      AND c.ed_class_institute_code = ?
+      AND y.ed_academic_year_institute_code = ?`;
+
+    const classes = await ExecuteQuery(res, classQuery, [institute, institute], true, {
+      db: "eduall_class", type: "select", data: req
+    });
+
+    if (!Array.isArray(classes) || classes.length === 0) {
+      return res.status(404).json({ success: false, message: "Nenhuma turma encontrada!" });
+    }
+
+    // Buscar alunos
+    const studentsQuery = `
+      SELECT s.* 
+      FROM eduall_students s
+      WHERE s.ed_student_deleted = 0
+      AND s.ed_student_institute_code = ?
+      ORDER BY s.ed_student_name ASC`;
+
+    const allStudents = await ExecuteQuery(res, studentsQuery, [institute], true, {
+      db: "eduall_students", type: "select", data: req
+    });
+
+    // Buscar pagamentos
+    const paymentsQuery = `
+      SELECT p.*
+      FROM eduall_fees_payments p
+      WHERE p.ed_fee_payment_deleted = 0
+      AND p.ed_fee_payment_institute_code = ?`;
+
+    const allPayments = await ExecuteQuery(res, paymentsQuery, [institute], true, {
+      db: "eduall_fees_payments", type: "select", data: req
+    });
+
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth(); // zero-based
+
+    const finalResult = classes.map((cls) => {
+      const yearData = {
+        ed_academic_year_id: cls.ed_academic_year_id,
+        ed_academic_year_startDate: cls.ed_academic_year_startDate,
+        ed_academic_year_endDate: cls.ed_academic_year_endDate
+      };
+
+      const months = buildMonths(yearData);
+      const students = allStudents.filter(st => st.ed_student_class === cls.ed_class_id);
+
+      const studentsData = students.map(st => {
+        const stPayments = allPayments.filter(p =>
+          p.ed_fee_payment_student === st.ed_student_id &&
+          p.ed_fee_payment_academic_year === cls.ed_class_year
+        );
+
+        const monthsStatus = months.map(m => {
+          const paid = stPayments.find(p => parseFloat(p.ed_fee_payment_month) === m.code);
+          let status = paid ? "paid" : "other";
+
+          const mYear = parseInt(m.month.split(" ")[2]);
+          const mMonth = parseInt(m.code.toString().split(".")[0]);
+
+          if (!paid && (mYear < currentYear || (mYear === currentYear && mMonth < currentMonth))) {
+            status = "notpaid";
+          }
+
+          return { ...m, status };
+        });
+
+        return {
+          id: st.ed_student_id,
+          name: st.ed_student_name,
+          code: st.ed_student_code,
+          picture: st.ed_student_picture,
+          months: monthsStatus
+        };
+      });
+
+      return {
+        class_id: cls.ed_class_id,
+        class_title: cls.ed_class_title,
+        academic_year: yearData,
+        students: studentsData
+      };
+    });
+
+    console.timeEnd("GetAllClassesPaymentsStatus");
+    res.status(200).json(finalResult);
+
+  } catch (error) {
+    console.error("❌ ERRO:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erro ao carregar pagamentos das turmas!",
+      error: error.message
+    });
+  }
+}; 
+
+
+
+const GetClassPaymentsStatusById = async (req, res) => {
+  try {
+    console.time("GetClassPaymentsStatusById");
+    const institute = req.session.user.eduall_user_session_curentinstitute;
+    const classId   = req.params.classId;
+
+    const MonthsList = [
+      "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+      "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"
+    ];
+
+    // FIX 1: guard completo — valida que as datas existem, não são null,
+    // e têm o formato esperado antes de fazer qualquer split.
+    // Antes o guard só existia numa versão do código e não em outra,
+    // causando "Cannot read properties of null (reading 'split')".
+    const buildMonths = (start, end) => {
+      if (
+        !start || !end ||
+        typeof start !== "string" || typeof end !== "string" ||
+        !start.includes("-") || !end.includes("-")
+      ) return [];
+
+      const parts1 = start.split("-").map(Number);
+      const parts2 = end.split("-").map(Number);
+
+      // FIX 2: valida que os split produziram valores numéricos válidos
+      if (parts1.length < 2 || parts2.length < 2) return [];
+      if (parts1.some(isNaN) || parts2.some(isNaN)) return [];
+
+      const [Y1, M1] = parts1;
+      const [Y2, M2] = parts2;
+      const months   = [];
+
+      const pushMonth = (m, y) => months.push({
+        month:  `${MonthsList[m]} de ${y}`,
+        code:   parseFloat(`${m}.${y}`),
+        status: "other"
+      });
+
+      if (Y1 === Y2) {
+        for (let m = M1 - 1; m <= M2 - 1; m++) pushMonth(m, Y1);
+      } else {
+        for (let m = M1 - 1; m <= 11;     m++) pushMonth(m, Y1);
+        for (let m = 0;       m <= M2 - 1; m++) pushMonth(m, Y2);
+      }
+
+      return months;
+    };
+
+    // FIX 3: SELECT explícito nas datas para garantir que chegam com os
+    // nomes certos e não são mascaradas por outras colunas do SELECT c.*
+    const classQuery = `
+      SELECT
+        c.ed_class_id,
+        c.ed_class_title,
+        c.ed_class_year,
+        c.ed_class_institute_code,
+        c.ed_class_deleted,
+        y.ed_academic_year_id,
+        y.ed_academic_year_startDate,
+        y.ed_academic_year_endDate
+      FROM eduall_class c
+      INNER JOIN eduall_academic_year y
+        ON y.ed_academic_year_id = c.ed_class_year
+       AND y.ed_academic_year_deleted = 0
+      WHERE c.ed_class_deleted = 0
+        AND c.ed_class_institute_code = ?
+        AND c.ed_class_id = ?
+        AND y.ed_academic_year_institute_code = ?
+    `;
+
+    const classes = await ExecuteQuery(
+      res, classQuery, [institute, classId, institute], true,
+      { db: "eduall_class", type: "select", data: req }
+    );
+
+    if (!classes || classes.length === 0) {
+      return res.status(404).json({ success: false, message: "Turma não encontrada!" });
+    }
+
+    const studentsQuery = `
+      SELECT
+        s.ed_student_id,
+        s.ed_student_name,
+        s.ed_student_picture,
+        s.ed_student_code,
+        s.ed_student_class
+      FROM eduall_students s
+      WHERE s.ed_student_deleted = 0
+        AND s.ed_student_class = ?
+        AND s.ed_student_institute_code = ?
+      ORDER BY s.ed_student_name ASC
+    `;
+
+    const allStudents = await ExecuteQuery(
+      res, studentsQuery, [classId, institute], true,
+      { db: "eduall_students", type: "select", data: req }
+    );
+
+    const paymentsQuery = `
+      SELECT
+        p.ed_fee_payment_id,
+        p.ed_fee_payment_student,
+        p.ed_fee_payment_month,
+        p.ed_fee_payment_academic_year,
+        p.ed_fee_payment_deleted,
+        p.ed_fee_payment_institute_code
+      FROM eduall_fees_payments p
+      WHERE p.ed_fee_payment_deleted = 0
+        AND p.ed_fee_payment_institute_code = ?
+    `;
+
+    const allPayments = await ExecuteQuery(
+      res, paymentsQuery, [institute], true,
+      { db: "eduall_fees_payments", type: "select", data: req }
+    );
+
+    const currentYear  = new Date().getFullYear();
+    const currentMonth = new Date().getMonth(); // zero-based
+
+    const finalResult = classes.map(cls => {
+      const start = cls.ed_academic_year_startDate;
+      const end   = cls.ed_academic_year_endDate;
+
+      // FIX 4: se mesmo após o SELECT explícito as datas vierem null
+      // (dados em falta na BD), devolve a turma com months vazio em vez
+      // de crashar toda a request.
+      const months = buildMonths(start, end);
+
+      const students = allStudents.filter(
+        st => st.ed_student_class === cls.ed_class_id
+      );
+
+      const studentsData = students.map(st => {
+        const stPayments = allPayments.filter(p =>
+          p.ed_fee_payment_student       === st.ed_student_id &&
+          p.ed_fee_payment_academic_year === cls.ed_class_year
+        );
+
+        const monthsStatus = months.map(m => {
+          const paid = stPayments.find(
+            p => parseFloat(p.ed_fee_payment_month) === m.code
+          );
+
+          let status = paid ? "paid" : "other";
+
+          const mYear  = parseInt(m.month.split(" ")[2]);
+          const mMonth = parseInt(m.code.toString().split(".")[0]);
+
+          if (
+            !paid &&
+            (mYear < currentYear || (mYear === currentYear && mMonth < currentMonth))
+          ) {
+            status = "notpaid";
+          }
+
+          return { ...m, status };
+        });
+
+        return {
+          id:      st.ed_student_id,
+          name:    st.ed_student_name,
+          picture: st.ed_student_picture,
+          code:    st.ed_student_code,
+          months:  monthsStatus
+        };
+      });
+
+      return {
+        class_id:      cls.ed_class_id,
+        class_title:   cls.ed_class_title,
+        academic_year: {
+          ed_academic_year_id:        cls.ed_academic_year_id,
+          ed_academic_year_startDate: start,
+          ed_academic_year_endDate:   end,
+        },
+        students: studentsData
+      };
+    });
+
+    console.timeEnd("GetClassPaymentsStatusById");
+    res.status(200).json(finalResult);
+
+  } catch (error) {
+    console.error("❌ ERRO:", error);
+    res.status(500).json({
+      success: false,
+      message: "Erro ao carregar pagamentos da turma!",
+      error: error.message
+    });
+  }
+};
+ 
+module.exports = { GetSingleStudentPaymentStatusByRFID,GetFeepayments, GetSinglePayment, GetSingleFeepayment, GetSinglePaidMonth, GetAllClassesPaymentsStatus,
+GetSingleStudentFees, RegisterFeepayment, FeePaymentDelete, FeePaymentUpdate , GetClassPaymentsStatusById, GetSingleStudentPaymentStatus};
+
+
+
+
+code da lisatgem de paagemtnos frontend:
+
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { Delete, Edit } from '@mui/icons-material';
+import Hoot from '../../../General/components/Hoot';
+import DeleteModal from '../elements/DeleteModal';
+import NewfeeManualPaymentModal from '../modal/NewfeeManualPaymentModal';
+import SwitchFromPages from '../../../General/components/SwitchFromPages';
+import TableGrid from '../../../General/components/TableGrid';
+import NumberToPrice from '../../../General/components/NumberToPrice';
+import { Avatar } from '@mui/material';
+import PopPaymentDetailsModal from '../modal/PopPaymentDetailsModal';
+import { DeleteButton, EditButton, PreviewButton } from '../../../General/components/Buttons/TableButtons';
+import RefreshButton from '../../../General/components/RefreshButton';
+import { ExportDataToTablesToPdf } from '../../../General/components/ExportDataToTablesToPdf';
+import { PiFilePdfDuotone, PiMicrosoftExcelLogoDuotone } from 'react-icons/pi';
+import ExportDataForTablesExcel from '../../../General/components/ExportDataForTablesExcel';
+import moment from 'moment';
+import DownloadInvoicePDFButton from '../../../General/components/DownloadInvoicePDFButton';
+
+const TABLEURL = [Hoot() + "eduallfeepaymentsapi/get/", Hoot() + "eduallgetsingleinstitute/get/1"];
+const Months = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+];
+
+const columns = [
+  {
+    field: 'invoiceN',
+    headerName: 'Nº da Fatura',
+    width: 200,
+    searchMap: row => row.invoiceN
+  },
+  {
+    field: 'student',
+    headerName: 'Nome do aluno',
+    width: 350,
+    cellRenderer: (props) => {
+      return (
+        <SwitchFromPages
+          link={`studentinfo/${props.data.student}`}
+          menu='3'
+          menu_item='17'
+          toggle_btn={
+            <div className='ed-flex'>
+              <Avatar
+                className='df'
+                alt={props.data.name}
+                src={props.data.picture !== "" ? Hoot() + props.data.picture : ""}
+              />
+              <span className='ml-2'>(#{props.data.studentcode}) - {props.data.name}</span>
+            </div>
+          }
+        />
+      );
+    },
+    searchMap: row => row.name
+  },
+  {
+    field: 'service',
+    headerName: 'Titulo do serviço',
+    width: 250,
+    searchMap: row => row.service
+  },
+  {
+    field: 'month',
+    headerName: 'Mês pago',
+    width: 180,
+    cellRenderer: (props) => {
+      return <div className="tb-item">{props.data.monthsLabel}</div>;
+    },
+    searchMap: row => row.monthsLabel
+  },
+  {
+    field: 'price',
+    headerName: 'Preçario',
+    width: 160,
+    cellRenderer: (props) => {
+      return (
+        <div className='ed-flex'>
+          {NumberToPrice(props.data.price)} {props.data.coin}
+        </div>
+      );
+    },
+    searchMap: row => `${NumberToPrice(row.price)} ${row.coin}`
+  },
+  {
+    field: 'total',
+    headerName: 'Total',
+    width: 180,
+    cellRenderer: (props) => {
+      return (
+        <div className='ed-flex'>
+          {NumberToPrice(props.data.balance)} {" " + props.data.coin}
+        </div>
+      );
+    },
+    searchMap: row => `${NumberToPrice(row.balance)} ${row.coin}`
+  },
+  {
+    field: 'situation',
+    headerName: 'Situação',
+    width: 150,
+    cellRenderer: (props) => {
+      return (
+        props.data.invoiceCount > 1 ?
+          <div className="badge col-lg-12 bg-warning">{props.data.invoiceCount} meses</div> :
+          <div className="badge col-lg-12 bg-success">PG. Simples</div>
+      );
+    },
+    searchMap: row => row.invoiceCount > 1 ? `${row.invoiceCount} meses` : "PG. Simples"
+  },
+  {
+    field: 'fromService',
+    headerName: 'Pago via serviços',
+    width: 160,
+    cellRenderer: (props) => {
+      const yes = !!props.data.fromService;
+      return yes ? (
+        <span className="badge bg-green text-light">
+          Sim (Serviços)
+        </span>
+      ) : (
+        <span className="badge bg-secondary text-light">
+          Não
+        </span>
+      );
+    },
+    searchMap: row => row.fromService ? "Sim (Serviços)" : "Não"
+  },
+
+  {
+    field: 'date',
+    headerName: 'Data de pagamento',
+    width: 250,
+    searchMap: row => row.date
+  },
+  {
+    field: 'action',
+    headerName: 'Ação',
+    width: 240,
+    cellRenderer: (props) => {
+      const isFromService = !!props.data.fromService;
+
+      return (
+        <div className="ed-flex">
+          <div className="d-none">
+            <NewfeeManualPaymentModal
+              title='Atualizar '
+              update='true'
+              get={Hoot() + `eduallfeepaymentsingle/get/${props.data.id}`}
+              url={Hoot() + `eduallfeepaymentupdate/update/${props.data.id}`}
+              toggle_btn={<EditButton />}
+            />
+          </div>
+
+          {isFromService ? (
+            <>
+            <div className="col-lg-12 bg-main btn btn-small">Saiba mais em pag. serviços</div>
+            </>
+          ) : (
+          <div className="tb-item">
+            <DownloadInvoicePDFButton documentId={props.data.code} />
+          </div> 
+         )}
+          
+
+       {isFromService ? (
+            <>
+            </>
+          ) : (
+          <PopPaymentDetailsModal
+            payment={props.data}
+            studentGet={Hoot() + `eduallsinglestudentapi/get/${props.data.student}`}
+            filesGetPrefix={Hoot() + "eduallsingleuserfiles/get/"}
+            print={`/student_tuition_payment_print_invoice/${props.data.id}`}
+            toggle_btn={<PreviewButton />}
+          />
+         )}
+ 
+          {isFromService ? (
+            <>
+            </>
+          ) : (
+            <DeleteModal
+              title='pagamento(s) da fatura'
+              urlsArray={props.data.paymentsUrls}
+              message='Pagamento(s) deletado(s) com sucesso!'
+              toggle_btn={<DeleteButton />}
+            />
+          )}
+        </div>
+      );
+    },
+    searchMap: () => ""
+  }
+];
+
+function FeespaymentsTable() {
+  const [data, setData] = useState([]);
+  const [LoadStatus, setLoadStatus] = useState(null);
+
+  function computeLine(item) {
+    const price = item.ed_fee_payment_price * 1;
+    const discountPct = item.ed_fee_payment_discount * 1 || 0;
+    const ivaPct = item.ed_fee_payment_iva * 1 || 0;
+    const fineType = item.ed_fee_payment_fineType * 1 || 0;
+    const fineValue = item.ed_fee_payment_fineValue * 1 || 0;
+
+    const afterDiscount = price - (price * discountPct) / 100;
+    const base = ivaPct > 0 ? afterDiscount / (1 + ivaPct / 100) : afterDiscount;
+    const ivaAmount = afterDiscount - base;
+    const fineAmount = fineType === 1 ? fineValue : (base * fineValue) / 100;
+    const total = afterDiscount + fineAmount;
+
+    return { base, ivaAmount, fineAmount, total, afterDiscount };
+  }
+
+  async function loadData() {
+    try {
+      setLoadStatus(0);
+
+      const response = await axios.get(TABLEURL[0]); // API já retorna .extras
+      const grouped = {};
+
+      (response.data || []).forEach((item) => {
+        const { base, ivaAmount, fineAmount, total, afterDiscount } = computeLine(item);
+        const key = item.ed_fee_payment_invoiceCode;
+
+        const deleteUrl = Hoot() + `eduallfeepaymentsdelete/delete/${item.ed_fee_payment_id}`;
+        const fromServiceFlag = (item.ed_fee_payment_from_service * 1) === 1;
+
+        const paymentLine = {
+          id: item.ed_fee_payment_id,
+          month: item.ed_fee_payment_month,
+          service: item.ed_service_title,
+          price: item.ed_fee_payment_price * 1,
+          discount: item.ed_fee_payment_discount * 1,
+          iva: item.ed_fee_payment_iva * 1,
+          fineType: item.ed_fee_payment_fineType * 1,
+          fineValue: item.ed_fee_payment_fineValue * 1,
+          method: item.ed_fee_payment_type * 1,
+          registerDate: item.ed_fee_payment_registerDate,
+          coin: item.ed_coin_code,
+          base,
+          ivaAmount,
+          fineAmount,
+          total,
+          afterDiscount,
+          paymentCode: item.ed_fee_payment_code,
+          invoiceFile: item.ed_fee_payment_invoiceFile,
+          fromService: fromServiceFlag
+        };
+
+        const extrasArray = item.extras ? JSON.parse(item.extras) : [];
+        const extrasTotal = Array.isArray(extrasArray)
+          ? extrasArray.reduce((sum, ex) => sum + (Number(ex.amount) || 0), 0)
+          : 0;
+
+        if (!grouped[key]) {
+          grouped[key] = {
+            id: item.ed_fee_payment_id,
+            service: item.ed_service_title,
+            coin: item.ed_coin_code,
+            code: item.ed_fee_payment_invoiceFile || item.ed_service_payment_invoiceCode,
+            paymentCode: item.ed_fee_payment_code,
+            student: item.ed_fee_payment_student,
+            name: item.ed_student_name,
+            studentcode: item.ed_student_code,
+            picture: item.ed_student_picture,
+            months: [item.ed_fee_payment_month],
+            balance: total,
+            extrasTotal,
+            price: item.ed_fee_payment_price,
+            invoiceN: item.ed_fee_payment_invoiceCode,
+            date: moment(item.ed_fee_payment_registerDate).format('DD [de] MMMM [de] YYYY [às] HH:mm'),
+            invoiceCount: 1,
+            paymentsUrls: [deleteUrl],
+            payments: [paymentLine],
+            extras: extrasArray,
+            extrasAdded: false,
+            fromService: fromServiceFlag   
+          };
+        } else {
+          grouped[key].balance += total;
+          grouped[key].months.push(item.ed_fee_payment_month);
+          grouped[key].invoiceCount += 1;
+          grouped[key].paymentsUrls.push(deleteUrl);
+          grouped[key].payments.push(paymentLine);
+
+          // se qualquer linha veio dos serviços, marcamos toda a fatura como true
+          if (fromServiceFlag) {
+            grouped[key].fromService = true;
+          }
+        }
+
+        if (!grouped[key].extrasAdded && extrasTotal > 0) {
+          grouped[key].balance += extrasTotal;
+          grouped[key].extrasTotal = extrasTotal;
+          grouped[key].extras = extrasArray;
+          grouped[key].extrasAdded = true;
+        }
+      });
+
+      const rows = Object.values(grouped).map((g, index) => ({
+        ...g,
+        index: index + 1,
+        monthsLabel: g.months
+          .map((m) => {
+            if (!m) return "";
+            let mm, yy, monthName;
+
+            if (String(m).includes(".")) {
+              [mm, yy] = String(m).split(".");
+              const monthIndex = parseInt(mm, 10);
+              monthName =
+                !isNaN(monthIndex) && monthIndex >= 0 && monthIndex <= 11
+                  ? Months[monthIndex]
+                  : mm;
+            } else if (String(m).includes("-")) {
+              const parts = String(m).split("-");
+              monthName = parts[0] || "";
+              yy = parts[1] || "";
+            } else {
+              monthName = m;
+              yy = "";
+            }
+            return `${monthName} de ${yy}`;
+          })
+          .filter(Boolean)
+          .join(", "),
+        fromService: !!g.fromService
+      }));
+
+      setData(rows);
+      setLoadStatus(2);
+    } catch (error) {
+      console.error("Erro ao carregar pagamentos:", error);
+      setLoadStatus(1);
+    }
+  }
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  return (
+    <div id="ed-custom-table-data">
+      <TableGrid
+        TableHead={columns}
+        TableBody={data}
+        TableTitle='Propinas pagas'
+        TableBtn={
+          <div className='ed-flex'>
+            <button
+              id='ed-custom-table-data-btn'
+              onClick={() =>
+                ExportDataToTablesToPdf({
+                  fileName: "Lista dos pagamentos de propinas",
+                  headerId: null,
+                  contentId: "ed-custom-table-data",
+                  footerId: null,
+                  rotation: "landscape",
+                  buttonId: "ed-custom-table-data-btn",
+                  customHeader: "Lista dos pagamentos de propinas",
+                  excludedColumns: ["Ação"]
+                })
+              }
+              className='btn-icon ed-flex ed-center btn btn-export-data ml-2 bg-white'
+            >
+              <PiFilePdfDuotone />
+            </button>
+
+            <button
+              className='btn-icon btn btn-export-data ml-2'
+              onClick={() =>
+                ExportDataForTablesExcel(
+                  "Lista dos pagamentos de propinas",
+                  ["Ação"]
+                )
+              }
+            >
+              <PiMicrosoftExcelLogoDuotone />
+            </button>
+
+            <RefreshButton action={loadData} status={LoadStatus} />
+          </div>
+        }
+      />
+      <br />
+    </div>
+  );
+}
+
+export default FeespaymentsTable;
+
+
+
+
+
+code do frontend modal de paagmentos:
+
+/**
+ * NewfeeManualPaymentModal.jsx — v29
+ *
+ * FIXES v29:
+ * ─────────────────────────────────────────────────────────────
+ * 1. BADGE ÚNICO — apenas um bloco de multa, sob a checkbox.
+ *    FinesBadge e ManualRuleSelector fundidos em FineBadgeUnified.
+ *    Renderiza o explicacao_html que vem do backend (sem UI duplicado).
+ *
+ * 2. TROCA DE SERVIÇO — ao trocar serviço, limpa imediatamente
+ *    finePaymentType + extraServices._isFine antes de qualquer
+ *    fetch, evitando cálculos com estado stale.
+ *
+ * 3. RECALCULO ESTÁVEL — um único useEffect com ref de abort
+ *    controla quando recalcular; não dispara em cascata.
+ */
+
+import React, {
+  useCallback, useEffect, useMemo, useRef, useState,
+} from "react";
+import styled, { keyframes } from "styled-components";
+import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
+import { Modal, Form, Button, Badge, Alert } from "react-bootstrap";
+import {
+  AccessTimeOutlined, Check, Close, DeleteOutline,
+  InfoOutlined, Update, MonetizationOn,
+} from "@mui/icons-material";
+import { IoWalletOutline, IoAlertCircleOutline, IoCheckmarkCircle } from "react-icons/io5";
+import { MdGavel } from "react-icons/md";
+import DraggableModal from "../../../General/components/DraggableModal";
+import axios from "axios";
+import Hoot from "../../../General/components/Hoot";
+import { Checkbox, FormControlLabel } from "@mui/material";
+import FileUpload from "../../../General/components/FileUpload";
+import CRValue from "../../../General/components/CRValue";
+import toast from "react-hot-toast";
+import {
+  AcademicYearDataOptions, StudentsDataOptions,
+  GetInstituteCode, StudentsArray, GetServicePrice,
+} from "../../../General/components/InstituteData";
+import { MultiSelect } from "react-multi-select-component";
+import SelectSearch from "react-select-search";
+import NotFounded from "../../../General/components/NotFounded";
+import { HiOutlineDocumentText } from "react-icons/hi";
+import ReduceTextLength from "../../../General/components/ReduceTextLength";
+import DeleteModal from "../elements/DeleteModal";
+import NumberToBytes from "../../../General/components/NumberToBytes";
+import RefreshList from "../../../General/components/RefreshList";
+import StudentDetailsMenu from "../elements/StudentDetailsMenu";
+import SaveButton from "../elements/SaveButton";
+import Loader from "../../../General/components/Loader";
+import NumberToPrice from "../../../General/components/NumberToPrice";
+import AnimatedModal from "../../../General/components/AnimatedModal";
+import UserOptionDropDown from "../elements/UserOptionDropDown";
+import { ModalAnimationClose, ModalAnimationShow } from "../../../General/components/ModalAnimations";
+import GenerateInvoiceCode from "../../../General/components/GenerateInvoiceCode";
+import { BalanceBadge, StudentBalanceModal } from "./StudenceBalanceModal";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers globais
+// ─────────────────────────────────────────────────────────────────────────────
+
+const _spinKf = keyframes`from{transform:rotate(0)}to{transform:rotate(360deg)}`;
+
+const _fmtFine = (v, coin = "") =>
+  `${Number(v || 0).toLocaleString("pt-AO", {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  })}${coin ? " " + coin : ""}`;
+
+const MODEL_LABELS = {
+  A: "Multa fixa única",
+  B: "Multa diária crescente",
+  C: "Escalões por dias",
+  D: "Fixo + juro diário",
+  E: "Escalões + juro diário",
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// useServicesList
+// ─────────────────────────────────────────────────────────────────────────────
+
+function useServicesList() {
+  const [services, setServices] = useState([]);
+  const [loading,  setLoading]  = useState(false);
+  const URL = useMemo(() => Hoot() + "eduallservicesapi/get/", []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    axios.get(URL)
+      .then(r => {
+        if (cancelled) return;
+        const data = r.data || [];
+        setServices(data.map(s => ({
+          value: s.ed_service_id,
+          name: `${s.ed_service_title || s.ed_service_name || "(sem título)"}${
+            s.ed_service_price
+              ? ` — ${Number(s.ed_service_price).toLocaleString("pt-AO")} ${s.ed_coin_code || ""}`
+              : ""}`,
+          _raw: s,
+        })));
+      })
+      .catch(() => { if (!cancelled) setServices([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [URL]);
+
+  return { services, loading };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FineBadgeUnified — v29
+//
+// Componente ÚNICO de multa. Substitui FinesBadge + ManualRuleSelector.
+// Renderiza o explicacao_html que vem do backend (quando Modelo D).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const FineBadgeUnified = React.memo(function FineBadgeUnified({
+  studentId,
+  paymentType,
+  servicePrice,
+  selectedMonthCodes,
+  onFineLoaded,
+}) {
+  const [phase,        setPhase]        = useState("idle");   // idle | loading | done | error
+  const [fineData,     setFineData]     = useState(null);     // resposta completa do backend
+  const [rules,        setRules]        = useState([]);
+  const [selectedRule, setSelectedRule] = useState(null);
+  const [rulesPhase,   setRulesPhase]   = useState("idle");   // idle | loading | done | error
+
+  const abortRef       = useRef(null);
+  const onFineLoadedRef = useRef(onFineLoaded);
+  useEffect(() => { onFineLoadedRef.current = onFineLoaded; }, [onFineLoaded]);
+
+  const URL_DETECT   = useMemo(() => Hoot() + "eduallmultascalculate/student/post/", []);
+  const URL_CALC     = useMemo(() => Hoot() + "eduallmultascalculatebyrule/student/post/", []);
+  const URL_RULES    = useMemo(() => Hoot() + "eduallmultasrules/get/", []);
+
+  // ── Carrega regras disponíveis (uma vez por paymentType) ──────────────────
+  useEffect(() => {
+    if (!studentId) return;
+    let cancelled = false;
+    setRulesPhase("loading");
+    axios.get(URL_RULES)
+      .then(r => {
+        if (cancelled) return;
+        const all = r.data || [];
+        const isStr = paymentType && typeof paymentType === "string"
+          && paymentType.trim() !== "" && isNaN(Number(paymentType));
+        const active = all.filter(rule => {
+          if (!rule.fine_rule_active) return false;
+          if (isStr) return rule.fine_rule_payment_type === paymentType;
+          return true;
+        });
+        setRules(active);
+        setRulesPhase("done");
+      })
+      .catch(() => { if (!cancelled) setRulesPhase("error"); });
+    return () => { cancelled = true; };
+  }, [studentId, paymentType, URL_RULES]);
+
+  // ── Calcula multa via backend ─────────────────────────────────────────────
+  const calculate = useCallback(async (rule, codes) => {
+    if (!studentId || !rule) return;
+
+    // Cancela pedido anterior
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setPhase("loading");
+    setFineData(null);
+
+    try {
+      const { data } = await axios.post(URL_CALC, {
+        studentId,
+        ruleId:             rule.fine_rule_id,
+        selectedMonthCodes: codes.map(c => String(c)),
+        paymentType:        paymentType || "propina",
+        servicePrice:       Number(servicePrice || 0),
+      }, { signal: controller.signal });
+
+      setFineData(data);
+      setPhase("done");
+
+      const totalFine = Number(data?.totalFine || 0);
+      onFineLoadedRef.current?.({
+        hasFine:   totalFine > 0,
+        fineValue: totalFine,
+        reason:    rule.fine_rule_name,
+        currency:  data?.currency || "",
+        explicacao_html: data?.explicacao_html || null,
+      });
+
+    } catch (err) {
+      if (axios.isCancel(err)) return;
+      setPhase("error");
+      // fallback com valor fixo da regra
+      const fallback = Number(rule.fine_rule_fixed_value || 0) * Math.max(1, codes.length);
+      onFineLoadedRef.current?.({
+        hasFine: fallback > 0, fineValue: fallback,
+        reason: rule.fine_rule_name, currency: "", explicacao_html: null,
+      });
+    }
+  }, [studentId, paymentType, servicePrice, URL_CALC]);
+
+  // ── Auto-detecta e selecciona regra quando temos studentId ───────────────
+  useEffect(() => {
+    if (!studentId || rulesPhase !== "done") return;
+    if (rules.length === 0) {
+      setFineData(null);
+      setPhase("idle");
+      onFineLoadedRef.current?.({ hasFine: false, fineValue: 0 });
+      return;
+    }
+
+    // Tenta detecção automática
+    let cancelled = false;
+    axios.post(URL_DETECT, {
+      studentId,
+      paymentType: (paymentType || "propina").trim().toLowerCase(),
+    }).then(r => {
+      if (cancelled) return;
+      const detected = r.data;
+      // Usa ruleId devolvido pelo detect, ou cai para a primeira regra activa
+      const ruleId   = detected?.ruleId;
+      const match    = ruleId
+        ? rules.find(r => String(r.fine_rule_id) === String(ruleId))
+        : null;
+      const rule     = match || rules[0];
+      setSelectedRule(rule);
+      if (selectedMonthCodes && selectedMonthCodes.length > 0) {
+        calculate(rule, selectedMonthCodes);
+      } else {
+        setPhase("idle");
+        onFineLoadedRef.current?.({ hasFine: false, fineValue: 0 });
+      }
+    }).catch(() => {
+      if (cancelled) return;
+      // Sem detecção — usa primeira regra se tiver meses
+      const rule = rules[0];
+      setSelectedRule(rule);
+      if (selectedMonthCodes && selectedMonthCodes.length > 0) {
+        calculate(rule, selectedMonthCodes);
+      } else {
+        setPhase("idle");
+      }
+    });
+    return () => { cancelled = true; };
+  }, [studentId, rulesPhase, rules]); // eslint-disable-line
+
+  // ── Recalcula quando mudam meses ou servicePrice ─────────────────────────
+  useEffect(() => {
+    if (!selectedRule || !selectedMonthCodes || selectedMonthCodes.length === 0) {
+      setFineData(null);
+      setPhase("idle");
+      return;
+    }
+    calculate(selectedRule, selectedMonthCodes);
+  }, [selectedMonthCodes, servicePrice]); // eslint-disable-line
+
+  const handleSelectRule = useCallback((rule) => {
+    setSelectedRule(rule);
+    if (selectedMonthCodes && selectedMonthCodes.length > 0) {
+      calculate(rule, selectedMonthCodes);
+    }
+  }, [calculate, selectedMonthCodes]);
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  if (!studentId) return null;
+
+  if (rulesPhase === "loading" || phase === "loading") {
+    return (
+      <_FBLoading>
+        <_FBSpinnerEl /> A calcular multa automática…
+      </_FBLoading>
+    );
+  }
+
+  if (rulesPhase === "error") {
+    return (
+      <_FBEmpty $warn>
+        <IoAlertCircleOutline size={13} style={{ color: "#d97706" }} />
+        Não foi possível verificar regras de multa.
+      </_FBEmpty>
+    );
+  }
+
+  if (rules.length === 0) {
+    return (
+      <_FBEmpty>
+        <IoCheckmarkCircle size={13} style={{ color: "#22a06b" }} />
+        Nenhuma regra de multa activa para este tipo de pagamento.
+      </_FBEmpty>
+    );
+  }
+
+  if (!selectedMonthCodes || selectedMonthCodes.length === 0) {
+    return (
+      <_FBEmpty>
+        <IoAlertCircleOutline size={13} style={{ color: "#d97706" }} />
+        Seleccione pelo menos um mês para calcular a multa.
+      </_FBEmpty>
+    );
+  }
+
+  if (phase === "error") {
+    return (
+      <_FBEmpty $warn>
+        <IoAlertCircleOutline size={13} style={{ color: "#d97706" }} />
+        Erro ao calcular multa. O valor fixo da regra foi usado como estimativa.
+      </_FBEmpty>
+    );
+  }
+
+  const totalFine = Number(fineData?.totalFine || 0);
+  const explicacaoHTML = fineData?.explicacao_html || null;
+
+  // Sem multa
+  if (phase === "done" && totalFine === 0) {
+    return (
+      <_FBEmpty>
+        <IoCheckmarkCircle size={13} style={{ color: "#22a06b" }} />
+        Sem multa aplicável para os meses seleccionados.
+      </_FBEmpty>
+    );
+  }
+
+  return (
+    <_FBBox>
+      {/* Cabeçalho */}
+      <_FBHead>
+        <_FBLeft>
+          <MdGavel size={13} color="#b91c1c" />
+          <_FBTitle>Multa calculada</_FBTitle>
+          {selectedRule && (
+            <_FBModelTag>
+              {MODEL_LABELS[selectedRule.fine_rule_model] || selectedRule.fine_rule_model}
+            </_FBModelTag>
+          )}
+        </_FBLeft>
+        <_FBRight>
+          {rules.length > 1 && (
+            <RuleSwitch>
+              {rules.map(r => (
+                <RuleSwitchBtn
+                  key={r.fine_rule_id}
+                  $active={selectedRule?.fine_rule_id === r.fine_rule_id}
+                  onClick={() => handleSelectRule(r)}
+                  title={r.fine_rule_name}
+                >
+                  {r.fine_rule_name}
+                </RuleSwitchBtn>
+              ))}
+            </RuleSwitch>
+          )}
+        </_FBRight>
+      </_FBHead>
+
+      {/* Nome da regra */}
+      {selectedRule && (
+        <_FBRule>
+          Regra: <strong>{selectedRule.fine_rule_name}</strong>
+          <span style={{ color: "#6b7280", marginLeft: 6 }}>
+            {selectedRule.fine_rule_payment_type || "propina"}
+          </span>
+        </_FBRule>
+      )}
+
+      {/* HTML explicativo do backend — Modelo D e outros */}
+      {explicacaoHTML ? (
+        <FineHTMLContainer dangerouslySetInnerHTML={{ __html: explicacaoHTML }} />
+      ) : (
+        /* Fallback simples quando backend não devolve HTML */
+        <_FBCalc>
+          <_FBDivThin />
+          <_FBRow $hi>
+            <_FBLabel style={{ fontWeight: 700, color: "#111827" }}>
+              Total da multa ({selectedMonthCodes.length} {selectedMonthCodes.length === 1 ? "mês" : "meses"})
+            </_FBLabel>
+            <_FBTotal>{_fmtFine(totalFine, fineData?.currency || "")}</_FBTotal>
+          </_FBRow>
+        </_FBCalc>
+      )} 
+    </_FBBox>
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Styled — FineBadgeUnified
+// ─────────────────────────────────────────────────────────────────────────────
+
+const _FBBox       = styled.div`background:#fff;border:1px solid #fecaca;border-left:3px solid #b91c1c;border-radius:8px;padding:12px 14px;margin:8px 0;box-shadow:0 1px 4px rgba(185,28,28,.06);`;
+const _FBHead      = styled.div`display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap;`;
+const _FBLeft      = styled.div`display:flex;align-items:center;gap:6px;flex-wrap:wrap;`;
+const _FBRight     = styled.div`display:flex;align-items:center;gap:6px;flex-wrap:wrap;`;
+const _FBTitle     = styled.span`font-size:11px;font-weight:700;letter-spacing:.5px;color:#b91c1c;text-transform:uppercase;`;
+const _FBRule      = styled.div`font-size:12px;color:#374151;margin-bottom:6px;line-height:1.4;`;
+const _FBModelTag  = styled.span`font-size:10px;font-weight:600;color:#7c3aed;background:#f5f3ff;border:1px solid #ede9fe;padding:1px 7px;border-radius:4px;white-space:nowrap;`;
+const _FBLoading   = styled.div`display:flex;align-items:center;gap:8px;font-size:12px;color:#6b7280;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;margin:8px 0;`;
+const _FBSpinnerEl = styled.div`width:14px;height:14px;border:2px solid #e5e7eb;border-top-color:#b91c1c;border-radius:50%;animation:${_spinKf} .8s linear infinite;flex-shrink:0;`;
+const _FBEmpty     = styled.div`display:flex;align-items:center;gap:8px;font-size:12px;color:${p => p.$warn ? "#b45309" : "#374151"};background:${p => p.$warn ? "#fffbeb" : "#f0fdf4"};border:1px solid ${p => p.$warn ? "#fde68a" : "#bbf7d0"};border-radius:8px;padding:10px 14px;margin:8px 0;`;
+const _FBCalc      = styled.div`display:flex;flex-direction:column;gap:4px;`;
+const _FBDivThin   = styled.div`height:1px;background:#f3f4f6;margin:6px 0;`;
+const _FBRow       = styled.div`display:flex;align-items:center;justify-content:space-between;gap:8px;padding:${p => p.$hi ? "6px 8px" : "2px 0"};background:${p => p.$hi ? "#fef2f2" : "transparent"};border-radius:${p => p.$hi ? "6px" : "0"};`;
+const _FBLabel     = styled.span`font-size:12px;color:#6b7280;font-weight:500;flex:1;`;
+const _FBTotal     = styled.span`font-size:15px;font-weight:800;color:#b91c1c;white-space:nowrap;display:flex;align-items:center;`;
+const _FBNote      = styled.div`display:flex;align-items:flex-start;gap:5px;margin-top:10px;font-size:11px;color:#6b7280;line-height:1.5;font-style:italic;svg{flex-shrink:0;margin-top:1px;}`;
+
+const FineHTMLContainer = styled.div`
+  margin: 8px 0;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ed-dark, #111827);
+
+  /* Tabelas dentro do HTML do backend */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td, th { padding: 5px 8px; }
+
+  /* Cards de métricas */
+  & > div > div[style*="grid"] > div {
+    border: 1px solid #f3f4f6;
+  }
+
+  /* Código inline */
+  code {
+    font-family: monospace;
+    background: #f3f4f6;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 11px;
+  }
+`;
+
+const RuleSwitch = styled.div`
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+`;
+
+const RuleSwitchBtn = styled.button`
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 20px;
+  border: 1px solid ${p => p.$active ? "#b91c1c" : "#e5e7eb"};
+  background: ${p => p.$active ? "#fef2f2" : "#f9fafb"};
+  color: ${p => p.$active ? "#b91c1c" : "#6b7280"};
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .15s;
+  &:hover { border-color: #b91c1c; color: #b91c1c; }
+`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Constantes
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PAYMENT_TYPE_BALANCE = 4;
+
+const PAYMENT_METHODS = [
+  { value: 0, label: "Dinheiro a mão"  },
+  { value: 1, label: "Transferência"   },
+  { value: 2, label: "Depósito"        },
+  { value: 3, label: "TPA"             },
+  { value: PAYMENT_TYPE_BALANCE, label: "Saldo do aluno" },
+];
+
+const fmtMoney = (v, coin = "") =>
+  `${Number(v || 0).toLocaleString("pt-AO", {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  })}${coin ? " " + coin : ""}`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BalanceCreditSelector
+// ─────────────────────────────────────────────────────────────────────────────
+
+function BalanceCreditSelector({ balance, total, coin, editAmount, onChange }) {
+  if (balance === null || balance === undefined) return null;
+  const maxUsable   = Math.min(Number(balance), Number(total));
+  const current     = Number(editAmount ?? 0);
+  const remaining   = Math.max(0, Number(total) - current);
+  const balanceLeft = Number(balance) - current;
+  const fullyPaid   = remaining <= 0;
+  return (
+    <CreditSelectorBox fullyPaid={fullyPaid}>
+      <div className="cs-header">
+        <span className="cs-title"><IoWalletOutline size={14} /> Créditos a usar neste pagamento</span>
+        <span className="cs-available">Disponível: <strong>{fmtMoney(balance, coin)}</strong></span>
+      </div>
+      <input type="range" min={0} max={maxUsable} step={1} value={current}
+        onChange={e => onChange(Number(e.target.value))} className="cs-slider" />
+      <div className="cs-input-row">
+        <div className="cs-input-wrap">
+          <input type="number" min={0} max={maxUsable} step={1} value={current}
+            onChange={e => onChange(Math.min(Math.max(0, Number(e.target.value)), maxUsable))}
+            className="cs-input" placeholder="0" />
+          <span className="cs-coin">{coin}</span>
+        </div>
+        <div className="cs-quick-btns">
+          <button type="button" className="cs-btn cs-btn-all"  onClick={() => onChange(maxUsable)}>Usar tudo</button>
+          <button type="button" className="cs-btn cs-btn-half" onClick={() => onChange(Math.floor(maxUsable / 2))}>Metade</button>
+          <button type="button" className="cs-btn cs-btn-none" onClick={() => onChange(0)}>Não usar</button>
+        </div>
+      </div>
+      <div className={`cs-summary ${fullyPaid ? "cs-summary--ok" : "cs-summary--partial"}`}>
+        <div className="cs-summary-item">
+          <div className="cs-summary-label">Créditos usados</div>
+          <div className="cs-summary-value cs-purple">{fmtMoney(current, coin)}</div>
+        </div>
+        <div className="cs-summary-divider" />
+        <div className="cs-summary-item">
+          <div className="cs-summary-label">Saldo após pagamento</div>
+          <div className={`cs-summary-value ${balanceLeft < 0 ? "cs-red" : "cs-green"}`}>{fmtMoney(balanceLeft, coin)}</div>
+        </div>
+        <div className="cs-summary-divider" />
+        <div className="cs-summary-item">
+          <div className="cs-summary-label">Ainda a pagar</div>
+          <div className={`cs-summary-value ${remaining > 0 ? "cs-orange" : "cs-green"}`}>
+            {remaining > 0
+              ? <><IoAlertCircleOutline size={12} style={{ marginRight: 3 }} />{fmtMoney(remaining, coin)}</>
+              : <><IoCheckmarkCircle   size={12} style={{ marginRight: 3 }} />Coberto</>}
+          </div>
+        </div>
+      </div>
+      {remaining > 0 && current > 0 && (
+        <div className="cs-warning"><strong>Pagamento parcial</strong><br />
+          Faltam <strong>{fmtMoney(remaining, coin)}</strong> — cobrar por outro método.</div>
+      )}
+      {current === 0 && (
+        <div className="cs-info">Sem créditos aplicados. O valor total será cobrado por outro método.</div>
+      )}
+      {fullyPaid && current > 0 && (
+        <div className="cs-success">Fatura totalmente coberta pelo saldo do aluno!</div>
+      )}
+    </CreditSelectorBox>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NewfeeManualPaymentModal v29 — componente principal
+// ─────────────────────────────────────────────────────────────────────────────
+
+function NewfeeManualPaymentModal(props) {
+  const SH      = props.pop === true;
+  const prefill = props.prefill || null;
+
+  const [show,         setShow]         = useState(false);
+  const [showBox,      setShowBox]      = useState(false);
+  const [form,         setForm]         = useState({});
+  const [errors,       setErrors]       = useState({});
+  const [files,        setFiles]        = useState([]);
+  const [currentFiles, setCurrentFiles] = useState([]);
+
+  const [studentCode,     setStudentCode]     = useState("");
+  const [serviceCode,     setServiceCode]     = useState(null);
+  const [servicePrice,    setServicePrice]    = useState(null);
+  const [serviceCoin,     setServiceCoin]     = useState("");
+  const [serviceDiscount, setServiceDiscount] = useState(0);
+  const [serviceIva,      setServiceIva]      = useState(0);
+
+  const [extraServicesEnabled, setExtraServicesEnabled] = useState(false);
+  const [extraServices,        setExtraServices]        = useState([]);
+  const [applyDiscount,        setApplyDiscount]        = useState(null);
+  const [applyFineManual,      setApplyFineManual]      = useState(false);
+
+  const DEFAULT_PAYMENT = useMemo(() => {
+    const v = Number(props.defaultPaymentMethod);
+    return Number.isFinite(v) && v >= 0 && v <= PAYMENT_TYPE_BALANCE ? v : 0;
+  }, [props.defaultPaymentMethod]);
+
+  const [paymentType,    setPaymentType]    = useState(DEFAULT_PAYMENT);
+  const [monthOptions,   setMonthOptions]   = useState([]);
+  const [selectedMonths, setSelectedMonths] = useState([]);
+  const [invoiceValue,   setInvoiceValue]   = useState("0");
+  const [balancePreview, setBalancePreview] = useState(0);
+  const [parentsData,    setParentsData]    = useState([]);
+  const [registerStatus, setRegisterStatus] = useState(null);
+  const [founded,        setFounded]        = useState(null);
+
+  const [currentMonth,         setCurrentMonth]         = useState();
+  const [currentService,       setCurrentService]       = useState();
+  const [currentAcademicYear,  setCurrentAcademicYear]  = useState();
+  const [currentPaymentMethod, setCurrentPaymentMethod] = useState();
+  const [docfile,              setDocfile]              = useState(false);
+
+  const [studentBalance,        setStudentBalance]        = useState(null);
+  const [studentBalanceCoin,    setStudentBalanceCoin]    = useState("");
+  const [studentBalanceLoading, setStudentBalanceLoading] = useState(false);
+  const [showBalanceCanvas,     setShowBalanceCanvas]     = useState(false);
+  const [balanceEditAmount,     setBalanceEditAmount]     = useState(null);
+  const balanceDeductedRef = useRef(false);
+
+  // finePaymentType — tipo de pagamento do serviço seleccionado (string, ex: "propina")
+  const [finePaymentType, setFinePaymentType] = useState(null);
+  const finePaymentTypeRef = useRef(null);
+  const isLoadingStudentRef = useRef(false);
+
+  const { services: servicesList, loading: servicesLoading } = useServicesList();
+  const ChildRef = useRef();
+
+  const URL = useMemo(() => ({
+    batchRegister:      Hoot() + "eduallregisterfeepayment/post/",
+    checkPaidMonth:     Hoot() + "eduallfeepaymentcheckpaidmonth/",
+    singleService:      Hoot() + "eduallsingleserviceapi/get/",
+    getRecord:          props.get  || "",
+    updateRecord:       props.url  || "",
+    singleStudent:      Hoot() + "eduallsinglestudentapi/get/",
+    singleClass:        Hoot() + "eduallsingleclassapi/get/",
+    singleAcademicYear: Hoot() + "eduallsingleacademicyearapi/get/",
+    filesUpload:        Hoot() + "eduallfilesregister/post/",
+    listFilesByCode:    Hoot() + "eduallsingleuserfiles/get/",
+    parents:            Hoot() + "eduallparents/get/",
+    instituteIVA:       Hoot() + "eduallgetsingleinstitute/get/1",
+    studentBalance:     Hoot() + "eduallstudentbalance/",
+    balanceDeduct:      Hoot() + "eduallstudentbalancededuct",
+  }), []);
+
+  const MonthsList = useMemo(() => [
+    "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+    "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
+  ], []);
+
+  const handleClose = useCallback(() => {
+    setShowBox(false);
+    setTimeout(() => { setShow(false); if (typeof props.onClose === "function") props.onClose(); }, 300);
+  }, [props.onClose]);
+
+  const handleShow = useCallback(() => {
+    setShowBox(true); setShow(true); setPaymentType(DEFAULT_PAYMENT);
+    setForm({}); setErrors({});
+    setFinePaymentType(null); finePaymentTypeRef.current = null;
+    setApplyFineManual(false);
+    setTimeout(() => { if (props.update && URL.getRecord) loadRecordForUpdate(); }, 150);
+  }, [DEFAULT_PAYMENT, URL.getRecord, props.update]);
+
+  const showBoxFile = useCallback(() => setDocfile(v => !v), []);
+  const GetFiles    = useCallback(arr => setFiles(arr), []);
+
+  const setField = useCallback((field, value) => {
+    setForm(f => ({ ...f, [field]: value }));
+    setErrors(e => e[field] ? { ...e, [field]: null } : e);
+  }, []);
+
+  const monthLabel = useCallback((mDotY) => {
+    const m = String(mDotY).split(".")[0] * 1;
+    const y = String(mDotY).split(".")[1] * 1;
+    const N = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+    return (Number.isFinite(m) && Number.isFinite(y)) ? `${N[m]} / ${y}` : String(mDotY);
+  }, []);
+
+  const addExtraService    = useCallback(() => setExtraServices(a => [...a, { name: "", value: "" }]), []);
+  const removeExtraService = useCallback(idx => setExtraServices(a => a.filter((_, i) => i !== idx)), []);
+  const updateExtraService = useCallback((idx, key, val) =>
+    setExtraServices(a => a.map((it, i) => i === idx ? { ...it, [key]: val } : it)), []);
+
+  const totalExtraServices = useCallback(() =>
+    extraServices.reduce((sum, it) => {
+      const v = parseFloat(String(it.value).replace(",", "."));
+      const n = Number.isFinite(v) ? v : 0;
+      if (it._isFine) return sum + n;
+      if (!extraServicesEnabled) return sum;
+      return sum + n;
+    }, 0), [extraServicesEnabled, extraServices]);
+
+  const fetchStudentBalance = useCallback(async (sid) => {
+    if (!sid) { setStudentBalance(null); setStudentBalanceCoin(""); setBalanceEditAmount(null); return; }
+    setStudentBalanceLoading(true);
+    try {
+      const resp = await axios.get(URL.studentBalance + sid);
+      setStudentBalance(Number(resp.data?.sb_balance ?? 0));
+      setStudentBalanceCoin(resp.data?.sb_currency || serviceCoin || "KZ");
+      setBalanceEditAmount(null);
+    } catch {
+      setStudentBalance(0);
+      setStudentBalanceCoin(serviceCoin || "KZ");
+      setBalanceEditAmount(null);
+    } finally {
+      setStudentBalanceLoading(false);
+    }
+  }, [URL.studentBalance, serviceCoin]);
+
+  // ── handleFineLoaded — callback do FineBadgeUnified ───────────────────────
+  // v29: limpa primeiro o _isFine anterior, depois adiciona o novo
+  const handleFineLoaded = useCallback(({ hasFine, fineValue, reason, currency }) => {
+    setExtraServices(prev => {
+      const filtered = prev.filter(e => !e._isFine);
+      if (hasFine && fineValue > 0)
+        return [...filtered, { name: reason || "Multa automática", value: fineValue, _isFine: true }];
+      return filtered;
+    });
+    if (hasFine && fineValue > 0) setExtraServicesEnabled(true);
+  }, []);
+
+  async function loadRecordForUpdate() {
+    try {
+      setFounded(null);
+      const resp = await axios.get(URL.getRecord);
+      const data = resp?.data || [];
+      if (!data?.length) { setFounded(false); return; }
+      setFounded(true);
+      const row = data[0];
+      try {
+        const fx = await axios.get(URL.listFilesByCode + row.ed_fee_payment_code);
+        if (fx?.data?.length) setCurrentFiles(fx.data);
+      } catch {}
+      setCurrentMonth(row.ed_fee_payment_month);
+      setCurrentService(row.ed_fee_payment_service);
+      setCurrentAcademicYear(row.ed_fee_payment_academic_year);
+      setCurrentPaymentMethod(row.ed_fee_payment_type);
+      setPaymentType(row.ed_fee_payment_type * 1 !== 0 ? 1 : 0);
+      setStudentCode(row.ed_fee_payment_student);
+      setServiceCode(row.ed_fee_payment_service);
+      setField("feepayment_place",            row.ed_fee_payment_place    || "");
+      setField("feepayment_bordereux_number", row.ed_fee_payment_bordereux || "");
+      setField("feepayment_bank",             row.ed_fee_payment_bank     || "");
+      setField("feepayment_type",             row.ed_fee_payment_type);
+      setField("feepayment_months",           String(row.ed_fee_payment_month));
+      await prepareMonths(row.ed_fee_payment_student);
+      await loadServiceData(row.ed_fee_payment_service, 1, row.ed_fee_payment_student);
+      await fetchStudentBalance(row.ed_fee_payment_student);
+    } catch { setFounded(false); }
+  }
+
+  async function prepareMonths(studentId) {
+    try {
+      const StudentData = await axios.get(URL.singleStudent + studentId);
+      const S = StudentData?.data?.[0];
+      if (!S) return;
+      const [Cls] = await Promise.all([axios.get(URL.singleClass + S.ed_student_class), null]);
+      const C = Cls?.data?.[0];
+      if (!C) return;
+      const AY = await axios.get(URL.singleAcademicYear + C.ed_class_year);
+      const Y  = AY?.data?.[0];
+      if (!Y) return;
+      setField("feepayment_academic_year", C.ed_class_year);
+      setCurrentAcademicYear(C.ed_class_year);
+      const [y1, m1] = Y.ed_academic_year_startDate.split("-").map(v => v * 1);
+      const [y2, m2] = Y.ed_academic_year_endDate.split("-").map(v => v * 1);
+      const opts = [];
+      const pushMonth = (m, y) => opts.push({ label: `${MonthsList[m]} de ${y}`, selected: false, value: Number(`${m}.${y}`) });
+      if (y2 - y1 === 1 && m2 <= m1) {
+        for (let m = m1 - 1; m <= 11; m++) pushMonth(m, y1);
+        for (let m = 0; m <= m2 - 1; m++) pushMonth(m, y2);
+      } else if (y2 - y1 === 1 && m2 > m1) {
+        for (let m = m1 - 1; m <= 11; m++) pushMonth(m, y1);
+        for (let m = 0; m <= m2 - 1; m++) pushMonth(m, y2);
+      } else {
+        for (let m = m1 - 1; m <= m2 - 1; m++) pushMonth(m, y1);
+      }
+      setMonthOptions(opts);
+      if (C.ed_class_service) {
+        setServiceCode(C.ed_class_service);
+        setField("feepayment_servicecode", C.ed_class_service);
+        await loadServiceData(C.ed_class_service, 1, studentId);
+      }
+    } catch { toast.error("Erro ao recolher meses do ano letivo."); }
+  }
+
+  async function loadServiceData(svcId, amount, stCode) {
+    try {
+      if (!svcId || !stCode) return;
+      const [respService, respParents, respIVA] = await Promise.all([
+        axios.get(URL.singleService + svcId),
+        axios.get(URL.parents),
+        axios.get(URL.instituteIVA),
+      ]);
+      const S = respService?.data?.[0];
+      if (!S) return;
+
+      // v29: limpa multa anterior ANTES de actualizar tipo
+      // evita que o badge recalcule com servicePrice stale
+      setExtraServices(prev => prev.filter(e => !e._isFine));
+
+      setServicePrice(S.ed_service_price);
+      setServiceCoin(S.ed_coin_code);
+      setServiceDiscount(S.ed_service_discount * 1 || 0);
+
+      const newType = S.ed_service_payment_type || S.ed_service_type_name || "propina";
+      finePaymentTypeRef.current = newType;
+      setFinePaymentType(newType);
+
+      const instIVA = respIVA?.data?.[0]?.ed_institute_iva_value * 1 || 0;
+      setServiceIva(S.ed_service_iva * 1 > 0 ? instIVA : 0);
+
+      try {
+        const P  = respParents?.data || [];
+        const st = await axios.get(URL.singleStudent + stCode);
+        const ST = st?.data?.[0];
+        const filtered = [];
+        if (ST) {
+          const codeSet = new Set([ST.ed_student_code]);
+          P.forEach(p => {
+            const arr = (p.ed_parent_students_code || "").split("|").filter(Boolean);
+            if (arr.some(c => codeSet.has(c))) filtered.push(p);
+          });
+        }
+        setParentsData(filtered);
+      } catch { setParentsData([]); }
+
+      recalcPreview(amount || selectedMonths.length, S);
+    } catch {}
+  }
+
+  const recalcPreview = useCallback((amount, SVC) => {
+    const PRICE    = (SVC?.ed_service_price    ?? servicePrice)    * 1 || 0;
+    const DISCOUNT = (SVC?.ed_service_discount ?? serviceDiscount) * 1 || 0;
+    const IVA_ON   = (SVC?.ed_service_iva      ?? (serviceIva > 0 ? 1 : 0)) * 1;
+    const IVA_PCT  = serviceIva * 1 || 0;
+    const discountAmount     = DISCOUNT > 0 ? (PRICE * DISCOUNT) / 100 : 0;
+    const priceAfterDiscount = Math.max(0, PRICE - discountAmount);
+    const extrasTotal        = totalExtraServices();
+    const ivaAmount          = IVA_ON ? (priceAfterDiscount * IVA_PCT) / 100 : 0;
+    const lineTotal          = priceAfterDiscount + ivaAmount;
+    const grand              = lineTotal * Math.max(1, amount || 1) + extrasTotal;
+    setInvoiceValue(NumberToPrice(grand) + " " + (serviceCoin || ""));
+    setBalancePreview(grand);
+    setApplyDiscount(DISCOUNT > 0);
+    setBalanceEditAmount(prev => {
+      if (prev === null) return null;
+      return Math.min(prev, Math.min(studentBalance ?? 0, grand));
+    });
+  }, [servicePrice, serviceDiscount, serviceIva, serviceCoin, studentBalance, totalExtraServices]);
+
+  // v29: ao trocar serviço — limpa multa imediatamente, depois carrega novo
+  const onSelectService = useCallback((value) => {
+    const svcId = Number(value);
+    setServiceCode(svcId);
+    setField("feepayment_servicecode", svcId);
+    // Limpa multa e tipo antes do fetch — evita estado stale
+    setExtraServices(prev => prev.filter(e => !e._isFine));
+    setFinePaymentType(null);
+    finePaymentTypeRef.current = null;
+    if (svcId && studentCode) {
+      loadServiceData(svcId, selectedMonths.length, studentCode);
+    }
+  }, [studentCode, selectedMonths.length]); // eslint-disable-line
+
+  const onSelectStudent = useCallback(async (code) => {
+    setStudentCode(code);
+    setField("feepayment_student_code", code);
+    setMonthOptions([]); setSelectedMonths([]); setInvoiceValue("0");
+    setBalancePreview(0); setBalanceEditAmount(null);
+    // Limpa multa ao trocar aluno
+    setExtraServices(prev => prev.filter(e => !e._isFine));
+    setFinePaymentType(null);
+    finePaymentTypeRef.current = null;
+    setApplyFineManual(false);
+    isLoadingStudentRef.current = true;
+    try {
+      await Promise.all([fetchStudentBalance(code), prepareMonths(code)]);
+    } finally {
+      setTimeout(() => { isLoadingStudentRef.current = false; }, 0);
+    }
+  }, [fetchStudentBalance]); // eslint-disable-line
+
+  const onChangeMonths = useCallback(vals => setSelectedMonths(vals), []);
+
+  const onChangeInput = useCallback(e => {
+    const { id, value } = e.target;
+    switch (id) {
+      case "feepayment_type": {
+        const v = Number(value);
+        setPaymentType(v);
+        setField("feepayment_type", v);
+        if (v !== PAYMENT_TYPE_BALANCE) setBalanceEditAmount(null);
+        break;
+      }
+      default: setField(id, value);
+    }
+  }, [setField]);
+
+  useEffect(() => { if (SH) handleShow(); }, [props.pop]); // eslint-disable-line
+
+  useEffect(() => {
+    if (isLoadingStudentRef.current) return;
+    if (serviceCode && studentCode) {
+      loadServiceData(serviceCode, selectedMonths.length, studentCode);
+    }
+  }, [serviceCode, studentCode]); // eslint-disable-line
+
+  useEffect(() => { recalcPreview(selectedMonths.length); }, [extraServicesEnabled, extraServices]); // eslint-disable-line
+  useEffect(() => { recalcPreview(selectedMonths.length); }, [selectedMonths.length]); // eslint-disable-line
+
+  useEffect(() => {
+    if (!prefill) return;
+    if (prefill.studentId) {
+      const sid = String(prefill.studentId);
+      setStudentCode(sid); setField("feepayment_student_code", sid); setMonthOptions([]);
+      setFinePaymentType(null); finePaymentTypeRef.current = null; setApplyFineManual(false);
+      setExtraServices(prev => prev.filter(e => !e._isFine));
+      isLoadingStudentRef.current = true;
+      Promise.all([fetchStudentBalance(sid), prepareMonths(sid)]).finally(() => {
+        setTimeout(() => { isLoadingStudentRef.current = false; }, 0);
+      });
+    }
+    if (prefill.academicYearId) {
+      setCurrentAcademicYear(Number(prefill.academicYearId));
+      setField("feepayment_academic_year", Number(prefill.academicYearId));
+    }
+    if (Array.isArray(prefill.months) && prefill.months.length) {
+      setSelectedMonths(prefill.months.map(m => ({
+        label: m.label || monthLabel(m.value),
+        value: Number(m.value),
+      })));
+    }
+  }, [prefill?.studentId, prefill?.academicYearId]); // eslint-disable-line
+
+  useEffect(() => {
+    if (serviceCoin && !studentBalanceCoin) setStudentBalanceCoin(serviceCoin);
+  }, [serviceCoin]); // eslint-disable-line
+
+  const usingBalance = paymentType === PAYMENT_TYPE_BALANCE;
+
+  const effectiveBalanceUsed = useMemo(() => {
+    if (!usingBalance || studentBalance === null || balanceEditAmount === null) return 0;
+    return Math.min(balanceEditAmount, studentBalance, balancePreview > 0 ? Infinity : 0);
+  }, [usingBalance, studentBalance, balanceEditAmount, balancePreview]);
+
+  const selectedMonthsCount = useMemo(() => {
+    if (props.update) return 1;
+    return Math.max(1, selectedMonths.length);
+  }, [props.update, selectedMonths.length]);
+
+  const selectedMonthCodes = useMemo(() => {
+    if (props.update) {
+      const m = form.feepayment_months || currentMonth;
+      return m ? [String(m)] : [];
+    }
+    return selectedMonths.map(m => String(m.value));
+  }, [props.update, selectedMonths, form.feepayment_months, currentMonth]);
+
+  // v29: badge aparece APENAS quando checkbox está marcada E temos tudo necessário
+  const shouldShowFineBadge = applyFineManual
+    && !!studentCode
+    && !!finePaymentType
+    && selectedMonthCodes.length > 0;
+
+  // key muda quando troca aluno ou serviço — força remount e limpa estado interno
+  const fineBadgeKey = useMemo(() =>
+    `${studentCode}__${finePaymentType || "null"}__${serviceCode || "null"}`,
+    [studentCode, finePaymentType, serviceCode]);
+
+  const FormSubmit = async e => {
+    e.preventDefault();
+    try {
+      setRegisterStatus(0); balanceDeductedRef.current = false;
+      const fv = {};
+      if (!studentCode) fv.feepayment_student_code = "Selecione um estudante";
+      if (!serviceCode || serviceCode <= 0) fv.feepayment_servicecode = "Selecione o valor associado à propina";
+      const monthsToSend = props.update
+        ? [String(form.feepayment_months || currentMonth)]
+        : selectedMonths.map(m => String(m.value));
+      if (!monthsToSend.length) fv.feepayment_months = "Selecione os meses a pagar";
+      if (paymentType === null || paymentType === undefined) fv.feepayment_type = "Selecione o método de pagamento";
+      if (usingBalance) {
+        if (studentBalance === null) fv.feepayment_type = "Saldo não disponível. Tente novamente.";
+        else if ((balanceEditAmount ?? 0) > studentBalance)
+          fv.feepayment_type = `Não pode usar mais do que o saldo disponível (${fmtMoney(studentBalance, studentBalanceCoin)})`;
+      }
+      if (Object.keys(fv).length) {
+        setErrors(fv); setRegisterStatus(1);
+        toast.error("Verifique os campos obrigatórios.");
+        return;
+      }
+      const items = monthsToSend.map(m => ({
+        serviceId: serviceCode, month: m, price: servicePrice,
+        discountPct: serviceDiscount || 0, fineType: 0, fineValue: 0, applyIVA: serviceIva > 0 ? 1 : 0,
+      }));
+      const extraServicesPayload = extraServices
+        .filter(it => it._isFine || (extraServicesEnabled && (it?.name || "").trim() !== "" && String(it?.value).trim() !== ""))
+        .map(it => ({ name: String(it.name).trim(), value: Number(String(it.value).replace(",", ".")) || 0, isFine: !!it._isFine }));
+      const balanceUsed = usingBalance && balanceEditAmount !== null
+        ? Number(Math.min(balanceEditAmount, studentBalance ?? 0, balancePreview).toFixed(2)) : 0;
+      const payload = {
+        studentId: Number(studentCode),
+        academicYearId: Number(form.feepayment_academic_year || currentAcademicYear),
+        paymentType: Number(paymentType),
+        bankName: form.feepayment_bank || "",
+        paymentPlace: form.feepayment_place || "",
+        bordereux: form.feepayment_bordereux_number || "",
+        items, extraServices: extraServicesPayload, balanceUsed,
+      };
+      const res = await axios.post(URL.batchRegister, payload);
+      if (!res?.data?.success) throw new Error(res?.data?.msg || "Falha no registo.");
+      const remaining = res.data?.remaining ?? Math.max(0, balancePreview - balanceUsed);
+      toast.success(balanceUsed > 0
+        ? `Pagamento registado! Saldo usado: ${fmtMoney(balanceUsed, studentBalanceCoin || serviceCoin)}. Restante: ${fmtMoney(remaining, studentBalanceCoin || serviceCoin)}`
+        : "Pagamento registado com sucesso!");
+      RefreshList(`.el-refresh-list_${studentCode}`); RefreshList(`.el-refresh-list`);
+      setRegisterStatus(2); setForm({}); ChildRef.current?.ClearFiles?.(); setSelectedMonths([]);
+      setInvoiceValue("0 " + (serviceCoin || "")); setBalancePreview(0);
+      setFiles([]); setExtraServicesEnabled(false); setExtraServices([]); setBalanceEditAmount(null);
+      if (balanceUsed > 0 && studentBalance !== null)
+        setStudentBalance(Number((studentBalance - balanceUsed).toFixed(2)));
+      if (props.update) setTimeout(handleClose, 400); else handleClose();
+    } catch (err) {
+      setRegisterStatus(1);
+      toast.error(String(err?.response?.data?.msg || err?.message || "Erro desconhecido"));
+    }
+  };
+
+  const studentsList = StudentsArray();
+  const lockStudent  = !!prefill?.lockStudent;
+  const lockMonths   = !!prefill?.lockMonths;
+
+  return (
+    <div>
+      <div onClick={handleShow}>
+        {props.toggle_btn ? props.toggle_btn : (
+          <button className="btn btn-main bg-main">
+            <AddCircleOutlineIcon /> Efetuar pagamento de propina
+          </button>
+        )}
+      </div>
+
+      <AnimatedModal content={
+        <Modal size="lg" className={showBox ? ModalAnimationShow() : ModalAnimationClose()}
+          centered dialogAs={DraggableModal} show={show} onHide={handleClose}>
+          <Modal.Header closeButton>
+            <Modal.Title>
+              <div className="ed-wrap align-center">
+                <UserOptionDropDown />
+                <h5>{props.title ? props.title : "Efetuar"} pagamento de propina</h5>
+              </div>
+            </Modal.Title>
+          </Modal.Header>
+
+          <Form onSubmit={FormSubmit}>
+            <Modal.Body className="scrollLimit">
+              <Alert variant="info">
+                <small>
+                  Pode selecionar vários meses; o sistema emite <strong>uma única fatura</strong> com todas as linhas.
+                  Para acréscimos use <strong>valores adicionais</strong> abaixo.
+                </small>
+              </Alert>
+
+              {/* ALUNO */}
+              {!props.update && (
+                <Form.Group className="mb-3">
+                  <div className="ed-space">
+                    <div><Form.Label>Nome do estudante <span className="text-danger ml-2">*</span></Form.Label></div>
+                    <div className="ed-flex" style={{ gap: 8, alignItems: "center" }}>
+                      {studentCode && (
+                        <BalanceBadge balance={studentBalance} currency={studentBalanceCoin || serviceCoin} loading={studentBalanceLoading} />
+                      )}
+                      {studentCode && (studentBalance === 0 || (studentBalance !== null && balancePreview > studentBalance)) && (
+                        <button type="button" onClick={() => setShowBalanceCanvas(true)}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600, background: "#f5f3ff", color: "#7c3aed", border: "1px solid #ede9fe", cursor: "pointer" }}>
+                          <IoWalletOutline size={12} /> Carregar saldo
+                        </button>
+                      )}
+                      {studentCode && (
+                        <StudentDetailsMenu student_id={studentCode} toggle_btn={<div className="btn-pm-info"><InfoOutlined /></div>} />
+                      )}
+                    </div>
+                  </div>
+                  {lockStudent ? (
+                    <div className="grey-text" style={{ fontSize: 13 }}>Estudante selecionado automaticamente.</div>
+                  ) : (
+                    <>
+                      <div className={`select-search-item ${errors.feepayment_student_code ? "error" : ""}`}>
+                        <SelectSearch onChange={onSelectStudent} value={studentCode} options={studentsList} search placeholder="Selecione um aluno" />
+                      </div>
+                      <small className="text-danger">{errors.feepayment_student_code}</small>
+                    </>
+                  )}
+                </Form.Group>
+              )}
+
+              {/* MESES */}
+              {!props.update ? (
+                monthOptions.length ? (
+                  <Form.Group className="mb-3">
+                    <Form.Label>Mês(es) a pagar <span className="text-danger ml-2">*</span></Form.Label>
+                    {lockMonths ? (
+                      <div className="grey-text" style={{ fontSize: 13 }}>
+                        Meses: <span className="text-main">{selectedMonths.map(m => m.label).join(", ")}</span>
+                      </div>
+                    ) : (
+                      <>
+                        <MultiSelect options={monthOptions} value={selectedMonths}
+                          className={errors.feepayment_months ? "border-red" : ""}
+                          onChange={onChangeMonths} labelledBy="select" />
+                        {errors.feepayment_months && <small className="text-danger">{errors.feepayment_months}</small>}
+                      </>
+                    )}
+                  </Form.Group>
+                ) : null
+              ) : (
+                <Form.Group className="mb-3">
+                  <Form.Label>Mês a pagar <span className="text-danger ml-2">*</span></Form.Label>
+                  <Form.Select disabled id="feepayment_months" value={form.feepayment_months || currentMonth || ""}>
+                    {monthOptions.map((m, i) => (
+                      <option key={i} value={m.value}
+                        selected={Number(m.value) === Number(currentMonth)}>{m.label}</option>
+                    ))}
+                  </Form.Select>
+                </Form.Group>
+              )}
+
+              {!studentCode && !props.update && (
+                <NoStudentPlaceholder>
+                  <span style={{ fontSize: 22 }}>👤</span>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "#374151", fontSize: 14 }}>Seleccione um aluno para continuar</div>
+                    <div style={{ color: "#9ca3af", fontSize: 12, marginTop: 3 }}>
+                      Os meses, serviço e condições de pagamento carregam automaticamente após seleccionar o aluno.
+                    </div>
+                  </div>
+                </NoStudentPlaceholder>
+              )}
+
+              {(studentCode || props.update) && (<>
+
+              {/* SERVIÇO */}
+              <Form.Group className="mb-3">
+                <Form.Label>
+                  Valor associado à propina <span className="text-danger ml-2">*</span>
+                  {serviceCode && <AutoBadge>preenchido automaticamente</AutoBadge>}
+                </Form.Label>
+                {servicesLoading ? (
+                  <ServiceLoadingBox><_FBSpinnerEl /> A carregar serviços…</ServiceLoadingBox>
+                ) : (
+                  <div className={`select-search-item ${errors.feepayment_servicecode ? "error" : ""}`}>
+                    <SelectSearch
+                      onChange={onSelectService}
+                      value={serviceCode ? String(serviceCode) : ""}
+                      options={servicesList.map(s => ({ ...s, value: String(s.value) }))}
+                      search
+                      placeholder="Pesquisar serviço / propina…"
+                    />
+                  </div>
+                )}
+                <small className="text-danger">{errors.feepayment_servicecode}</small>
+                {serviceCode != null && (
+                  <div className="mt-2">
+                    <Badge className="bg-main">
+                      <div className="ed-flex">
+                        Valor do serviço:
+                        <div className="ml-1"><GetServicePrice ID={serviceCode} /></div>
+                      </div>
+                    </Badge>
+                  </div>
+                )}
+              </Form.Group>
+
+              {/* MULTA INCLUÍDA NA FATURA */}
+              {extraServices.some(it => it._isFine) && (
+                <FineItemsBox>
+                  <FineItemsTitle>
+                    <MdGavel size={13} color="#b91c1c" />
+                    <span>Multa incluída nesta fatura</span>
+                  </FineItemsTitle>
+                  {extraServices.filter(it => it._isFine).map((it, idx) => (
+                    <FineItemRow key={idx}>
+                      <FineItemName>{it.name || "Multa automática"}</FineItemName>
+                      <FineItemValue>{_fmtFine(Number(it.value) || 0, serviceCoin)}</FineItemValue>
+                      <FineLockedBadge title="Calculado automaticamente">automático</FineLockedBadge>
+                    </FineItemRow>
+                  ))}
+                </FineItemsBox>
+              )}
+
+              {/* VALORES ADICIONAIS MANUAIS */}
+              <div className="mt-2">
+                <FormControlLabel
+                  control={<Checkbox checked={extraServicesEnabled} onChange={e => setExtraServicesEnabled(e.target.checked)} />}
+                  label="Adicionar valores adicionais manuais" />
+              </div>
+              {extraServicesEnabled && (
+                <BoxContainerBorder className="boxItem">
+                  <h2 className="title">Valores adicionais</h2>
+                  {extraServices.filter(it => !it._isFine).length === 0 && (
+                    <div className="mb-3"><small className="grey-text">Sem itens. Clique em <strong>"+ Adicionar"</strong> para criar uma linha.</small></div>
+                  )}
+                  {extraServices.filter(it => !it._isFine).map(it => {
+                    const realIdx = extraServices.indexOf(it);
+                    return (
+                      <div key={realIdx} className="ed-space mb-2">
+                        <div className="ed-flex" style={{ gap: 10, flex: 1 }}>
+                          <Form.Control type="text" placeholder="Nome (ex: Seguro escolar)" value={it.name}
+                            onChange={e => updateExtraService(realIdx, "name", e.target.value)} />
+                          <Form.Control type="number" step="0.01" min="0"
+                            placeholder={`Valor (${serviceCoin || "KZ"})`} value={it.value}
+                            onChange={e => updateExtraService(realIdx, "value", e.target.value)}
+                            style={{ maxWidth: 180 }} />
+                        </div>
+                        <div onClick={() => removeExtraService(realIdx)} className="bg-red btn ml-2">
+                          <DeleteOutline fontSize="small" /> Remover
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="mt-3">
+                    <div className="btn btn-bordered bg-main text-main" onClick={addExtraService}>
+                      <AddCircleOutlineIcon fontSize="small" /> Adicionar
+                    </div>
+                  </div>
+                </BoxContainerBorder>
+              )}
+
+              {/* CHECKBOX MULTA AUTOMÁTICA */}
+              <div className="mt-2 mb-1">
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={applyFineManual}
+                      onChange={e => {
+                        const checked = e.target.checked;
+                        setApplyFineManual(checked);
+                        if (!checked) {
+                          // Desmarcou — limpa multa imediatamente
+                          setExtraServices(prev => prev.filter(ex => !ex._isFine));
+                        }
+                      }}
+                      size="small"
+                    />
+                  }
+                  label={<span style={{ fontSize: 13, color: "#374151" }}>Verificar e aplicar multa automática (se existir)</span>}
+                />
+              </div>
+
+              {/* v29: UM ÚNICO BADGE — aparece apenas quando checkbox está marcada */}
+              {shouldShowFineBadge && (
+                <FinesBadgeWrapper>
+                  <FineBadgeUnified
+                    key={fineBadgeKey}
+                    studentId={studentCode}
+                    paymentType={finePaymentType}
+                    servicePrice={Number(servicePrice || 0)}
+                    selectedMonthCodes={selectedMonthCodes}
+                    onFineLoaded={handleFineLoaded}
+                  />
+                </FinesBadgeWrapper>
+              )}
+
+              {/* MÉTODO DE PAGAMENTO */}
+              <Form.Group>
+                <div className="mt-2">
+                  <div className="block">
+                    <Form.Label>Método de pagamento <span className="text-danger ml-2">*</span></Form.Label>
+                    <Form.Select onChange={onChangeInput}
+                      className={!!errors.feepayment_type && "is-invalid"}
+                      value={paymentType ?? ""} isInvalid={!!errors.feepayment_type}
+                      id="feepayment_type" required>
+                      <option disabled value="">Selecionar método de pagamento...</option>
+                      {PAYMENT_METHODS.map(m => (
+                        <option key={m.value} value={m.value}
+                          disabled={m.value === PAYMENT_TYPE_BALANCE && (!studentCode || studentBalance === null)}>
+                          {m.value === PAYMENT_TYPE_BALANCE && studentBalance !== null
+                            ? `${m.label} (${fmtMoney(studentBalance, studentBalanceCoin)})` : m.label}
+                        </option>
+                      ))}
+                    </Form.Select>
+                    <Form.Control.Feedback type="invalid">{errors.feepayment_type}</Form.Control.Feedback>
+                  </div>
+                  {usingBalance && studentCode && studentBalance !== null && (
+                    <BalanceCreditSelector
+                      balance={studentBalance} total={balancePreview}
+                      coin={studentBalanceCoin || serviceCoin}
+                      editAmount={balanceEditAmount} onChange={setBalanceEditAmount}
+                    />
+                  )}
+                  {paymentType !== null && paymentType !== 0 && paymentType !== PAYMENT_TYPE_BALANCE && (
+                    <div className="block mt-3">
+                      <Form.Label>Nº de Referência</Form.Label>
+                      <Form.Control type="text" onChange={onChangeInput}
+                        className={!!errors.feepayment_bordereux_number && "is-invalid"}
+                        value={form.feepayment_bordereux_number || ""}
+                        isInvalid={!!errors.feepayment_bordereux_number}
+                        id="feepayment_bordereux_number" />
+                      <Form.Control.Feedback type="invalid">{errors.feepayment_bordereux_number}</Form.Control.Feedback>
+                      <div className="block mt-3">
+                        <Form.Label>Nome do banco</Form.Label>
+                        <Form.Control type="text" onChange={onChangeInput}
+                          className={!!errors.feepayment_bank && "is-invalid"}
+                          value={form.feepayment_bank || ""}
+                          isInvalid={!!errors.feepayment_bank} id="feepayment_bank" />
+                        <Form.Control.Feedback type="invalid">{errors.feepayment_bank}</Form.Control.Feedback>
+                      </div>
+                      <div className="block mt-3">
+                        <Form.Label>Local de pagamento</Form.Label>
+                        <Form.Control type="text" onChange={onChangeInput}
+                          className={!!errors.feepayment_place && "is-invalid"}
+                          value={form.feepayment_place || ""}
+                          isInvalid={!!errors.feepayment_place} id="feepayment_place" />
+                        <Form.Control.Feedback type="invalid">{errors.feepayment_place}</Form.Control.Feedback>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Form.Group>
+              </>)}
+
+              {/* FICHEIROS */}
+              {(studentCode || props.update) && currentFiles.length > 0 && (
+                <BoxContainerBorder className="boxItem mt-4">
+                  <h2 className="title">Ficheiros anexados</h2>
+                  <ul className="student-file-cp">
+                    {currentFiles.map((item, index) => (
+                      <li className="student-file-el" id={`student-file-el-${index}`} key={index}>
+                        <div className="ed-space">
+                          <div className="ed-flex">
+                            <div className="icon"><HiOutlineDocumentText /></div>
+                            <div className="block">
+                              <div className="title text-main">
+                                <ReduceTextLength text={item.ed_file_name} length={window?.width >= 1300 ? 80 : 50} />
+                              </div>
+                              <div className="ed-flex">
+                                <div className="date text-dark"><AccessTimeOutlined /><span>{item.ed_file_register_date}</span></div>
+                                | <div className="size text-dark">{NumberToBytes(item.ed_file_size)}</div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="delete">
+                            <DeleteModal remove_element={`#student-file-el-${index}`} title="este ficheiro"
+                              url={Hoot() + `eduallfiledelete/delete/${item.ed_file_id}`}
+                              message="Ficheiro eliminado com sucesso"
+                              toggle_btn={<div className="btn-circle bg-danger ml-2 text-light"><DeleteOutline /></div>} />
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </BoxContainerBorder>
+              )}
+
+              {(studentCode || props.update) && (
+                <div className="mt-2">
+                  <FormControlLabel onChange={showBoxFile} control={<Checkbox />} label="Anexar recibos de pagamento" />
+                </div>
+              )}
+              {(studentCode || props.update) && (
+                <BoxContainerBorder className={docfile ? "boxItem" : "boxItem d-none"}>
+                  <h2 className="title">Carregar Recibo de pagamento</h2>
+                  <FileUpload input_name="feepayment_files" Icon="0"
+                    type_of_files="image/x-png,image/gif,image/jpeg,Docs/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/pdf"
+                    extensions="pdf, docx, png, jpeg, jpg" Files={GetFiles} ref={ChildRef} />
+                </BoxContainerBorder>
+              )}
+              {docfile && <br />}
+            </Modal.Body>
+
+            {/* FOOTER */}
+            <Modal.Footer>
+              <div className="ed-space">
+                <div className="ed-wrap">
+                  <TX className="mt-1">
+                    <h4>Desconto : ({serviceDiscount})%</h4>
+                    {applyDiscount ? <div className="yes"><Check /></div> : <div className="no"><Close /></div>}
+                  </TX>
+                  <TX className="mt-1">
+                    <h4 className="ml-2">IVA : ({serviceIva})%</h4>
+                    {serviceIva * 1 > 0 ? <div className="yes"><Check /></div> : <div className="no"><Close /></div>}
+                  </TX>
+                </div>
+              </div>
+              {studentCode && studentBalance !== null && (
+                <BalanceFooterRow>
+                  <IoWalletOutline size={15} />
+                  <span>Saldo do aluno:</span>
+                  <strong style={{ color: Number(studentBalance) < 500 ? "#e21f1f" : "var(--ed-green-light, #15803d)" }}>
+                    {fmtMoney(studentBalance, studentBalanceCoin || serviceCoin)}
+                  </strong>
+                  {usingBalance && balanceEditAmount !== null && balanceEditAmount > 0 && balanceEditAmount < studentBalance && (
+                    <span style={{ fontSize: 11, color: "#7c3aed", opacity: .8 }}>
+                      (usando {fmtMoney(balanceEditAmount, studentBalanceCoin || serviceCoin)})
+                    </span>
+                  )}
+                  {usingBalance && balancePreview > 0 && balanceEditAmount !== null && balanceEditAmount > 0 && (
+                    <>
+                      <span style={{ opacity: .5 }}>&rarr;</span>
+                      <strong style={{ color: "var(--ed-green-light, #15803d)" }}>
+                        {fmtMoney(Number(studentBalance) - balanceEditAmount, studentBalanceCoin || serviceCoin)}
+                      </strong>
+                    </>
+                  )}
+                </BalanceFooterRow>
+              )}
+              <div className="ed-space">
+                <div className="ed-flex">
+                  <h5 className="m-0">Total :</h5>
+                  <Form.Control readOnly disabled value={invoiceValue} id="feepayment_balance"
+                    className="text-danger ml-2" style={{ maxWidth: "210px" }} />
+                </div>
+                <div className="ed-flex">
+                  <Button className="bg-light text-dark" onClick={handleClose}>Cancelar</Button>
+                  <SaveButton
+                    icon={props.title ? <Update /> : <MonetizationOn />}
+                    title={props.title ? props.title : "Pagar"}
+                    status={registerStatus}
+                    disabled={usingBalance && studentBalance !== null && (balanceEditAmount ?? 0) > studentBalance}
+                  />
+                </div>
+              </div>
+            </Modal.Footer>
+          </Form>
+        </Modal>
+      } />
+
+      {studentCode && (
+        <StudentBalanceModal mode="modal" canvas={true} show={showBalanceCanvas}
+          onHide={() => { setShowBalanceCanvas(false); fetchStudentBalance(studentCode); }}
+          studentId={studentCode} currency={studentBalanceCoin || serviceCoin || "KZ"} />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Styled Components — Modal principal
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TX = styled.div`
+  display:flex;align-items:center;margin-right:20px;
+  .yes svg{width:20px;height:20px;fill:var(--ed-green);margin:0;}
+  .no  svg{width:20px;height:20px;fill:var(--ed-red);}
+  h4{font-size:16px;margin:0 5px 0 0;font-weight:600;}
+`;
+const BoxContainerBorder = styled.div`
+  width:auto;border-radius:6px;margin:10px 0;padding:20px;min-height:200px;
+  background:var(--ed-white);border:1px solid var(--ed-silver-light);
+  h2.title{font-size:18px;text-transform:uppercase;font-weight:600;margin-top:10px;margin-bottom:25px;}
+`;
+const BalanceFooterRow = styled.div`
+  display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ed-dark);background:#f5f3ff;
+  border:1px solid #ede9fe;border-radius:8px;padding:6px 12px;margin-bottom:8px;width:100%;
+  svg{color:#7c3aed;flex-shrink:0;} span{color:#555;} strong{font-weight:700;}
+`;
+const AutoBadge = styled.span`
+  display:inline-flex;align-items:center;margin-left:8px;font-size:10px;font-weight:600;
+  padding:1px 7px;border-radius:99px;background:var(--ed-white-smoke);color:var(--ed-gray);vertical-align:middle;
+`;
+const ServiceLoadingBox = styled.div`
+  display:flex;align-items:center;gap:8px;font-size:12px;color:#6b7280;
+  background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;
+`;
+const CreditSelectorBox = styled.div`
+  background:#f5f3ff;border:1px solid #ede9fe;border-radius:10px;padding:14px 16px;margin-top:10px;
+  .cs-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  .cs-title{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:.4px;}
+  .cs-available{font-size:11px;color:#888;strong{color:#333;}}
+  .cs-slider{width:100%;accent-color:#7c3aed;margin-bottom:8px;cursor:pointer;}
+  .cs-input-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
+  .cs-input-wrap{display:flex;align-items:center;gap:6px;background:#fff;border:1.5px solid #c4b5fd;border-radius:8px;padding:4px 10px;}
+  .cs-input{width:120px;border:none;outline:none;font-size:15px;font-weight:800;color:#7c3aed;background:transparent;}
+  .cs-coin{font-size:11px;color:#7c3aed;font-weight:600;opacity:.7;}
+  .cs-quick-btns{display:flex;gap:5px;flex-wrap:wrap;}
+  .cs-btn{font-size:11px;padding:4px 11px;border-radius:20px;border:none;cursor:pointer;font-weight:600;transition:opacity .15s;&:hover{opacity:.8;}}
+  .cs-btn-all{background:#7c3aed;color:#fff;} .cs-btn-half{background:#ede9fe;color:#7c3aed;} .cs-btn-none{background:#f1f5f9;color:#64748b;}
+  .cs-summary{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;border-radius:8px;padding:10px 12px;
+    &--ok{background:#f0fdf4;border:1px solid #86efac;} &--partial{background:#fffbeb;border:1px solid #fde68a;}}
+  .cs-summary-item{text-align:center;} .cs-summary-divider{width:1px;height:32px;background:rgba(0,0,0,.08);margin:0 8px;}
+  .cs-summary-label{font-size:10px;color:#888;margin-bottom:3px;}
+  .cs-summary-value{font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:3px;}
+  .cs-purple{color:#7c3aed;} .cs-green{color:#15803d;} .cs-red{color:#e21f1f;} .cs-orange{color:#d97706;}
+  .cs-warning{font-size:11px;color:#b45309;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:6px 10px;margin-top:8px;strong{font-weight:700;}}
+  .cs-info{font-size:11px;color:#0369a1;background:#e0f2fe;border:1px solid #bae6fd;border-radius:6px;padding:6px 10px;margin-top:8px;}
+  .cs-success{font-size:11px;color:#15803d;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:6px 10px;margin-top:8px;font-weight:600;}
+`;
+const FinesBadgeWrapper = styled.div`margin-top:4px;margin-bottom:4px;`;
+const FineItemsBox   = styled.div`background:#fff8f8;border:1px solid #fecaca;border-left:3px solid #b91c1c;border-radius:8px;padding:10px 14px;margin:10px 0 4px;`;
+const FineItemsTitle = styled.div`display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#b91c1c;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;`;
+const FineItemRow    = styled.div`display:flex;align-items:center;gap:10px;padding:5px 0;border-top:1px solid #fee2e2;&:first-of-type{border-top:none;}`;
+const FineItemName   = styled.span`flex:1;font-size:12px;color:#374151;font-weight:500;`;
+const FineItemValue  = styled.span`font-size:14px;font-weight:800;color:#b91c1c;white-space:nowrap;`;
+const FineLockedBadge = styled.span`
+  display:inline-flex;align-items:center;gap:4px;margin-left:8px;white-space:nowrap;
+  font-size:10px;font-weight:600;background:#f3f4f6;color:#6b7280;padding:4px 10px;
+  border-radius:4px;border:1px solid #e5e7eb;cursor:default;user-select:none;letter-spacing:.3px;
+`;
+const NoStudentPlaceholder = styled.div`
+  display:flex;align-items:center;gap:14px;
+  background:#f9fafb;border:1.5px dashed #d1d5db;border-radius:10px;
+  padding:20px 22px;margin:12px 0 18px;
+`;
+
+export default NewfeeManualPaymentModal;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
