@@ -1,4 +1,38 @@
- // ================== Dependências ==================
+// ================== SEGURANÇA DE ARRANQUE (TEM DE SER A PRIMEIRA COISA) ==================
+//
+// Estes handlers têm de existir ANTES de qualquer require, para apanhar erros de
+// módulos em falta, variáveis não declaradas no top-level, etc. — erros que
+// acontecem durante o CARREGAMENTO do ficheiro, muito antes dos handlers
+// "inteligentes" (isRecoverableInfraError) lá mais abaixo serem registados.
+//
+// Sem isto: o Node imprime o stack trace cru no stderr e morre; o processo
+// reinicia (PM2/systemd/docker); o Nginx/proxy devolve 503 ao cliente; e quem
+// está a olhar para fora só vê "503 Service Unavailable", sem pista nenhuma
+// da causa real.
+// ────────────────────────────────────────────────────────────────────────────
+function printFatalBoxed(title, err) {
+  const line = "█".repeat(90);
+  console.error(`\n\x1b[41m\x1b[97m${line}\x1b[0m`);
+  console.error(`\x1b[41m\x1b[97m ERRO FATAL NO ARRANQUE: ${title} \x1b[0m`);
+  console.error(`\x1b[41m\x1b[97m${line}\x1b[0m`);
+  console.error(err?.stack || err);
+  console.error(`\x1b[41m\x1b[97m${line}\x1b[0m\n`);
+}
+
+// Handlers "básicos" — válidos só até serem substituídos mais abaixo pela
+// versão definitiva (que distingue erro recuperável de rede/BD de erro
+// verdadeiramente fatal). Antes disso, QUALQUER erro no arranque é fatal
+// e deve aparecer bem visível.
+process.on("uncaughtException", (err) => {
+  printFatalBoxed("uncaughtException (arranque)", err);
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  printFatalBoxed("unhandledRejection (arranque)", reason);
+  process.exit(1);
+});
+
+// ================== Dependências ==================
 const path    = require("path");
 const dotenv  = require("dotenv");
 
@@ -11,7 +45,7 @@ const http                = require("http");
 const cookieParser        = require("cookie-parser");
 const cors                = require("cors");
 const passport            = require("passport");
-const session              = require("express-session");
+const session             = require("express-session");
 const MySQLStoreFactory   = require("express-mysql-session");
 const mysql2              = require("mysql2");
 const fs                  = require("fs");
@@ -19,20 +53,38 @@ const helmet              = require("helmet");
 const morgan              = require("morgan");
 const cloudinary          = require("cloudinary").v2;
 const { Server }          = require("socket.io");
-const performanceMonitor = require('./middleware/performanceMonitor');
-// ===== Seus módulos =====
-const Sanitize                           = require("./middleware/Sanitize");
-const RandomStrings                      = require("./config/RandomStrings"); 
-const router                             = require("./routes/index");
-const Authrouter                         = require("./routes/Auth");
-const SOCKET_IO                          = require("./Sockets/GetSocketIo");
-const cardRoutes                         = require("./Controllers/Cards_server");
-const { buildNotificationsRouter }       = require("./Controllers/Auditory");
-const buildFormBuilderController         = require("./Controllers/FormBuilderController");
-const CacheRoutes = require("./Functions/CacheRoutes");
-const VendusService = require("./Functions/VENDUS");                    // ← NOVO: Serviço VENDUS
-const CreateSaftService = require("./Functions/CreateSaftFiles");       // ← NOVO: Geração de SAF-T
-const dbConfig = require("./config/DatabaseCredentials");
+
+// ─── requireOrDie: carregamento de módulos LOCAIS com diagnóstico claro ────
+//
+// Troca um "Cannot find module './middleware/performanceMonitor'" genérico
+// (e muitas vezes enterrado no meio de um stack trace confuso) por uma
+// caixa vermelha bem visível a dizer exatamente QUAL módulo falhou e
+// porquê — path errado, ficheiro apagado, erro de sintaxe dentro dele,
+// variável não declarada no top-level do módulo, etc.
+// ────────────────────────────────────────────────────────────────────────
+function requireOrDie(modulePath, label) {
+  try {
+    return require(modulePath);
+  } catch (err) {
+    printFatalBoxed(`Falha ao carregar módulo: ${label}\n  Caminho: ${modulePath}`, err);
+    process.exit(1);
+  }
+}
+
+// ===== Seus módulos (agora protegidos com requireOrDie) =====
+const performanceMonitor                 = requireOrDie("./middleware/performanceMonitor", "performanceMonitor");
+const Sanitize                           = requireOrDie("./middleware/Sanitize", "Sanitize");
+const RandomStrings                      = requireOrDie("./config/RandomStrings", "RandomStrings");
+const router                             = requireOrDie("./routes/index", "router (routes/index)");
+const Authrouter                         = requireOrDie("./routes/Auth", "Authrouter (routes/Auth)");
+const SOCKET_IO                          = requireOrDie("./Sockets/GetSocketIo", "SOCKET_IO (Sockets/GetSocketIo)");
+const cardRoutes                         = requireOrDie("./Controllers/Cards_server", "cardRoutes (Controllers/Cards_server)");
+const { buildNotificationsRouter }       = requireOrDie("./Controllers/Auditory", "buildNotificationsRouter (Controllers/Auditory)");
+const buildFormBuilderController         = requireOrDie("./Controllers/FormBuilderController", "buildFormBuilderController");
+const CacheRoutes                        = requireOrDie("./Functions/CacheRoutes", "CacheRoutes");
+const VendusService                      = requireOrDie("./Functions/VENDUS", "VendusService (Functions/VENDUS)");
+const CreateSaftService                  = requireOrDie("./Functions/CreateSaftFiles", "CreateSaftService (Functions/CreateSaftFiles)");
+const dbConfig                           = requireOrDie("./config/DatabaseCredentials", "dbConfig (config/DatabaseCredentials)");
 
 // ================== App ==================
 const app = express();
@@ -228,9 +280,7 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 };
 
-
 app.use(performanceMonitor);
-
 
 // ================== Segurança / Perf ==================
 app.use(
@@ -601,11 +651,6 @@ app.use(cardRoutes);
 const { router: formBuilderRouter, attachSockets: formBuilderSockets } = buildFormBuilderController();
 app.use("/api", formBuilderRouter);
 
-
-
-
-
-
 // ================== Healthcheck ==================
 app.get("/health", async (_req, res) => {
   try {
@@ -630,8 +675,6 @@ app.get("/health/pool", (_req, res) => {
     },
   });
 });
-
-
 
 // ================== 404 — rota inexistente ==================
 // Corre depois de todas as rotas registadas; se chegou até aqui, nenhuma
@@ -726,7 +769,7 @@ const io = new Server(HTTPApp, {
 app.set("io", io);
 
 SOCKET_IO.init(io);
-require("./Sockets/SocketMain");
+requireOrDie("./Sockets/SocketMain", "SocketMain (Sockets/SocketMain)");
 
 app.use(buildNotificationsRouter(io));
 formBuilderSockets(io);
@@ -735,8 +778,6 @@ io.on("connection", (socket) => {
   console.log("🔌 Socket conectado:", socket.id);
   socket.on("disconnect", () => console.log("🔌 Socket desconectado:", socket.id));
 });
-
- 
 
 // ================== Encerramento gracioso ==================
 async function shutdown() {
@@ -752,12 +793,11 @@ async function shutdown() {
 process.on("SIGINT",  shutdown);
 process.on("SIGTERM", shutdown);
 
-// ─── CORREÇÃO PRINCIPAL: não crashar por erros de rede/BD transitórios ────
+// ─── SUBSTITUIÇÃO DOS HANDLERS "BÁSICOS" pelos DEFINITIVOS ────────────────
 //
-// Antes, QUALQUER uncaughtException/unhandledRejection derrubava o
-// processo com process.exit(1) — incluindo uma simples falha de DNS
-// ("getaddrinfo ENOTFOUND cpanel154.dnscpanel.com") que se resolveria
-// sozinha minutos depois. Agora:
+// Agora que isRecoverableInfraError já está definida, trocamos os handlers
+// simples do topo do ficheiro (que tratavam qualquer erro como fatal) por
+// estes, mais inteligentes:
 //
 //   • Erro de rede/BD reconhecido (ver RECOVERABLE_ERROR_CODES) → apenas
 //     regista no log e o servidor continua no ar. As próximas queries
@@ -765,15 +805,22 @@ process.on("SIGTERM", shutdown);
 //     nesse estado).
 //   • Qualquer outro erro verdadeiramente inesperado → continua a sair
 //     do processo (com um pequeno atraso para garantir que o log é
-//     escrito antes do exit), para não mascarar bugs reais de
-//     programação atrás deste tratamento mais tolerante.
+//     escrito antes do exit, e sempre com a caixa vermelha bem visível),
+//     para não mascarar bugs reais de programação atrás deste tratamento
+//     mais tolerante.
+//
+// process.removeAllListeners garante que os handlers "básicos" registados
+// no arranque não continuam pendurados a par destes (evita duplicar logs).
 // ────────────────────────────────────────────────────────────────────────
 function exitOnFatalError(kind, err) {
-  console.error(`🔥 ${kind} FATAL (não recuperável) — a encerrar o processo:`, err);
+  printFatalBoxed(`${kind} FATAL (não recuperável) — a encerrar o processo`, err);
   // Pequeno atraso para dar tempo ao stdout/stderr de serem escritos
   // (em alguns ambientes, um exit imediato corta o fim do log).
   setTimeout(() => process.exit(1), 200).unref();
 }
+
+process.removeAllListeners("uncaughtException");
+process.removeAllListeners("unhandledRejection");
 
 process.on("uncaughtException", (err) => {
   if (isRecoverableInfraError(err)) {
@@ -802,26 +849,26 @@ const PORT = Number(process.env.PORT || 7500);
 
 async function startServer() {
   try {
-    // ✅ NOVO: Garantir que chaves cripto estão carregadas (sem bloquear event loop)
+    // ✅ Garantir que chaves cripto estão carregadas (sem bloquear event loop)
     logVendus("Carregando configuração de criptografia...");
     await VendusService.ensureCryptoEnvAsync();
-    
-    // ✅ NOVO: Garantir que diretório SAF-T existe
+
+    // ✅ Garantir que diretório SAF-T existe
     logSaft("Preparando diretório de SAF-T...");
     await CreateSaftService.ensureSaftDirectory();
-    
+
     // Inicializar cache como antes
     try {
-      /*  
+      /*
       await CacheRoutes.eduallInit({
         driver: process.env.CACHE_DRIVER || "sqlite",
         enableLogging: true,
-      });  
+      });
       */
     } catch (err) {
       console.error("⚠️  Cache falhou ao inicializar, o servidor vai continuar sem cache:", err);
     }
-    
+
     // Ligar o servidor HTTP
     HTTPApp.listen(PORT, () => {
       console.log(
@@ -830,10 +877,7 @@ async function startServer() {
       );
     });
   } catch (err) {
-    console.error(
-      `${ANSI.red}${ANSI.bold}❌ Erro ao inicializar servidor:${ANSI.reset}`,
-      err.message
-    );
+    printFatalBoxed("Erro ao inicializar servidor (startServer)", err);
     process.exit(1);
   }
 }
@@ -847,5 +891,5 @@ function logSaft(msg) {
   console.log(`${ANSI.blue}[SAF-T]${ANSI.reset} ${msg}`);
 }
 
-startServer(); 
-module.exports = { app, HTTPApp }; 
+startServer();
+module.exports = { app, HTTPApp };
