@@ -6,8 +6,7 @@ require("./Functions/ContactMessages");
 const { joinSocketRooms } = require("../Controllers/Auditory");
 const { get } = require("./GetSocketIo");
 
-const io = get();
-console.log(io)
+const io = get(); 
 
 io.on("connection", (socket) => {
   // O cliente deve emitir algo como:
