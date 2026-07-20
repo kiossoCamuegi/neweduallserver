@@ -5,7 +5,10 @@
 //    - Confirmações de matrícula
 //    - Pagamentos de propinas
 //    - Pagamentos de serviços
+//    - Documentos de confirmação
 // ✅ Restaura itens deletados (reverte soft delete)
+// ✅ Todas as queries agora retornam TODAS as colunas das tabelas envolvidas
+//    (via `tabela.*`), e não apenas colunas específicas mencionadas.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ExecuteQuery = require("../Functions/ExecuteQuery");
@@ -33,7 +36,7 @@ const RefreshDeletedItemsCache = async (req, res, instituteCode) => {
   const startTime = Date.now();
   await Cache.eduallClear(CacheKeys.allGlobal());
   console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode} (DeletedItems)`);
-  
+
   const duration = Date.now() - startTime;
   console.log(`🗄️🧹 CACHE CLEAR (DeletedItems) demorou ${duration}ms para institute ${instituteCode}`);
 };
@@ -47,7 +50,7 @@ async function getOperatorData(res, userId) {
 
   try {
     const query = `
-      SELECT ed_user_account_id, ed_user_account_name
+      SELECT *
       FROM eduall_user_accounts
       WHERE ed_user_account_id = ?
         AND ed_user_account_deleted = 0
@@ -63,7 +66,8 @@ async function getOperatorData(res, userId) {
     if (operator) {
       return {
         id: operator.ed_user_account_id,
-        name: operator.ed_user_account_name || "Operador Desconhecido"
+        name: operator.ed_user_account_name || "Operador Desconhecido",
+        ...operator, // mantém todas as colunas originais disponíveis também
       };
     }
 
@@ -95,21 +99,17 @@ const GetAllDeletedItems = async (req, res) => {
     console.log("\n[GetAllDeletedItems] Buscando itens deletados...");
 
     // ─────────────────────────────────────────────────────────────────────────
-    // CONFIRMAÇÕES DE MATRÍCULA DELETADAS
+    // CONFIRMAÇÕES DE MATRÍCULA DELETADAS — TODAS AS COLUNAS
     // ─────────────────────────────────────────────────────────────────────────
     const enrollmentQuery = `
       SELECT
+        ec.*,
+        s.*,
+        cls.*,
+        srv.*,
         ec.ed_enrollment_confirmation_id AS item_id,
         'enrollment_confirmation' AS item_type,
         'Confirmação de Matrícula' AS item_category,
-        s.ed_student_code AS student_code,
-        s.ed_student_name AS student_name,
-        cls.ed_class_title AS class_name,
-        srv.ed_service_name AS service_name,
-        ec.ed_enrollment_confirmation_created_at AS created_at,
-        ec.ed_enrollment_confirmation_deleted_at AS deleted_at,
-        ua.ed_user_account_name AS deleted_by,
-        ec.ed_enrollment_confirmation_institute_code AS institute_code,
         COALESCE(
           CONCAT(s.ed_student_code, ' | ', s.ed_student_name),
           'Aluno desconhecido'
@@ -118,7 +118,6 @@ const GetAllDeletedItems = async (req, res) => {
       LEFT JOIN eduall_students s ON s.ed_student_id = ec.ed_enrollment_confirmation_student
       LEFT JOIN eduall_class cls ON cls.ed_class_id = ec.ed_enrollment_confirmation_class
       LEFT JOIN eduall_services srv ON srv.ed_service_id = ec.ed_enrollment_confirmation_service
-      LEFT JOIN eduall_user_accounts ua ON ua.ed_user_account_id = ec.ed_enrollment_confirmation_deleted_by
       WHERE ec.ed_enrollment_confirmation_deleted = 1
         AND ec.ed_enrollment_confirmation_institute_code = ?
     `;
@@ -136,26 +135,22 @@ const GetAllDeletedItems = async (req, res) => {
     );
 
     // ─────────────────────────────────────────────────────────────────────────
-    // PAGAMENTOS DE PROPINAS DELETADOS
+    // PAGAMENTOS DE PROPINAS DELETADOS — TODAS AS COLUNAS
     // ─────────────────────────────────────────────────────────────────────────
     const feesQuery = `
       SELECT
+        fp.*,
+        s.*,
+        srv.*,
         fp.ed_fee_payment_id AS item_id,
         'fee_payment' AS item_type,
         'Pagamento de Propinas' AS item_category,
-        s.ed_student_code AS student_code,
-        s.ed_student_name AS student_name,
         CONCAT(
-          ELT(fp.ed_fee_payment_month + 1, 
+          ELT(fp.ed_fee_payment_month + 1,
             'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
             'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'),
           ' / ', YEAR(NOW())
         ) AS month_name,
-        srv.ed_service_title AS service_name,
-        fp.ed_fee_payment_registerDate AS created_at,
-        fp.ed_fee_payment_deleted_at AS deleted_at,
-        ua.ed_user_account_name AS deleted_by,
-        fp.ed_fee_payment_institute_code AS institute_code,
         COALESCE(
           CONCAT(s.ed_student_code, ' | ', s.ed_student_name),
           'Aluno desconhecido'
@@ -163,7 +158,6 @@ const GetAllDeletedItems = async (req, res) => {
       FROM eduall_fees_payments fp
       LEFT JOIN eduall_students s ON s.ed_student_id = fp.ed_fee_payment_student
       LEFT JOIN eduall_services srv ON srv.ed_service_id = fp.ed_fee_payment_service
-      LEFT JOIN eduall_user_accounts ua ON ua.ed_user_account_id = fp.ed_fee_payment_deleted_by
       WHERE fp.ed_fee_payment_deleted = 1
         AND fp.ed_fee_payment_institute_code = ?
     `;
@@ -181,20 +175,16 @@ const GetAllDeletedItems = async (req, res) => {
     );
 
     // ─────────────────────────────────────────────────────────────────────────
-    // PAGAMENTOS DE SERVIÇOS DELETADOS
+    // PAGAMENTOS DE SERVIÇOS DELETADOS — TODAS AS COLUNAS
     // ─────────────────────────────────────────────────────────────────────────
     const servicePaymentQuery = `
       SELECT
+        sp.*,
+        s.*,
         sp.ed_service_payment_id AS item_id,
         'service_payment' AS item_type,
         'Pagamento de Serviço' AS item_category,
-        s.ed_student_code AS student_code,
-        s.ed_student_name AS student_name,
         GROUP_CONCAT(srv.ed_service_title SEPARATOR ', ') AS service_name,
-        sp.ed_service_payment_registerDate AS created_at,
-        sp.ed_service_payment_deleted_at AS deleted_at,
-        ua.ed_user_account_name AS deleted_by,
-        sp.ed_service_payment_institute_code AS institute_code,
         COALESCE(
           CONCAT(s.ed_student_code, ' | ', s.ed_student_name),
           'Aluno desconhecido'
@@ -203,7 +193,6 @@ const GetAllDeletedItems = async (req, res) => {
       LEFT JOIN eduall_students s ON s.ed_student_id = sp.ed_service_payment_student_code
       LEFT JOIN eduall_service_payment_items spi ON spi.ed_service_payment_code = sp.ed_service_payment_code
       LEFT JOIN eduall_services srv ON srv.ed_service_id = spi.ed_service_id
-      LEFT JOIN eduall_user_accounts ua ON ua.ed_user_account_id = sp.ed_service_payment_deleted_by
       WHERE sp.ed_service_payment_deleted = 1
         AND sp.ed_service_payment_institute_code = ?
       GROUP BY sp.ed_service_payment_id
@@ -222,21 +211,15 @@ const GetAllDeletedItems = async (req, res) => {
     );
 
     // ─────────────────────────────────────────────────────────────────────────
-    // ITENS DE CONFIRMAÇÃO DELETADOS (Documentos)
+    // ITENS DE CONFIRMAÇÃO DELETADOS (Documentos) — TODAS AS COLUNAS
     // ─────────────────────────────────────────────────────────────────────────
     const confirmationDocsQuery = `
       SELECT
+        ecd.*,
+        s.*,
         ecd.ed_conf_doc_id AS item_id,
         'enrollment_confirmation_doc' AS item_type,
         'Documento de Confirmação' AS item_category,
-        s.ed_student_code AS student_code,
-        s.ed_student_name AS student_name,
-        ecd.ed_conf_doc_name AS document_name,
-        ecd.ed_conf_doc_name AS service_name,
-        ecd.ed_conf_doc_created_at AS created_at,
-        ecd.ed_conf_doc_deleted_at AS deleted_at,
-        ua.ed_user_account_name AS deleted_by,
-        ecd.ed_conf_doc_institute AS institute_code,
         COALESCE(
           CONCAT(s.ed_student_code, ' | ', s.ed_student_name),
           'Aluno desconhecido'
@@ -244,7 +227,6 @@ const GetAllDeletedItems = async (req, res) => {
       FROM eduall_enrollment_confirmation_docs ecd
       LEFT JOIN eduall_enrollment_confirmations ec ON ec.ed_enrollment_confirmation_id = ecd.ed_conf_doc_confirmation
       LEFT JOIN eduall_students s ON s.ed_student_id = ec.ed_enrollment_confirmation_student
-      LEFT JOIN eduall_user_accounts ua ON ua.ed_user_account_id = ecd.ed_conf_doc_deleted_by
       WHERE ecd.ed_conf_doc_deleted = 1
         AND ecd.ed_conf_doc_institute = ?
     `;
@@ -334,15 +316,12 @@ const GetDeletedItemsByType = async (req, res) => {
       categoryLabel = "Confirmações de Matrícula";
       const query = `
         SELECT
-          ec.ed_enrollment_confirmation_id AS item_id,
-          s.ed_student_code AS student_code,
-          s.ed_student_name AS student_name,
-          cls.ed_class_title AS class_name,
-          srv.ed_service_name AS service_name,
-          ec.ed_enrollment_confirmation_created_at AS created_at,
-          ec.ed_enrollment_confirmation_deleted_at AS deleted_at,
-          ua.ed_user_account_name AS deleted_by,
-          ec.ed_enrollment_confirmation_institute_code AS institute_code
+          ec.*,
+          s.*,
+          cls.*,
+          srv.*,
+          ua.*,
+          ec.ed_enrollment_confirmation_id AS item_id
         FROM eduall_enrollment_confirmations ec
         LEFT JOIN eduall_students s ON s.ed_student_id = ec.ed_enrollment_confirmation_student
         LEFT JOIN eduall_class cls ON cls.ed_class_id = ec.ed_enrollment_confirmation_class
@@ -358,27 +337,21 @@ const GetDeletedItemsByType = async (req, res) => {
       categoryLabel = "Pagamentos de Propinas";
       const query = `
         SELECT
+          fp.*,
+          s.*,
+          srv.*,
           fp.ed_fee_payment_id AS item_id,
-          s.ed_student_code AS student_code,
-          s.ed_student_name AS student_name,
           CONCAT(
-            ELT(fp.ed_fee_payment_month + 1, 
+            ELT(fp.ed_fee_payment_month + 1,
               'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
               'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'),
             ' / ', YEAR(NOW())
-          ) AS month_name,
-          srv.ed_service_title AS service_name,
-          fp.ed_fee_payment_registerDate AS created_at,
-          fp.ed_fee_payment_deleted_at AS deleted_at,
-          ua.ed_user_account_name AS deleted_by,
-          fp.ed_fee_payment_institute_code AS institute_code
+          ) AS month_name
         FROM eduall_fees_payments fp
         LEFT JOIN eduall_students s ON s.ed_student_id = fp.ed_fee_payment_student
         LEFT JOIN eduall_services srv ON srv.ed_service_id = fp.ed_fee_payment_service
-        LEFT JOIN eduall_user_accounts ua ON ua.ed_user_account_id = fp.ed_fee_payment_deleted_by
         WHERE fp.ed_fee_payment_deleted = 1
           AND fp.ed_fee_payment_institute_code = ?
-        ORDER BY fp.ed_fee_payment_deleted_at DESC
       `;
       rows = await ExecuteQuery(res, query, [instituteCode], true);
 
@@ -386,23 +359,17 @@ const GetDeletedItemsByType = async (req, res) => {
       categoryLabel = "Pagamentos de Serviço";
       const query = `
         SELECT
+          sp.*,
+          s.*,
           sp.ed_service_payment_id AS item_id,
-          s.ed_student_code AS student_code,
-          s.ed_student_name AS student_name,
-          GROUP_CONCAT(srv.ed_service_title SEPARATOR ', ') AS service_name,
-          sp.ed_service_payment_registerDate AS created_at,
-          sp.ed_service_payment_deleted_at AS deleted_at,
-          ua.ed_user_account_name AS deleted_by,
-          sp.ed_service_payment_institute_code AS institute_code
+          GROUP_CONCAT(srv.ed_service_title SEPARATOR ', ') AS service_name
         FROM eduall_service_payments sp
         LEFT JOIN eduall_students s ON s.ed_student_id = sp.ed_service_payment_student_code
         LEFT JOIN eduall_service_payment_items spi ON spi.ed_service_payment_code = sp.ed_service_payment_code
         LEFT JOIN eduall_services srv ON srv.ed_service_id = spi.ed_service_id
-        LEFT JOIN eduall_user_accounts ua ON ua.ed_user_account_id = sp.ed_service_payment_deleted_by
         WHERE sp.ed_service_payment_deleted = 1
           AND sp.ed_service_payment_institute_code = ?
         GROUP BY sp.ed_service_payment_id
-        ORDER BY sp.ed_service_payment_deleted_at DESC
       `;
       rows = await ExecuteQuery(res, query, [instituteCode], true);
 
@@ -410,21 +377,14 @@ const GetDeletedItemsByType = async (req, res) => {
       categoryLabel = "Documentos de Confirmação";
       const query = `
         SELECT
-          ecd.ed_conf_doc_id AS item_id,
-          s.ed_student_code AS student_code,
-          s.ed_student_name AS student_name,
-          ecd.ed_conf_doc_name AS document_name,
-          ecd.ed_conf_doc_created_at AS created_at,
-          ecd.ed_conf_doc_deleted_at AS deleted_at,
-          ua.ed_user_account_name AS deleted_by,
-          ecd.ed_conf_doc_institute AS institute_code
+          ecd.*,
+          s.*,
+          ecd.ed_conf_doc_id AS item_id
         FROM eduall_enrollment_confirmation_docs ecd
         LEFT JOIN eduall_enrollment_confirmations ec ON ec.ed_enrollment_confirmation_id = ecd.ed_conf_doc_confirmation
         LEFT JOIN eduall_students s ON s.ed_student_id = ec.ed_enrollment_confirmation_student
-        LEFT JOIN eduall_user_accounts ua ON ua.ed_user_account_id = ecd.ed_conf_doc_deleted_by
         WHERE ecd.ed_conf_doc_deleted = 1
           AND ecd.ed_conf_doc_institute = ?
-        ORDER BY ecd.ed_conf_doc_deleted_at DESC
       `;
       rows = await ExecuteQuery(res, query, [instituteCode], true);
 
@@ -491,9 +451,9 @@ const RestoreDeletedItem = async (req, res) => {
     // RESTAURAR CONFIRMAÇÃO DE MATRÍCULA
     // ─────────────────────────────────────────────────────────────────────────
     if (ITEMTYPE === "enrollment_confirmation") {
-      // Buscar info para auditoria
+      // Buscar info completa (todas as colunas) para auditoria
       const [info] = await ExecuteQuery(res,
-        `SELECT ec.ed_enrollment_confirmation_id, s.ed_student_code, s.ed_student_name
+        `SELECT ec.*, s.*
          FROM eduall_enrollment_confirmations ec
          LEFT JOIN eduall_students s ON s.ed_student_id = ec.ed_enrollment_confirmation_student
          WHERE ec.ed_enrollment_confirmation_id = ? AND ec.ed_enrollment_confirmation_institute_code = ?`,
@@ -514,9 +474,9 @@ const RestoreDeletedItem = async (req, res) => {
       description = `Restaurou confirmação de matrícula ${itemInfo?.ed_student_code} (ID ${ITEMID})`;
 
     } else if (ITEMTYPE === "fee_payment") {
-      // Buscar info para auditoria
+      // Buscar info completa (todas as colunas) para auditoria
       const [info] = await ExecuteQuery(res,
-        `SELECT fp.ed_fee_payment_id, s.ed_student_code, s.ed_student_name, fp.ed_fee_payment_month
+        `SELECT fp.*, s.*
          FROM eduall_fees_payments fp
          LEFT JOIN eduall_students s ON s.ed_student_id = fp.ed_fee_payment_student
          WHERE fp.ed_fee_payment_id = ? AND fp.ed_fee_payment_institute_code = ?`,
@@ -527,9 +487,7 @@ const RestoreDeletedItem = async (req, res) => {
 
       query = `
         UPDATE eduall_fees_payments
-        SET ed_fee_payment_deleted = 0,
-            ed_fee_payment_deleted_at = NULL,
-            ed_fee_payment_deleted_by = NULL
+        SET ed_fee_payment_deleted = 0
         WHERE ed_fee_payment_id = ?
           AND ed_fee_payment_institute_code = ?
       `;
@@ -537,9 +495,9 @@ const RestoreDeletedItem = async (req, res) => {
       description = `Restaurou pagamento de propinas ${itemInfo?.ed_student_code} (mês ${itemInfo?.ed_fee_payment_month}, ID ${ITEMID})`;
 
     } else if (ITEMTYPE === "service_payment") {
-      // Buscar info para auditoria
+      // Buscar info completa (todas as colunas) para auditoria
       const [info] = await ExecuteQuery(res,
-        `SELECT sp.ed_service_payment_id, s.ed_student_code, s.ed_student_name
+        `SELECT sp.*, s.*
          FROM eduall_service_payments sp
          LEFT JOIN eduall_students s ON s.ed_student_id = sp.ed_service_payment_student_code
          WHERE sp.ed_service_payment_id = ? AND sp.ed_service_payment_institute_code = ?`,
@@ -550,9 +508,7 @@ const RestoreDeletedItem = async (req, res) => {
 
       query = `
         UPDATE eduall_service_payments
-        SET ed_service_payment_deleted = 0,
-            ed_service_payment_deleted_at = NULL,
-            ed_service_payment_deleted_by = NULL
+        SET ed_service_payment_deleted = 0
         WHERE ed_service_payment_id = ?
           AND ed_service_payment_institute_code = ?
       `;
@@ -560,9 +516,9 @@ const RestoreDeletedItem = async (req, res) => {
       description = `Restaurou pagamento de serviço ${itemInfo?.ed_student_code} (ID ${ITEMID})`;
 
     } else if (ITEMTYPE === "confirmation_doc") {
-      // Buscar info para auditoria
+      // Buscar info completa (todas as colunas) para auditoria
       const [info] = await ExecuteQuery(res,
-        `SELECT ecd.ed_conf_doc_id, ecd.ed_conf_doc_name, s.ed_student_code
+        `SELECT ecd.*, s.*
          FROM eduall_enrollment_confirmation_docs ecd
          LEFT JOIN eduall_enrollment_confirmations ec ON ec.ed_enrollment_confirmation_id = ecd.ed_conf_doc_confirmation
          LEFT JOIN eduall_students s ON s.ed_student_id = ec.ed_enrollment_confirmation_student
@@ -574,9 +530,7 @@ const RestoreDeletedItem = async (req, res) => {
 
       query = `
         UPDATE eduall_enrollment_confirmation_docs
-        SET ed_conf_doc_deleted = 0,
-            ed_conf_doc_deleted_at = NULL,
-            ed_conf_doc_deleted_by = NULL
+        SET ed_conf_doc_deleted = 0
         WHERE ed_conf_doc_id = ?
           AND ed_conf_doc_institute = ?
       `;
@@ -643,6 +597,7 @@ const RestoreDeletedItem = async (req, res) => {
         student_name: itemInfo?.ed_student_name || "desconhecido",
         restored_at: new Date().toISOString(),
         restored_by: operator?.name || `Operador ${operatorId}`,
+        full_item_data: itemInfo || null, // todas as colunas do item restaurado
       }
     });
 
