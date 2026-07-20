@@ -287,6 +287,7 @@ const {
   
  const ExecuteQuery = require("../Functions/ExecuteQuery"); 
 const { GetInvoices, GetSingleInvoice, GetInvoiceByCode, GetInvoiceByVendusNumber, RegisterInvoice, InvoiceDelete, InvoiceUpdate } = require("../Controllers/Invoices");
+const DeletedItemsRecovery = require("../Controllers/Recicle");
 
 
 router.get("/" ,  (req, res)=>{
@@ -596,6 +597,20 @@ router.get ('/eduall-certificates/get/:ID',      VerifyToken, GetCertificateById
 router.post('/eduall-certificates/post',         VerifyToken, RegisterCertificate);
 router.put ('/eduall-certificates/update/:ID',   VerifyToken, UpdateCertificate);
 router.put ('/eduall-certificates/delete/:ID',   VerifyToken, DeleteCertificate);
+
+
+
+
+
+
+router.get('/eduall-deleted-items/get', VerifyToken, DeletedItemsRecovery.GetAllDeletedItems);
+router.get('/eduall-deleted-items/get-by-type/:TYPE', VerifyToken, DeletedItemsRecovery.GetDeletedItemsByType);
+router.put('/eduall-deleted-items/restore/:ITEMID/:ITEMTYPE', VerifyToken, DeletedItemsRecovery.RestoreDeletedItem);
+router.put('/eduall-deleted-items/hard-delete/:ITEMID/:ITEMTYPE', VerifyToken, DeletedItemsRecovery.PermanentlyDeleteItem);
+ 
+
+
+
 
 // ========== CURSOS ==========
 router.get('/eduallcoursesapi/get', VerifyToken, GetCourse);

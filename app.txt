@@ -217,8 +217,8 @@ function isRecoverableInfraError(err) {
 //
 // Padrões aceites:
 //   Dev  : http://{tenant}.{app}.localhost:{porta}
-//   Prod : https://{tenant}.{app}.app.eduall.io
-//   Raiz : valor de APP_CLIENT_URL (ex: https://app.eduall.io)
+//   Prod : https://{tenant}.{app}.app.eduall.site
+//   Raiz : valor de APP_CLIENT_URL (ex: https://app.eduall.site)
 //
 // Qualquer subdomínio novo é aceite automaticamente sem alterar o código.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -243,7 +243,7 @@ function isOriginAllowed(origin) {
     if (/^https?:\/\/.*localhost(:\d+)?$/.test(origin)) return true;
   }
 
-  // Produção: https://{tenant}.{app}.app.eduall.io
+  // Produção: https://{tenant}.{app}.app.eduall.site
   const prodPattern = /^https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.app\.eduall\.site$/;
   if (prodPattern.test(origin)) {
     const parts  = origin.replace("https://", "").split(".");
@@ -455,7 +455,7 @@ app.use(
       //
       // Em produção não definimos domain — o cookie fica restrito ao
       // domínio exacto do backend e o sameSite "none" + secure trata
-      // o cross-subdomain (subdominio.app.eduall.io → api.eduall.site).
+      // o cross-subdomain (subdominio.app.eduall.site → api.eduall.site).
       // ──────────────────────────────────────────────────────────────────
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       domain:   process.env.NODE_ENV === "production" ? undefined : "localhost",
