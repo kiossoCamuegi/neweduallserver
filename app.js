@@ -397,14 +397,6 @@ const dbConfig = require("./config/DatabaseCredentials");
      } catch(e) { BOOT_ERRORS.push({ label: "FormBuilderController mount", error: e.message, stack: e.stack }); }
    }
  
-   // ================== Controllers/SiteManager ==================
-   const buildSiteRouter = safeRequire("./Controllers/SiteManager", "Controllers/SiteManager");
-   if (buildSiteRouter) {
-     try {
-       app.use(buildSiteRouter());
-       console.log("[BOOT] SiteManager montado");
-     } catch(e) { BOOT_ERRORS.push({ label: "SiteManager mount", error: e.message, stack: e.stack }); }
-   }
  
    // Socket.IO
    let io = null;
