@@ -1,895 +1,475 @@
-// ================== SEGURANÇA DE ARRANQUE (TEM DE SER A PRIMEIRA COISA) ==================
-//
-// Estes handlers têm de existir ANTES de qualquer require, para apanhar erros de
-// módulos em falta, variáveis não declaradas no top-level, etc. — erros que
-// acontecem durante o CARREGAMENTO do ficheiro, muito antes dos handlers
-// "inteligentes" (isRecoverableInfraError) lá mais abaixo serem registados.
-//
-// Sem isto: o Node imprime o stack trace cru no stderr e morre; o processo
-// reinicia (PM2/systemd/docker); o Nginx/proxy devolve 503 ao cliente; e quem
-// está a olhar para fora só vê "503 Service Unavailable", sem pista nenhuma
-// da causa real.
-// ────────────────────────────────────────────────────────────────────────────
-function printFatalBoxed(title, err) {
-  const line = "█".repeat(90);
-  console.error(`\n\x1b[41m\x1b[97m${line}\x1b[0m`);
-  console.error(`\x1b[41m\x1b[97m ERRO FATAL NO ARRANQUE: ${title} \x1b[0m`);
-  console.error(`\x1b[41m\x1b[97m${line}\x1b[0m`);
-  console.error(err?.stack || err);
-  console.error(`\x1b[41m\x1b[97m${line}\x1b[0m\n`);
-}
-
-// Handlers "básicos" — válidos só até serem substituídos mais abaixo pela
-// versão definitiva (que distingue erro recuperável de rede/BD de erro
-// verdadeiramente fatal). Antes disso, QUALQUER erro no arranque é fatal
-// e deve aparecer bem visível.
-process.on("uncaughtException", (err) => {
-  printFatalBoxed("uncaughtException (arranque)", err);
-  process.exit(1);
-});
-process.on("unhandledRejection", (reason) => {
-  printFatalBoxed("unhandledRejection (arranque)", reason);
-  process.exit(1);
-});
-
-// ================== Dependências ==================
-const path    = require("path");
-const dotenv  = require("dotenv");
-
-// CRITICO: dotenv ANTES de qualquer require que leia process.env
-// (inclui VENDUS.js que usa CRYPTO_SECRET_KEY/CRYPTO_IV)
-dotenv.config({ path: path.join(__dirname, "./.env") });
-
-const express             = require("express");
-const http                = require("http");
-const cookieParser        = require("cookie-parser");
-const cors                = require("cors");
-const passport            = require("passport");
-const session             = require("express-session");
-const MySQLStoreFactory   = require("express-mysql-session");
-const mysql2              = require("mysql2");
-const fs                  = require("fs");
-const helmet              = require("helmet");
-const morgan              = require("morgan");
-const cloudinary          = require("cloudinary").v2;
-const { Server }          = require("socket.io");
-
-// ─── requireOrDie: carregamento de módulos LOCAIS com diagnóstico claro ────
-//
-// Troca um "Cannot find module './middleware/performanceMonitor'" genérico
-// (e muitas vezes enterrado no meio de um stack trace confuso) por uma
-// caixa vermelha bem visível a dizer exatamente QUAL módulo falhou e
-// porquê — path errado, ficheiro apagado, erro de sintaxe dentro dele,
-// variável não declarada no top-level do módulo, etc.
-// ────────────────────────────────────────────────────────────────────────
-function requireOrDie(modulePath, label) {
-  try {
-    return require(modulePath);
-  } catch (err) {
-    printFatalBoxed(`Falha ao carregar módulo: ${label}\n  Caminho: ${modulePath}`, err);
-    process.exit(1);
-  }
-}
-
-// ===== Seus módulos (agora protegidos com requireOrDie) =====
-const performanceMonitor                 = requireOrDie("./middleware/performanceMonitor", "performanceMonitor");
-const Sanitize                           = requireOrDie("./middleware/Sanitize", "Sanitize");
-const RandomStrings                      = requireOrDie("./config/RandomStrings", "RandomStrings");
-const router                             = requireOrDie("./routes/index", "router (routes/index)");
-const Authrouter                         = requireOrDie("./routes/Auth", "Authrouter (routes/Auth)");
-const SOCKET_IO                          = requireOrDie("./Sockets/GetSocketIo", "SOCKET_IO (Sockets/GetSocketIo)");
-const cardRoutes                         = requireOrDie("./Controllers/Cards_server", "cardRoutes (Controllers/Cards_server)");
-const { buildNotificationsRouter }       = requireOrDie("./Controllers/Auditory", "buildNotificationsRouter (Controllers/Auditory)");
-const buildFormBuilderController         = requireOrDie("./Controllers/FormBuilderController", "buildFormBuilderController");
-const CacheRoutes                        = requireOrDie("./Functions/CacheRoutes", "CacheRoutes");
-const VendusService                      = requireOrDie("./Functions/VENDUS", "VendusService (Functions/VENDUS)");
-const CreateSaftService                  = requireOrDie("./Functions/CreateSaftFiles", "CreateSaftService (Functions/CreateSaftFiles)");
-const dbConfig                           = requireOrDie("./config/DatabaseCredentials", "dbConfig (config/DatabaseCredentials)");
-
-// ================== App ==================
-const app = express();
-app.set("trust proxy", 1); // atrás de Nginx/Cloudflare
-
-const CODE        = RandomStrings();
-const mainUrl     = process.env.APP_CLIENT_URL || "";
-const expiryDate  = 1000 * 60 * 60 * 24 * 31; // 31 dias 
-
-// ─── LOG DE DIAGNÓSTICO: entrada/saída de TODOS os pedidos, a cores ───────────
-//
-// Isto corre ANTES de qualquer middleware (incluindo sessão), por isso
-// confirma se o pedido chegou mesmo ao processo Node, independentemente
-// de ficar preso mais tarde (ex: à espera de ligação MySQL da sessão).
-// Se a linha "IN" aparecer sempre mas a linha de saída faltar às vezes,
-// o pedido está a ficar preso num middleware a seguir a este.
-//
-//   Entrada  → laranja
-//   Sucesso  → verde   (status < 400)
-//   Erro     → vermelho (status >= 400)
-//   Tempo de resposta sempre em segundos, com 3 casas decimais.
-// ───────────────────────────────────────────────────────────────────────────
-const ANSI = {
-  reset:  "\x1b[0m",
-  bold:   "\x1b[1m",
-  orange: "\x1b[38;5;208m",
-  green:  "\x1b[32m",
-  red:    "\x1b[31m",
-  blue:   "\x1b[34m",
-  grey:   "\x1b[90m",
-};
-
-function formatSeconds(ms) {
-  return (ms / 1000).toFixed(3) + "s";
-}
-
-// ─── NOVO: Monitor de Event Loop Lag ───────────────────────────────────────
-//
-// Diagnóstico para o problema de pedidos "perdidos": se o event loop do
-// Node ficar bloqueado por trabalho síncrono pesado (JSON parse grande,
-// leitura de ficheiro síncrona, etc.), ligações TCP que chegam durante o
-// bloqueio podem nunca ser processadas a tempo (o cliente desiste antes) —
-// e é exatamente aí que o log "→ IN" abaixo fica em falta, ou aparece mas
-// o "✔ OUT" nunca sai porque o pedido ficou preso a meio.
-//
-// Este monitor mede, a cada segundo, quanto tempo passou a mais do que
-// o esperado entre duas execuções do setInterval. Um valor de "lag" alto
-// (ex: >200-500ms) indica que o loop esteve ocupado com outra coisa nesse
-// intervalo e é um forte indício da causa raiz.
-// ─────────────────────────────────────────────────────────────────────────
-let lastEventLoopCheck = process.hrtime.bigint();
-const EVENT_LOOP_CHECK_INTERVAL_MS = 1000;
-const EVENT_LOOP_LAG_WARN_THRESHOLD_MS = 100;
-
-setInterval(() => {
-  const now = process.hrtime.bigint();
-  const elapsedMs = Number(now - lastEventLoopCheck) / 1e6;
-  lastEventLoopCheck = now;
-  const lag = elapsedMs - EVENT_LOOP_CHECK_INTERVAL_MS;
-
-  if (lag > EVENT_LOOP_LAG_WARN_THRESHOLD_MS) {
-    console.warn(
-      `${ANSI.red}${ANSI.bold}[⚠️ EVENT LOOP] Atraso de ${lag.toFixed(0)}ms detetado ` +
-      `${ANSI.grey}[${new Date().toLocaleTimeString("pt-PT")}]${ANSI.reset}`
-    );
-  }
-}, EVENT_LOOP_CHECK_INTERVAL_MS);
-
-app.use((req, res, next) => {
-  const start = process.hrtime.bigint();
-  req._startHr = start; // usado também pelo handler de erros global, mais abaixo
-
-  console.log(
-    `${ANSI.orange}${ANSI.bold}→ IN ${ANSI.reset}${ANSI.orange}${req.method}${ANSI.reset} ` +
-    `${req.originalUrl} ${ANSI.grey}[${new Date().toLocaleTimeString("pt-PT")}]${ANSI.reset}`
-  );
-
-  res.on("finish", () => {
-    const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
-    const isNotFound = res.statusCode === 404;
-    const isError     = res.statusCode >= 400 && !isNotFound;
-
-    const color = isNotFound ? ANSI.blue : (isError ? ANSI.red : ANSI.green);
-    const label = isNotFound ? "✦ 404" : (isError ? "✖ ERR" : "✔ OUT");
-
-    console.log(
-      `${color}${ANSI.bold}${label}${ANSI.reset}${color} ${req.method}${ANSI.reset} ` +
-      `${req.originalUrl} ${color}${res.statusCode}${ANSI.reset} ` +
-      `${ANSI.bold}${color}${formatSeconds(elapsedMs)}${ANSI.reset}`
-    );
-  });
-
-  next();
-});
-
-// ─── Erros de rede/BD recuperáveis ─────────────────────────────────────────
-//
-// Lista única, partilhada entre o retry de queries e os handlers globais de
-// erro (uncaughtException / unhandledRejection / pool "error"). São todos
-// erros TRANSITÓRIOS — uma falha momentânea de DNS, uma ligação que caiu,
-// um timeout — que se resolvem sozinhos assim que a rede/BD voltar. Nenhum
-// deles deve derrubar o processo Node: a próxima query, com o retry/backoff
-// abaixo, tenta de novo.
-//
-// CORREÇÃO PRINCIPAL deste ficheiro: "ENOTFOUND" (falha de resolução DNS,
-// como em "getaddrinfo ENOTFOUND cpanel154.dnscpanel.com") e "EAI_AGAIN"
-// (DNS temporariamente indisponível) foram adicionados aqui. Antes só
-// erros de ligação já estabelecida eram tratados como recuperáveis; uma
-// falha de DNS a meio da noite chegava como unhandledRejection e o handler
-// global fazia process.exit(1), derrubando a app inteira por uma soneca da
-// rede que se resolvia sozinha minutos depois.
-// ─────────────────────────────────────────────────────────────────────────
-const RECOVERABLE_ERROR_CODES = new Set([
-  "PROTOCOL_CONNECTION_LOST",
-  "ECONNRESET",
-  "ETIMEDOUT",
-  "EPIPE",
-  "PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR",
-  "PROTOCOL_PACKETS_OUT_OF_ORDER",
-  "ENOTFOUND",              // falha de resolução DNS (o caso do log)
-  "EAI_AGAIN",              // DNS temporariamente indisponível
-  "ECONNREFUSED",           // host recusou a ligação (ex: BD a reiniciar)
-  "ER_CON_COUNT_ERROR",     // pool esgotado
-  "PROTOCOL_SEQUENCE_TIMEOUT",
-]);
-
-function isRecoverableInfraError(err) {
-  if (!err) return false;
-  const code = err.code || err.errno || err.cause?.code;
-  if (RECOVERABLE_ERROR_CODES.has(code)) return true;
-  // Alguns erros chegam só com mensagem (ex.: envolvidos noutra Promise)
-  const msg = String(err.message || err);
-  return /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|PROTOCOL_CONNECTION_LOST/.test(msg);
-}
-
-// ─── CORS multi-tenant ────────────────────────────────────────────────────────
-//
-// Padrões aceites:
-//   Dev  : http://{tenant}.{app}.localhost:{porta}
-//   Prod : https://{tenant}.{app}.app.eduall.site
-//   Raiz : valor de APP_CLIENT_URL (ex: https://app.eduall.site)
-//
-// Qualquer subdomínio novo é aceite automaticamente sem alterar o código.
-// ─────────────────────────────────────────────────────────────────────────────
-
-const KNOWN_APPS = ["hr", "library", "security"];
-
-/**
- * Verifica se uma origem é permitida:
- *   1. Origem nula (Postman, curl, SSR) → aceite
- *   2. Igual ao APP_CLIENT_URL exacto → aceite
- *   3. Subdomínio de tenant válido dev/prod → aceite
- *   4. Qualquer localhost em desenvolvimento → aceite
- */
-function isOriginAllowed(origin) {
-  if (!origin) return true;
-
-  // Raiz exacta configurada no .env
-  if (mainUrl && origin === mainUrl) return true;
-
-  // Desenvolvimento: aceitar qualquer localhost/*
-  if (process.env.NODE_ENV !== "production") {
-    if (/^https?:\/\/.*localhost(:\d+)?$/.test(origin)) return true;
-  }
-
-  // Produção: https://{tenant}.{app}.app.eduall.site
-  const prodPattern = /^https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.app\.eduall\.site$/;
-  if (prodPattern.test(origin)) {
-    const parts  = origin.replace("https://", "").split(".");
-    const appSeg = parts[1];
-    if (KNOWN_APPS.includes(appSeg)) return true;
-  }
-
-  // Dev explícito com subdomínio: http://{tenant}.{app}.localhost:{porta}
-  const devPattern = /^http:\/\/[a-z0-9-]+\.[a-z0-9-]+\.localhost(:\d+)?$/;
-  if (devPattern.test(origin)) {
-    const parts  = origin.replace(/^https?:\/\//, "").split(".");
-    const appSeg = parts[1]?.split(":")[0];
-    if (KNOWN_APPS.includes(appSeg)) return true;
-  }
-
-  return false;
-}
-
-const corsOptions = {
-  origin: (origin, callback) => {
-    if (isOriginAllowed(origin)) return callback(null, true);
-    console.warn(`[CORS] Origem bloqueada: ${origin}`);
-    return callback(new Error("Not allowed by CORS"));
-  },
-  credentials: true,
-  methods:        ["GET", "POST", "DELETE", "PUT", "OPTIONS", "PATCH"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-};
-
-app.use(performanceMonitor);
-
-// ================== Segurança / Perf ==================
-app.use(
-  helmet({
-    contentSecurityPolicy: false,
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-  })
-);
-app.use(morgan(process.env.NODE_ENV === "production" ? "tiny" : "dev"));
-
-// ─── CORREÇÃO (Event Loop Blocking): limite de payload JSON ───────────────
-//
-// Referência: artigo "How to Fix 'Event Loop Blocking' Issues", secção
-// "Large JSON Operations" — JSON.parse (usado internamente pelo
-// express.json/body-parser) é SÍNCRONO. Um limite de "500mb" permite que
-// um cliente envie um corpo desse tamanho e o Node fica preso a fazer
-// parse dele durante segundos, bloqueando TODOS os outros pedidos
-// (incluindo o healthcheck e o Socket.IO) nesse intervalo — exatamente o
-// sintoma de "pedidos perdidos" que os logs de diagnóstico acima tentam
-// apanhar.
-//
-// Reduzido para um valor configurável e muito mais realista para JSON de
-// API (uploads de ficheiros binários grandes não devem ir por aqui — usar
-// multipart/streaming, não JSON base64). Ajuste EXPRESS_JSON_LIMIT no
-// .env se precisar mesmo de mais, mas evite valores de dezenas/centenas
-// de MB neste middleware.
-// ────────────────────────────────────────────────────────────────────────
-app.use(express.json({ limit: process.env.EXPRESS_JSON_LIMIT || "20mb" }));
-app.use(express.urlencoded({ extended: true, limit: process.env.EXPRESS_URLENCODED_LIMIT || "20mb" }));
-app.use(cors(corsOptions));
-
-// ================== MySQL2 Pool (dados) ==================
-const dbOptions = {
-  ...dbConfig,
-  charset:            "utf8mb4", 
-  waitForConnections: true,
-  connectionLimit:    Number(process.env.DB_CONN_LIMIT   || 50),
-  maxIdle:            Number(process.env.DB_MAX_IDLE     || 20),
-  idleTimeout:        Number(process.env.DB_IDLE_TIMEOUT || 60000),
-  queueLimit:         Number(process.env.DB_QUEUE_LIMIT || 20),
-  // CORREÇÃO: era 0 (fila infinita) — com isso, pedidos ficavam pendurados
-  // à espera de ligação livre para sempre em vez de falhar rápido. Com um
-  // limite, se o pool esgotar, novas queries recebem erro imediato
-  // (ER_CON_COUNT_ERROR / timeout) em vez de silenciosamente acumular.
-  enableKeepAlive:    true,
-  keepAliveInitialDelay: 10000,
-  // CORREÇÃO: timeout explícito de ligação para nunca ficar pendurado
-  // indefinidamente à espera de handshake com o host remoto de BD.
-  connectTimeout:     Number(process.env.DB_CONNECT_TIMEOUT || 10000),
-};
-
-const pool        = mysql2.createPool(dbOptions);
-const promisePool = pool.promise();
-
-// CORREÇÃO: pool dedicado e mais pequeno só para a tabela de sessões.
-// Isto evita que rotas pesadas (que consomem o pool principal de 50
-// ligações) bloqueiem o middleware de sessão, que corre em TODO pedido
-// autenticado e precisa sempre de conseguir uma ligação rapidamente.
-const sessionPool = mysql2.createPool({
-  ...dbOptions,
-  connectionLimit: Number(process.env.DB_SESSION_CONN_LIMIT || 10),
-});
-
-// ─── CORREÇÃO CRÍTICA: listeners de "error" nos pools ─────────────────────
-//
-// Pools mysql2 emitem o evento "error" em segundo plano — por exemplo
-// quando uma ligação idle/keep-alive falha a reconectar (exatamente o que
-// acontece numa falha de DNS como "ENOTFOUND cpanel154.dnscpanel.com").
-// Em Node, um EventEmitter que recebe "error" SEM nenhum listener regista
-// lança/derruba o processo. Sem estes handlers, uma simples soneca de DNS
-// era suficiente para crashar a app inteira, mesmo sem nenhum pedido HTTP
-// em curso. Agora só é registado e o processo continua — a próxima query
-// tenta obter uma nova ligação normalmente.
-// ────────────────────────────────────────────────────────────────────────
-pool.on("error", (err) => {
-  console.error(
-    `${ANSI.red}${ANSI.bold}[⚠️ POOL BD] Erro em segundo plano no pool principal:${ANSI.reset} ` +
-    `${err.code || ""} ${err.message}`
-  );
-});
-
-sessionPool.on("error", (err) => {
-  console.error(
-    `${ANSI.red}${ANSI.bold}[⚠️ POOL SESSÃO] Erro em segundo plano no pool de sessões:${ANSI.reset} ` +
-    `${err.code || ""} ${err.message}`
-  );
-});
-
-// ===== Helper de query com retry/backoff =====
-async function queryWithRetry(sql, params = [], { retries = 2 } = {}) {
-  let lastErr;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const startedAt = Date.now();
-      const [rows] = await promisePool.query(sql, params);
-      const elapsed = Date.now() - startedAt;
-      if (elapsed > 500) {
-        console.warn(`[DB LENTO] ${elapsed}ms → ${sql.slice(0, 80)}...`);
-      }
-      return rows;
-    } catch (err) {
-      lastErr = err;
-      // CORREÇÃO: usa a lista partilhada RECOVERABLE_ERROR_CODES (agora
-      // inclui ENOTFOUND/EAI_AGAIN/ECONNREFUSED) em vez de uma lista local
-      // que não cobria falhas de resolução DNS.
-      if (!isRecoverableInfraError(err)) break;
-      const backoff = 300 * (attempt + 1);
-      console.warn(
-        `[DB RETRY] tentativa ${attempt + 1}/${retries + 1} falhou (${err.code || err.message}), ` +
-        `a tentar de novo em ${backoff}ms...`
-      );
-      await new Promise((r) => setTimeout(r, backoff));
-    }
-  }
-  throw lastErr;
-}
-
-async function ExecuteQuery(res, sql, params = [], _silent = true, _meta = {}) {
-  try {
-    const rows = await queryWithRetry(sql, params);
-    return rows;
-  } catch (err) {
-    if (!_silent && res) {
-      return res.status(500).json({ error: err.message, code: err.code });
-    }
-    throw err;
-  }
-}
-
-// ================== Sessão + Store ==================
-const MySQLStore  = MySQLStoreFactory(session);
-const sessionStore = new MySQLStore(
-  {
-    expiration:             expiryDate,
-    clearExpired:           true,
-    checkExpirationInterval: 15 * 60 * 1000,
-  },
-  // CORREÇÃO: usa o pool dedicado de sessões, não o pool principal.
-  sessionPool
-);
-
-// CORREÇÃO: o express-mysql-session corre a limpeza de sessões expiradas
-// (checkExpirationInterval) em segundo plano, fora de qualquer pedido HTTP.
-// Se essa query falhar (ex: BD momentaneamente inacessível por DNS), o
-// módulo emite "error" na própria store — sem listener, o mesmo problema de
-// EventEmitter sem tratamento derruba o processo.
-sessionStore.on("error", (err) => {
-  console.error(
-    `${ANSI.red}${ANSI.bold}[⚠️ SESSION STORE] Erro em segundo plano (ex: limpeza de sessões expiradas):${ANSI.reset} ` +
-    `${err.code || ""} ${err.message}`
-  );
-});
-
-app.use(cookieParser());
-app.use(
-  session({
-    secret:            process.env.SESSION_SECRET || "troque-este-segredo",
-    resave:            false,
-    // CORREÇÃO: era "true" — isto criava/regravava uma sessão na BD em
-    // quase todo pedido (incluindo anónimos), sobrecarregando o pool e
-    // fazendo pedidos ficarem pendurados à espera de ligação livre.
-    saveUninitialized: false,
-    store:             sessionStore,
-    cookie: {
-      httpOnly: true,
-      maxAge:   expiryDate,
-      secure:   process.env.NODE_ENV === "production",
-      // ── CRÍTICO para multi-tenant ──────────────────────────────────────
-      //
-      // Problema: frontend em edodemo.library.localhost:3000 faz pedidos
-      // para localhost:8000 — cross-site em dev, cookie rejeitado se
-      // sameSite for "lax" ou "strict".
-      //
-      // Solução: domain: "localhost" faz com que o mesmo cookie seja
-      // partilhado entre localhost:3000, localhost:8000,
-      // edodemo.hr.localhost:3000, edodemo.library.localhost:3000, etc.
-      // O browser trata todos como o mesmo domínio raiz "localhost"
-      // e envia o cookie sem restrições de cross-site.
-      //
-      // Em produção não definimos domain — o cookie fica restrito ao
-      // domínio exacto do backend e o sameSite "none" + secure trata
-      // o cross-subdomain (subdominio.app.eduall.site → api.eduall.site).
-      // ──────────────────────────────────────────────────────────────────
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      domain:   process.env.NODE_ENV === "production" ? undefined : "localhost",
-    },
-  })
-);
-
-app.use(passport.initialize());
-
-// ================== Públicos ==================
-app.use("/public", express.static("public"));
-
-// ================== Estáticos com cache agressivo ==================
-const staticCorsOptions = {
-  origin:      isOriginAllowed,
-  credentials: true,
-  methods:     ["GET", "OPTIONS"],
-};
-
-const staticOpts = {
-  etag:         true,
-  lastModified: true,
-  maxAge:       "30d",
-  immutable:    true,
-};
-
-const IMAGES_DIR = path.resolve(__dirname, "images");
-const FILES_DIR  = path.resolve(__dirname, "files");
-const ASSETS_DIR = path.resolve(__dirname, "assets");
-const VIDEOS_DIR = path.resolve(__dirname, "videos");
-
-// Debug
-app.get("/debug/images", async (_req, res) => {
-  try {
-    // CORREÇÃO (Event Loop Blocking): existsSync/readdirSync são
-    // síncronos e bloqueiam o event loop enquanto tocam o disco. Usamos
-    // as versões assíncronas em ambos os casos.
-    const exists = await fs.promises.access(IMAGES_DIR).then(() => true).catch(() => false);
-    const files  = exists ? (await fs.promises.readdir(IMAGES_DIR)).slice(0, 50) : [];
-    res.json({ imagesDir: IMAGES_DIR, exists, sampleFiles: files, tip: "Aceda: /images/<nome-do-ficheiro>" });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ─── CORREÇÃO CRÍTICA: Middleware para headers de static files ──────────────
-// Antes havia DUPLICAÇÃO de rota /images (duas vezes), o que causava
-// confusão no middleware. Agora um único middleware é reutilizado.
-// ──────────────────────────────────────────────────────────────────────────
-const staticHeadersMiddleware = (req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin && isOriginAllowed(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
-  }
-  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-  next();
-};
-
-// ─── Rotas de ficheiros estáticos (SEM DUPLICAÇÃO) ────────────────────────
-app.use(
-  "/images",
-  cors(staticCorsOptions),
-  staticHeadersMiddleware,
-  express.static(IMAGES_DIR, staticOpts)
-);
-
-app.use(
-  "/assets",
-  cors(staticCorsOptions),
-  staticHeadersMiddleware,
-  express.static(ASSETS_DIR, staticOpts)
-);
-
-app.use(
-  "/videos",
-  cors(staticCorsOptions),
-  staticHeadersMiddleware,
-  express.static(VIDEOS_DIR, staticOpts)
-);
-
-app.use(
-  "/files",
-  cors(staticCorsOptions),
-  staticHeadersMiddleware,
-  express.static(FILES_DIR, staticOpts)
-);
-
-// ================== Rotas de teste ==================
-app.get("/hits", (req, res) => {
-  res.status(200).json({
-    cloud_name: process.env.CLOUDINARY_NAME || null,
-    key_set:    Boolean(process.env.CLOUDINARY_KEY),
-    secret_set: Boolean(process.env.CLOUDINARY_SECRET),
-  });
-});
-
-app.post("/hits", (req, res) => {
-  req.session.hits = {
-    email:    req.body?.email,
-    password: req.body?.password,
-  };
-  res.status(200).json({ ok: true });
-});
-
-// ================== Cloudinary ==================
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_NAME   || "",
-  api_key:    process.env.CLOUDINARY_KEY    || "",
-  api_secret: process.env.CLOUDINARY_SECRET || "",
-});
-
-app.get("/views", async (req, res) => {
-  try {
-    if (!req.session.views) req.session.views = 0;
-    req.session.views++;
-    const imageUrl = "https://i.postimg.cc/bYCSJ7w8/eduall-logo.png";
-    const result   = await cloudinary.uploader.upload(imageUrl, { folder: "eduall" });
-    res.json({
-      message:       "Views++ e imagem enviada ao Cloudinary",
-      views:         req.session.views,
-      sessionId:     req.sessionID,
-      cloudinaryUrl: result.secure_url,
-    });
-  } catch (error) {
-    res.json({
-      message:   "Views++ mas falha no upload",
-      views:     req.session.views || 0,
-      sessionId: req.sessionID,
-      error:     error.message,
-    });
-  }
-});
-
-app.get("/upload-image", async (req, res) => {
-  try {
-    const instituteCode = req.session?.user?.eduall_user_session_curentinstitute;
-    if (!instituteCode)
-      return res.status(401).json({ error: "Sessão inválida ou não autenticada." });
-
-    const checkColumn = `
-      SELECT COUNT(*) AS exist
-      FROM INFORMATION_SCHEMA.COLUMNS
-      WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME   = 'eduall_institutes'
-        AND COLUMN_NAME  = 'ed_logo_urlcloudinary'
-    `;
-    const colResult = await ExecuteQuery(res, checkColumn, [], true);
-    if (colResult?.[0]?.exist === 0) {
-      await ExecuteQuery(
-        res,
-        `ALTER TABLE eduall_institutes ADD COLUMN ed_logo_urlcloudinary TEXT NULL AFTER ed_institute_logo`,
-        [],
-        true
-      );
-    }
-
-    const rows = await ExecuteQuery(
-      res,
-      `SELECT ed_logo_urlcloudinary FROM eduall_institutes
-       WHERE ed_institute_deleted = 0 AND ed_institute_code = ? LIMIT 1`,
-      [instituteCode],
-      true
-    );
-    res.status(200).json({ success: true, cloudinaryUrl: rows?.[0]?.ed_logo_urlcloudinary || null });
-  } catch (error) {
-    res.status(500).json({ error: "Erro ao buscar imagem no banco." });
-  }
-});
-
-app.get("/testdb", async (req, res) => {
-  try {
-    const result = await ExecuteQuery(res, "SELECT DATABASE() AS db", [], true);
-    res.send(result);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ================== Suas rotas / middlewares ==================
-app.use(router);
-app.use(Authrouter);
-app.use(Sanitize());
-app.use(cardRoutes);
-
-const { router: formBuilderRouter, attachSockets: formBuilderSockets } = buildFormBuilderController();
-app.use("/api", formBuilderRouter);
-
-// ================== Healthcheck ==================
-app.get("/health", async (_req, res) => {
-  try {
-    await promisePool.query("SELECT 1");
-    res.json({ ok: true, db: true, uptime: process.uptime() });
-  } catch {
-    res.status(500).json({ ok: false, db: false });
-  }
-});
-
-app.get("/health/pool", (_req, res) => {
-  res.json({
-    dataPool: {
-      total: pool.pool?._allConnections?.length ?? null,
-      free:  pool.pool?._freeConnections?.length ?? null,
-      queued: pool.pool?._connectionQueue?.length ?? null,
-    },
-    sessionPool: {
-      total: sessionPool.pool?._allConnections?.length ?? null,
-      free:  sessionPool.pool?._freeConnections?.length ?? null,
-      queued: sessionPool.pool?._connectionQueue?.length ?? null,
-    },
-  });
-});
-
-// ================== 404 — rota inexistente ==================
-// Corre depois de todas as rotas registadas; se chegou até aqui, nenhuma
-// rota fez match. O log a azul (✦ 404) já é gerado automaticamente pelo
-// middleware de entrada/saída lá em cima, com base no status 404.
-app.use((req, res) => {
-  res.status(404).json({ error: "Rota não encontrada" });
-});
-
-// ================== Tratamento de erros (pedidos HTTP) ==================
-app.use((err, req, res, _next) => {
-  const start   = req._startHr || process.hrtime.bigint();
-  const elapsed = Number(process.hrtime.bigint() - start) / 1e6;
-
-  const msg = err?.message?.includes("CORS")
-    ? "Acesso negado por CORS"
-    : (process.env.NODE_ENV === "production" ? "Erro interno no servidor" : err.message);
-
-  console.log(
-    `${ANSI.red}${ANSI.bold}✖ ERR${ANSI.reset}${ANSI.red} ${req.method}${ANSI.reset} ` +
-    `${req.originalUrl} ${ANSI.red}${err.status || 500}${ANSI.reset} ` +
-    `${ANSI.bold}${ANSI.red}${formatSeconds(elapsed)}${ANSI.reset} — ${ANSI.red}${msg}${ANSI.reset}`
-  );
-
-  if (err?.message?.includes("CORS")) {
-    return res.status(403).json({ error: "Acesso negado por CORS" });
-  }
-  console.error("🔥 ERRO NO SERVIDOR:", err);
-  res.status(err.status || 500).json({
-    error: msg,
-    stack: process.env.NODE_ENV === "production" ? undefined : err.stack,
-  });
-});
-
-// ================== HTTP + Socket.IO ==================
-const HTTPApp = http.createServer(app);
-
-// ─── NOVO: keepAliveTimeout / headersTimeout ──────────────────────────────
-//
-// CORREÇÃO: por defeito o Node fecha ligações keep-alive ociosas ao fim de
-// apenas 5000ms (server.keepAliveTimeout). Se o browser/axios reutilizar
-// uma dessas ligações para enviar um novo pedido EXATAMENTE no instante em
-// que o Node decide fechá-la, o cliente recebe um ECONNRESET/"network
-// error" e o pedido nunca chega a ser interpretado como HTTP — não há
-// nada para o middleware de log registar. É uma causa clássica de
-// "pedidos fantasma" que desaparecem sem deixar rasto no servidor.
-//
-// Se em produção estiverem atrás de um proxy (Nginx/Cloudflare), a regra
-// é: timeout do proxy < keepAliveTimeout do Node. Ajustem o valor do
-// proxy em conformidade se ainda não estiver définido.
-//
-// headersTimeout tem de ser sempre MAIOR que keepAliveTimeout (exigência
-// do próprio Node), daí o valor ligeiramente superior.
-// ────────────────────────────────────────────────────────────────────────
-HTTPApp.keepAliveTimeout = Number(process.env.HTTP_KEEPALIVE_TIMEOUT || 65000);
-HTTPApp.headersTimeout   = Number(process.env.HTTP_HEADERS_TIMEOUT   || 66000);
-
-// ─── NOVO: log de ligação TCP crua ─────────────────────────────────────────
-//
-// Corre ANTES até do parser HTTP interpretar o pedido. Distingue duas
-// situações que, do lado do middleware "→ IN", parecem iguais:
-//   1. A ligação TCP nunca chega a este processo (problema é rede/SO/
-//      restart do processo/keep-alive do lado do cliente) — aqui nem esta
-//      linha aparece.
-//   2. A ligação chega (aparece aqui) mas o "→ IN" HTTP nunca é gerado —
-//      aponta para algo entre a ligação TCP e o parser de pedidos HTTP do
-//      Node (raro, mas ajuda a isolar).
-// ────────────────────────────────────────────────────────────────────────
-let tcpConnectionCounter = 0;
-HTTPApp.on("connection", (socket) => {
-  tcpConnectionCounter += 1;
-  const id = tcpConnectionCounter;
-  console.log(
-    `${ANSI.grey}[TCP #${id}] nova ligação de ${socket.remoteAddress}:${socket.remotePort} ` +
-    `[${new Date().toLocaleTimeString("pt-PT")}]${ANSI.reset}`
-  );
-  socket.on("close", (hadError) => {
-    console.log(
-      `${ANSI.grey}[TCP #${id}] ligação fechada ${hadError ? "(com erro)" : ""} ` +
-      `[${new Date().toLocaleTimeString("pt-PT")}]${ANSI.reset}`
-    );
-  });
-});
-
-const io = new Server(HTTPApp, {
-  cors: {
-    origin:      (origin, cb) => cb(null, isOriginAllowed(origin)),
-    credentials: true,
-  },
-});
-
-app.set("io", io);
-
-SOCKET_IO.init(io);
-requireOrDie("./Sockets/SocketMain", "SocketMain (Sockets/SocketMain)");
-
-app.use(buildNotificationsRouter(io));
-formBuilderSockets(io);
-
-io.on("connection", (socket) => {
-  console.log("🔌 Socket conectado:", socket.id);
-  socket.on("disconnect", () => console.log("🔌 Socket desconectado:", socket.id));
-});
-
-// ================== Encerramento gracioso ==================
-async function shutdown() {
-  console.log("\n[🛑] Encerrando servidor...");
-  try { await promisePool.end(); } catch (_) {}
-  try { await sessionPool.promise().end(); } catch (_) {}
-  HTTPApp.close(() => {
-    console.log("[✅] HTTP fechado. Bye!");
-    process.exit(0);
-  });
-  setTimeout(() => process.exit(1), 5000).unref();
-}
-process.on("SIGINT",  shutdown);
-process.on("SIGTERM", shutdown);
-
-// ─── SUBSTITUIÇÃO DOS HANDLERS "BÁSICOS" pelos DEFINITIVOS ────────────────
-//
-// Agora que isRecoverableInfraError já está definida, trocamos os handlers
-// simples do topo do ficheiro (que tratavam qualquer erro como fatal) por
-// estes, mais inteligentes:
-//
-//   • Erro de rede/BD reconhecido (ver RECOVERABLE_ERROR_CODES) → apenas
-//     regista no log e o servidor continua no ar. As próximas queries
-//     tentam obter ligação nova normalmente (o pool não fica "preso"
-//     nesse estado).
-//   • Qualquer outro erro verdadeiramente inesperado → continua a sair
-//     do processo (com um pequeno atraso para garantir que o log é
-//     escrito antes do exit, e sempre com a caixa vermelha bem visível),
-//     para não mascarar bugs reais de programação atrás deste tratamento
-//     mais tolerante.
-//
-// process.removeAllListeners garante que os handlers "básicos" registados
-// no arranque não continuam pendurados a par destes (evita duplicar logs).
-// ────────────────────────────────────────────────────────────────────────
-function exitOnFatalError(kind, err) {
-  printFatalBoxed(`${kind} FATAL (não recuperável) — a encerrar o processo`, err);
-  // Pequeno atraso para dar tempo ao stdout/stderr de serem escritos
-  // (em alguns ambientes, um exit imediato corta o fim do log).
-  setTimeout(() => process.exit(1), 200).unref();
-}
-
-process.removeAllListeners("uncaughtException");
-process.removeAllListeners("unhandledRejection");
-
-process.on("uncaughtException", (err) => {
-  if (isRecoverableInfraError(err)) {
-    console.error(
-      `${ANSI.red}${ANSI.bold}[⚠️ REDE/BD] uncaughtException recuperável — servidor mantém-se no ar:${ANSI.reset} ` +
-      `${err.code || ""} ${err.message}`
-    );
-    return;
-  }
-  exitOnFatalError("uncaughtException", err);
-});
-
-process.on("unhandledRejection", (reason) => {
-  if (isRecoverableInfraError(reason)) {
-    console.error(
-      `${ANSI.red}${ANSI.bold}[⚠️ REDE/BD] unhandledRejection recuperável — servidor mantém-se no ar:${ANSI.reset} ` +
-      `${reason?.code || ""} ${reason?.message || reason}`
-    );
-    return;
-  }
-  exitOnFatalError("unhandledRejection", reason);
-});
-
-// ================== Start ==================
-const PORT = Number(process.env.PORT || 7500);
-
-async function startServer() {
-  try {
-    // ✅ Garantir que chaves cripto estão carregadas (sem bloquear event loop)
-    logVendus("Carregando configuração de criptografia...");
-    await VendusService.ensureCryptoEnvAsync();
-
-    // ✅ Garantir que diretório SAF-T existe
-    logSaft("Preparando diretório de SAF-T...");
-    await CreateSaftService.ensureSaftDirectory();
-
-    // Inicializar cache como antes
-    try {
-      /*
-      await CacheRoutes.eduallInit({
-        driver: process.env.CACHE_DRIVER || "sqlite",
-        enableLogging: true,
-      });
-      */
-    } catch (err) {
-      console.error("⚠️  Cache falhou ao inicializar, o servidor vai continuar sem cache:", err);
-    }
-
-    // Ligar o servidor HTTP
-    HTTPApp.listen(PORT, () => {
-      console.log(
-        `${ANSI.green}${ANSI.bold}✅ Servidor na porta ${PORT}${ANSI.reset} ` +
-        `${ANSI.grey}[${new Date().toLocaleTimeString("pt-PT")}]${ANSI.reset}`
-      );
-    });
-  } catch (err) {
-    printFatalBoxed("Erro ao inicializar servidor (startServer)", err);
-    process.exit(1);
-  }
-}
-
-// Funções de logging auxiliares para VENDUS e SAF-T
-function logVendus(msg) {
-  console.log(`${ANSI.blue}[VENDUS]${ANSI.reset} ${msg}`);
-}
-
-function logSaft(msg) {
-  console.log(`${ANSI.blue}[SAF-T]${ANSI.reset} ${msg}`);
-}
-
-startServer();
-module.exports = { app, HTTPApp };
+  // ================== Mini-app de emergência (arranca PRIMEIRO) ==================
+ // Só precisa de módulos nativos do Node — nunca falha
+ const http = require("http");
+ const path = require("path");
+ const fs   = require("fs");
+const dbConfig = require("./config/DatabaseCredentials");
+ 
+ const BOOT_ERRORS = [];
+ const BOOT_START  = Date.now();
+ 
+ // Servidor de emergência na porta do Passenger
+ const EMERGENCY_PORT = Number(process.env.PORT || 7500);
+ 
+ const emergencyServer = http.createServer((req, res) => {
+   // Resposta mínima enquanto a app carrega — será substituída pela app express em breves segundos
+   const uptime = ((Date.now() - BOOT_START) / 1000).toFixed(1);
+   const errCount = BOOT_ERRORS.length;
+   const errColor = errCount > 0 ? "#ff5555" : "#4caf50";
+   const errList  = errCount > 0
+     ? BOOT_ERRORS.map(e => `<li style="color:#f55;margin:4px 0"><strong>${e.label}</strong>: ${e.error}</li>`).join("")
+     : "<li style='color:#4caf50'>Sem erros — a carregar módulos...</li>";
+   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+   res.end(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="refresh" content="3">
+ <title>EduAll — A arrancar</title></head>
+ <body style="background:#111;color:#d4d4d4;font-family:monospace;padding:24px">
+ <h2 style="color:#fff;margin-bottom:8px">EduAll — a carregar... (${uptime}s)</h2>
+ <p style="color:#666;font-size:12px;margin-bottom:16px">Atualiza automaticamente a cada 3s</p>
+ <p>Erros: <span style="color:${errColor};font-weight:bold">${errCount}</span></p>
+ <ul style="margin-top:8px;padding-left:20px">${errList}</ul>
+ </body></html>`);
+ });
+ 
+ emergencyServer.listen(EMERGENCY_PORT, () => {
+   console.log(`[BOOT] Servidor de emergência na porta ${EMERGENCY_PORT}`);
+   // Agora carrega o resto da app de forma segura
+   loadFullApp();
+ });
+ 
+ // ================== Carregamento seguro da app completa ==================
+ function safeRequire(modulePath, label) {
+   try {
+     return require(modulePath);
+   } catch (err) {
+     BOOT_ERRORS.push({ label, modulePath, error: err.message, stack: err.stack });
+     console.error(`[BOOT ERR] ${label}: ${err.message}`);
+     return null;
+   }
+ }
+ 
+ function loadFullApp() {
+   // -- Dependências npm (cada uma isolada) --
+   const express         = safeRequire("express",               "express");
+   const cookieParser    = safeRequire("cookie-parser",         "cookie-parser");
+   const cors            = safeRequire("cors",                  "cors");
+   const passport        = safeRequire("passport",              "passport");
+   const session         = safeRequire("express-session",       "express-session");
+   const MySQLStoreFactory = safeRequire("express-mysql-session","express-mysql-session");
+   const mysql2          = safeRequire("mysql2",                "mysql2");
+   const helmet          = safeRequire("helmet",                "helmet");
+   const compression     = safeRequire("compression",           "compression");
+   const morgan          = safeRequire("morgan",                "morgan");
+   const dotenv          = safeRequire("dotenv",                "dotenv");
+   const cloudinaryPkg   = safeRequire("cloudinary",            "cloudinary");
+   const socketIoPkg     = safeRequire("socket.io",             "socket.io");
+ 
+   // Se express não carregou não há nada a fazer — o emergencyServer já responde
+   if (!express) {
+     BOOT_ERRORS.push({ label: "loadFullApp", error: "express não disponível — a ficar no modo de emergência" });
+     return;
+   }
+ 
+   // ================== dotenv ==================
+   if (dotenv) {
+     try {
+       const result = dotenv.config({ path: path.join(__dirname, "./.env") });
+       if (result.error) {
+         BOOT_ERRORS.push({ label: "dotenv (.env file)", error: result.error.message });
+         console.warn("[BOOT WARN] .env nao carregado:", result.error.message);
+       } else {
+         console.log("[BOOT] .env carregado — vars:", Object.keys(result.parsed || {}).length);
+       }
+     } catch(e) { BOOT_ERRORS.push({ label: "dotenv.config", error: e.message }); }
+   }
+ 
+   const cloudinary = cloudinaryPkg?.v2 ?? null;
+   const SocketServer = socketIoPkg?.Server ?? null;
+ 
+   const mainUrl        = process.env.APP_CLIENT_URL || "";
+   const expiryDate     = 1000 * 60 * 60 * 24 * 31;
+   const allowedOrigins = [mainUrl].filter(Boolean);
+ 
+   const app = express();
+   app.set("trust proxy", 1);
+ 
+   // Segurança / perf
+   if (helmet)      { try { app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "cross-origin" } })); } catch(e) { BOOT_ERRORS.push({ label:"helmet", error: e.message }); } }
+   if (compression) { try { app.use(compression()); } catch(e) { BOOT_ERRORS.push({ label:"compression", error: e.message }); } }
+   if (morgan)      { try { app.use(morgan(process.env.NODE_ENV === "production" ? "tiny" : "dev")); } catch(e) { BOOT_ERRORS.push({ label:"morgan", error: e.message }); } }
+ 
+   app.use(express.json({ limit: "500mb" }));
+   app.use(express.urlencoded({ extended: true }));
+ 
+   // CORS
+   if (cors) {
+     try {
+       app.use(cors({
+         origin: (origin, cb) => {
+           if (!origin) return cb(null, true);
+           if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return cb(null, true);
+           return cb(new Error("Not allowed by CORS"));
+         },
+         credentials: true,
+         methods: ["GET","POST","DELETE","PUT","OPTIONS","PATCH"],
+         allowedHeaders: ["Content-Type","Authorization","X-Requested-With"],
+       }));
+     } catch(e) { BOOT_ERRORS.push({ label:"cors middleware", error: e.message }); }
+   }
+ 
+   // MySQL pool
+   let pool = null, promisePool = null;
+   if (mysql2) {
+     try {
+       pool = mysql2.createPool({
+         ...dbConfig,
+         charset: "utf8mb4",
+         waitForConnections: true,
+         connectionLimit: Number(process.env.DB_CONN_LIMIT || 50),
+         maxIdle: Number(process.env.DB_MAX_IDLE || 20),
+         idleTimeout: Number(process.env.DB_IDLE_TIMEOUT || 60000),
+         queueLimit: 0,
+         enableKeepAlive: true,
+         keepAliveInitialDelay: 10000,
+       });
+       promisePool = pool.promise();
+     } catch(e) { BOOT_ERRORS.push({ label:"mysql2 pool", error: e.message }); }
+   }
+ 
+   async function queryWithRetry(sql, params = [], { retries = 2 } = {}) {
+     let lastErr;
+     for (let attempt = 0; attempt <= retries; attempt++) {
+       try {
+         const [rows] = await promisePool.query(sql, params);
+         return rows;
+       } catch (err) {
+         lastErr = err;
+         const recoverable = ["PROTOCOL_CONNECTION_LOST","ECONNRESET","ETIMEDOUT","EPIPE","PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR","PROTOCOL_PACKETS_OUT_OF_ORDER"];
+         if (!recoverable.includes(err.code)) break;
+         await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+       }
+     }
+     throw lastErr;
+   }
+ 
+   async function ExecuteQuery(res, sql, params = [], _silent = true) {
+     try {
+       return await queryWithRetry(sql, params);
+     } catch (err) {
+       if (!_silent && res) return res.status(500).json({ error: err.message, code: err.code });
+       throw err;
+     }
+   }
+ 
+   // Sessão
+   if (session && MySQLStoreFactory && pool) {
+     try {
+       const MySQLStore  = MySQLStoreFactory(session);
+       const sessionStore = new MySQLStore({ expiration: expiryDate, clearExpired: true, checkExpirationInterval: 15 * 60 * 1000 }, pool);
+       if (cookieParser) app.use(cookieParser());
+       app.use(session({
+         secret: process.env.SESSION_SECRET || "troque-este-segredo",
+         resave: false,
+         saveUninitialized: true,
+         store: sessionStore,
+         cookie: { httpOnly: true, maxAge: expiryDate, secure: process.env.NODE_ENV === "production", sameSite: "lax" },
+       }));
+     } catch(e) { BOOT_ERRORS.push({ label:"session/store", error: e.message }); }
+   }
+ 
+   if (passport) { try { app.use(passport.initialize()); } catch(e) { BOOT_ERRORS.push({ label:"passport", error: e.message }); } }
+ 
+   // Estáticos
+   app.use("/public", express.static("public"));
+   const IMAGES_DIR = path.resolve(__dirname, "images");
+   const ASSETS_DIR = path.resolve(__dirname, "assets");
+   const VIDEOS_DIR = path.resolve(__dirname, "videos");
+   const staticOpts = { etag: true, lastModified: true, maxAge: "30d", immutable: true };
+   const staticCors = cors ? cors({ origin: allowedOrigins.length ? allowedOrigins : true, credentials: true, methods: ["GET","OPTIONS"] }) : (_, __, n) => n();
+   app.use("/assets", staticCors, express.static(ASSETS_DIR, staticOpts));
+   app.use("/videos", staticCors, express.static(VIDEOS_DIR, staticOpts));
+   app.use("/images", staticCors, (req, res, next) => {
+     res.setHeader("Access-Control-Allow-Origin", allowedOrigins.length ? allowedOrigins[0] : "*");
+     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+     next();
+   }, express.static(IMAGES_DIR, staticOpts));
+ 
+   // Cloudinary
+   if (cloudinary) {
+     try {
+       cloudinary.config({ cloud_name: process.env.CLOUDINARY_NAME || "", api_key: process.env.CLOUDINARY_KEY || "", api_secret: process.env.CLOUDINARY_SECRET || "" });
+     } catch(e) { BOOT_ERRORS.push({ label:"cloudinary.config", error: e.message }); }
+   }
+ 
+   // ===== Rotas =====
+   app.get("/debug/images", (_req, res) => {
+     try {
+       const exists = fs.existsSync(IMAGES_DIR);
+       res.json({ imagesDir: IMAGES_DIR, exists, sampleFiles: exists ? fs.readdirSync(IMAGES_DIR).slice(0, 50) : [] });
+     } catch(e) { res.status(500).json({ error: e.message }); }
+   });
+ 
+   app.get("/hits", (req, res) => res.json({
+     cloud_name: process.env.CLOUDINARY_NAME || null,
+     key_set: Boolean(process.env.CLOUDINARY_KEY),
+     secret_set: Boolean(process.env.CLOUDINARY_SECRET),
+   }));
+ 
+   app.post("/hits", (req, res) => {
+     if (req.session) req.session.hits = { email: req.body?.email, password: req.body?.password };
+     res.json({ ok: true });
+   });
+ 
+   app.get("/views", async (req, res) => {
+     try {
+       if (!req.session) return res.json({ error: "sem sessão" });
+       if (!req.session.views) req.session.views = 0;
+       req.session.views++;
+       if (!cloudinary) return res.json({ views: req.session.views, error: "cloudinary não carregado" });
+       const result = await cloudinary.uploader.upload("https://i.postimg.cc/bYCSJ7w8/eduall-logo.png", { folder: "eduall" });
+       res.json({ views: req.session.views, cloudinaryUrl: result.secure_url });
+     } catch(e) { res.json({ views: req.session?.views || 0, error: e.message }); }
+   });
+ 
+   app.get("/testdb", async (req, res) => {
+     if (!promisePool) return res.status(500).json({ error: "pool não inicializado" });
+     try { res.send(await ExecuteQuery(res, "SELECT DATABASE() AS db")); }
+     catch(e) { res.status(500).json({ error: e.message }); }
+   });
+ 
+   // ================== /debug/routes — lista todas as rotas registadas ==================
+   app.get("/debug/routes", (req, res) => {
+     if (req.query.token !== process.env.DEBUG_TOKEN) return res.status(403).send("Forbidden");
+ 
+     const routes = [];
+     function extractRoutes(stack, prefix = "") {
+       for (const layer of stack || []) {
+         if (layer.route) {
+           const methods = Object.keys(layer.route.methods).map(m => m.toUpperCase()).join(", ");
+           routes.push({ method: methods, path: prefix + layer.route.path });
+         } else if (layer.name === "router" && layer.handle?.stack) {
+           const sub = layer.regexp?.source?.replace("^\\","").replace("\\/?(?=\\/|$)","").replace(/\\/g,"/") || "";
+           extractRoutes(layer.handle.stack, prefix + (sub === "(?:)" ? "" : sub));
+         }
+       }
+     }
+     extractRoutes(app._router?.stack);
+ 
+     const rows = routes.map(r =>
+       `<tr><td style="padding:6px 10px;border-bottom:1px solid #222;color:#4af">${r.method}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #222;color:#fff">${r.path}</td></tr>`
+     ).join("");
+ 
+     res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+ <title>Rotas</title><style>
+ body{background:#111;color:#d4d4d4;font-family:monospace;padding:20px}
+ h2{color:#fff;margin-bottom:12px;font-size:16px}
+ table{width:100%;border-collapse:collapse;font-size:13px}
+ th{text-align:left;padding:8px 10px;background:#1a1a1a;color:#666;border-bottom:1px solid #333}
+ </style></head><body>
+ <h2>Rotas registadas (${routes.length})</h2>
+ <table><thead><tr><th>Método</th><th>Path</th></tr></thead>
+ <tbody>${rows}</tbody></table>
+ </body></html>`);
+   });
+ 
+   app.get("/health", async (_req, res) => {
+     try {
+       if (promisePool) await promisePool.query("SELECT 1");
+       res.json({ ok: true, db: Boolean(promisePool), uptime: process.uptime(), bootErrors: BOOT_ERRORS.length });
+     } catch(e) {
+       res.status(500).json({ ok: false, db: false, error: e.message, bootErrors: BOOT_ERRORS.length });
+     }
+   });
+ 
+   app.get("/admin/logs", (req, res) => {
+     if (req.query.token !== process.env.DEBUG_TOKEN) return res.status(403).send("Forbidden");
+     const logPath = path.join(__dirname, "logs", "app.log");
+     const content = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "Sem logs.";
+     const lines = content.trim().split("\n").slice(-200);
+     res.send(`<html><head><style>body{background:#1e1e1e;color:#d4d4d4;font-family:monospace;padding:20px}
+       .error{color:#f44}.warn{color:#fa0}.info{color:#4af}pre{white-space:pre-wrap;word-break:break-all}
+     </style><meta http-equiv="refresh" content="10"></head><body>
+     <h3 style="color:#fff">App Log — últimas 200 linhas</h3>
+     <pre>${lines.map(l => {
+       if (l.includes("ERROR")||l.includes("UNCAUGHT")) return `<span class="error">${l}</span>`;
+       if (l.includes("WARN")) return `<span class="warn">${l}</span>`;
+       return `<span class="info">${l}</span>`;
+     }).join("\n")}</pre></body></html>`);
+   });
+ 
+   // ================== routes/index ==================
+   const routerIndex = safeRequire("./routes/index", "routes/index");
+   if (routerIndex) {
+     try {
+       app.use(routerIndex);
+       console.log("[BOOT] routes/index montado");
+     } catch(e) { BOOT_ERRORS.push({ label: "routes/index mount", error: e.message, stack: e.stack }); }
+   }
+ 
+   // ================== routes/Auth ==================
+   const Authrouter = safeRequire("./routes/Auth", "routes/Auth");
+   if (Authrouter) {
+     try {
+       app.use(Authrouter);
+       console.log("[BOOT] routes/Auth montado");
+     } catch(e) { BOOT_ERRORS.push({ label: "routes/Auth mount", error: e.message, stack: e.stack }); }
+   }
+ 
+   // ================== GET / — boot status (definido DEPOIS dos routes para capturar erros deles) ==================
+   app.get("/", (_req, res) => {
+     if (process.env.APP_CLIENT_URL && BOOT_ERRORS.length === 0) {
+       return res.redirect(302, process.env.APP_CLIENT_URL);
+     }
+     const now    = new Date().toISOString();
+     const uptime = process.uptime().toFixed(1);
+     const rows   = BOOT_ERRORS.length === 0
+       ? `<tr><td colspan="3" style="color:#4caf50;text-align:center;padding:12px">✅ Sem erros de arranque</td></tr>`
+       : BOOT_ERRORS.map((e, i) => `<tr>
+           <td style="padding:8px;border-bottom:1px solid #222;color:#aaa">${i+1}</td>
+           <td style="padding:8px;border-bottom:1px solid #222">
+             <strong style="color:#fff">${e.label}</strong>
+             ${e.modulePath ? `<br><small style="color:#555">${e.modulePath}</small>` : ""}
+           </td>
+           <td style="padding:8px;border-bottom:1px solid #222;color:#f55">
+             ${e.error}
+             ${e.stack ? `<br><details><summary style="cursor:pointer;color:#fa0;font-size:11px">stack trace</summary><pre style="font-size:10px;color:#aaa">${e.stack}</pre></details>` : ""}
+           </td>
+         </tr>`).join("");
+     res.send(`<!DOCTYPE html><html lang="pt"><head><meta charset="UTF-8"><meta http-equiv="refresh" content="5">
+ <title>EduAll Boot</title><style>
+ *{box-sizing:border-box;margin:0;padding:0}
+ body{background:#111;color:#d4d4d4;font-family:monospace;padding:24px}
+ h1{font-size:18px;color:#fff;margin-bottom:4px}
+ .sub{font-size:12px;color:#666;margin-bottom:20px}
+ .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:20px}
+ .card{background:#1e1e1e;border:1px solid #2a2a2a;border-radius:6px;padding:12px 14px}
+ .lbl{font-size:11px;color:#666;margin-bottom:4px}
+ .val{font-size:18px;color:#fff}
+ .ok{color:#4caf50!important}.err{color:#ff5555!important}
+ table{width:100%;border-collapse:collapse;font-size:13px}
+ th{text-align:left;padding:8px 10px;background:#1a1a1a;color:#666;font-weight:normal;border-bottom:1px solid #333}
+ pre{white-space:pre-wrap;word-break:break-all}
+ .links{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
+ .links a{color:#4af;font-size:12px;text-decoration:none;background:#1e1e1e;border:1px solid #333;padding:5px 10px;border-radius:4px}
+ </style></head><body>
+ <h1>EduAll — Boot Status</h1>
+ <div class="sub">Atualiza a cada 5s &nbsp;·&nbsp; ${now}</div>
+ <div class="grid">
+   <div class="card"><div class="lbl">uptime</div><div class="val">${uptime}s</div></div>
+   <div class="card"><div class="lbl">node env</div><div class="val">${process.env.NODE_ENV||"—"}</div></div>
+   <div class="card"><div class="lbl">porta</div><div class="val">${EMERGENCY_PORT}</div></div>
+   <div class="card"><div class="lbl">erros</div><div class="val ${BOOT_ERRORS.length>0?"err":"ok"}">${BOOT_ERRORS.length}</div></div>
+ </div>
+ <table><thead><tr><th>#</th><th>Módulo / Fase</th><th>Erro</th></tr></thead>
+ <tbody>${rows}</tbody></table>
+ <div class="links">
+   <a href="/health">/health</a>
+   <a href="/testdb">/testdb</a>
+   <a href="/hits">/hits</a>
+   <a href="/debug/images">/debug/images</a>
+   <a href="/admin/logs?token=${process.env.DEBUG_TOKEN||""}">/admin/logs</a>
+   <a href="/debug/routes?token=${process.env.DEBUG_TOKEN||""}">/debug/routes</a>
+ </div>
+ </body></html>`);
+   });
+ 
+   // Erro handler
+   app.use((err, _req, res, _next) => {
+     if (err?.message?.includes("CORS")) return res.status(403).json({ error: "Acesso negado por CORS" });
+     console.error("ERRO:", err.message);
+     res.status(err.status || 500).json({ error: err.message });
+   });
+ 
+   // ================== Sockets/GetSocketIo ==================
+   const SOCKET_IO = safeRequire("./Sockets/GetSocketIo", "Sockets/GetSocketIo");
+ 
+   // ================== Controllers/FormBuilderController ==================
+   const FormBuilderMod = safeRequire("./Controllers/FormBuilderController", "Controllers/FormBuilderController");
+   let formBuilderRouter = null;
+   let formBuilderSockets = null;
+   if (FormBuilderMod) {
+     try {
+       const built = FormBuilderMod();
+       formBuilderRouter  = built.router;
+       formBuilderSockets = built.attachSockets;
+       app.use("/api", formBuilderRouter);
+       console.log("[BOOT] FormBuilderController montado");
+     } catch(e) { BOOT_ERRORS.push({ label: "FormBuilderController mount", error: e.message, stack: e.stack }); }
+   }
+ 
+   // ================== Controllers/SiteManager ==================
+   const buildSiteRouter = safeRequire("./Controllers/SiteManager", "Controllers/SiteManager");
+   if (buildSiteRouter) {
+     try {
+       app.use(buildSiteRouter());
+       console.log("[BOOT] SiteManager montado");
+     } catch(e) { BOOT_ERRORS.push({ label: "SiteManager mount", error: e.message, stack: e.stack }); }
+   }
+ 
+   // Socket.IO
+   let io = null;
+   if (SocketServer) {
+     try {
+       const HTTPApp = http.createServer(app);
+       io = new SocketServer(HTTPApp, { cors: { origin: allowedOrigins.length ? allowedOrigins : true, credentials: true } });
+       app.set("io", io);
+ 
+       // GetSocketIo.init
+       if (SOCKET_IO) {
+         try { SOCKET_IO.init(io); console.log("[BOOT] GetSocketIo iniciado"); }
+         catch(e) { BOOT_ERRORS.push({ label: "GetSocketIo.init", error: e.message, stack: e.stack }); }
+       }
+ 
+       // SocketMain
+       try { require("./Sockets/SocketMain"); console.log("[BOOT] SocketMain carregado"); }
+       catch(e) { BOOT_ERRORS.push({ label: "SocketMain", modulePath: "./Sockets/SocketMain", error: e.message, stack: e.stack }); }
+ 
+       // FormBuilder sockets
+       if (formBuilderSockets) {
+         try { formBuilderSockets(io); console.log("[BOOT] FormBuilder sockets ligados"); }
+         catch(e) { BOOT_ERRORS.push({ label: "FormBuilder sockets", error: e.message, stack: e.stack }); }
+       }
+ 
+       io.on("connection", socket => {
+         console.log("Socket:", socket.id);
+         socket.on("disconnect", () => console.log("Socket off:", socket.id));
+       });
+ 
+       emergencyServer.removeAllListeners("request");
+       emergencyServer.on("request", app);
+       console.log("[BOOT] App completa montada com sucesso.");
+     } catch(e) { BOOT_ERRORS.push({ label:"socket.io setup", error: e.message, stack: e.stack }); mountExpressOnly(app); }
+   } else {
+     mountExpressOnly(app);
+   }
+ 
+   // Encerramento gracioso
+   async function shutdown() {
+     console.log("[STOP] A encerrar...");
+     try { if (promisePool) await promisePool.end(); } catch(_) {}
+     emergencyServer.close(() => { console.log("[OK] Bye!"); process.exit(0); });
+     setTimeout(() => process.exit(1), 5000).unref();
+   }
+   process.on("SIGINT", shutdown);
+   process.on("SIGTERM", shutdown);
+ }
+ 
+ function mountExpressOnly(app) {
+   // sem socket.io — monta a app express directamente no emergencyServer
+   emergencyServer.removeAllListeners("request");
+   emergencyServer.on("request", app);
+   console.log("[BOOT] App express montada (sem socket.io).");
+ }
+ 
+ // Erros não capturados — registar, nunca crashar
+ process.on("uncaughtException", (err) => {
+   console.error("UncaughtException:", err.message);
+   BOOT_ERRORS.push({ label: "uncaughtException (runtime)", error: err.message, stack: err.stack });
+ });
+ process.on("unhandledRejection", (reason) => {
+   const msg = reason instanceof Error ? reason.message : String(reason);
+   console.error("UnhandledRejection:", msg);
+   BOOT_ERRORS.push({ label: "unhandledRejection (runtime)", error: msg, stack: reason?.stack || "" });
+ });
+ 
+ module.exports = {};

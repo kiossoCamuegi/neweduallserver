@@ -1152,13 +1152,7 @@ const RegisterServicePayment = async (req, res) => {
     if (has_matricula) obsParts.push(`[MATRÍCULA]`);
     if (has_confirmacao) obsParts.push(`[CONFIRMAÇÃO DE MATRÍCULA]`);
 
-    if (processedServices.length > 0) {
-      obsParts.push(`Serviços: ${processedServices.map(s => s.name).join(", ")}`);
-    }
-    if (alsofeepaymenet && feemonths?.length > 0) {
-      const monthsFormatted = formatMonthsList(feemonths);
-      obsParts.push(`Propinas: ${monthsFormatted}`);
-    }
+     
     if (observations) obsParts.push(`Observações: ${observations}`);
     obsParts.push(`Operador: ${operatorName}`);
 
