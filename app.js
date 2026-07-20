@@ -171,7 +171,7 @@ const dbConfig = require("./config/DatabaseCredentials");
          resave: false,
          saveUninitialized: true,
          store: sessionStore,
-         cookie: { httpOnly: true, maxAge: expiryDate, secure: process.env.NODE_ENV === "production", sameSite: "lax" },
+         cookie: { httpOnly: true, maxAge: expiryDate, secure: process.env.NODE_ENV === "production", sameSite: "none" },
        }));
      } catch(e) { BOOT_ERRORS.push({ label:"session/store", error: e.message }); }
    }
