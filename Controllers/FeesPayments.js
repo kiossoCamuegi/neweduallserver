@@ -672,8 +672,8 @@ const GetSingleFeepayment = async (req, res) => {
 // 8. Auditoria
 // 9. Invalidar cache
 
-const RegisterFeepayment = async (req, res) => {
-
+ const RegisterFeepayment = async (req, res) => {
+ 
   function computeItemTotals({ price, discountPct = 0, fineType = 0, fineValue = 0, applyIVA = false, instituteIVAPct = 0 }) {
     const discountAmount     = discountPct > 0 ? (price * discountPct) / 100 : 0;
     const priceAfterDiscount = Math.max(0, price - discountAmount);
@@ -682,52 +682,78 @@ const RegisterFeepayment = async (req, res) => {
     const lineTotal          = priceAfterDiscount + fineAmount + ivaAmount;
     return { discountAmount, fineAmount, ivaAmount, lineTotal, baseAfterDiscount: priceAfterDiscount };
   }
-
+ 
   function monthLabel(mdotY) {
     const m = String(mdotY).split(".")[0] * 1;
     const y = String(mdotY).split(".")[1] * 1;
     const N = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
     return Number.isFinite(m) && Number.isFinite(y) ? `${N[m]} / ${y}` : String(mdotY);
   }
-
+ 
   function sanitizeExtras(extras) {
     if (!Array.isArray(extras)) return [];
     return extras
       .map(e => ({ name: String(e?.name || "").trim(), value: Number(String(e?.value ?? "").replace(",", ".")) }))
       .filter(e => e.name.length > 0 && Number.isFinite(e.value) && e.value > 0);
   }
-
+ 
   try {
     const sessionInstitute = req.session?.user?.eduall_user_session_curentinstitute;
     const operatorId       = req.session?.user?.eduall_user_session_ID;
     const operator         = await getOperatorData(res, operatorId);
-
+ 
+ 
     if (!sessionInstitute) {
       return res.status(401).json({ success: false, msg: "Sessão inválida." });
     }
-
+ 
     const {
       studentId,
       academicYearId,
       paymentType,
       bankName            = "",
       paymentPlace        = "",
-      bordereux           = "",
+      bordereux            = "",
       bordereauAmountUsed = 0,
       items               = [],
       extraServices       = [],
       balanceUsed         = 0,
+      // ✅ v32.2 FIX: Observações que vêm do frontend
+      // JÁ INCLUEM a nota automática de saldo se foi consumido:
+      // "Saldo utilizado: 50,00 Kz.\n\n{observações do utilizador}"
+      paymentObservations = "",
     } = req.body || {};
 
+ 
+ 
     if (!studentId || !academicYearId || !Array.isArray(items) || !items.length) {
       return res.status(400).json({ success: false, msg: "Dados incompletos." });
     }
-
+ 
     const addons             = sanitizeExtras(extraServices);
     const balanceUsedValue   = Math.max(0, parseFloat(balanceUsed) || 0);
     const bordereauUsedValue = Math.max(0, parseFloat(bordereauAmountUsed) || 0);
     const bordereauNum       = (bordereux || "").trim();
-
+ 
+    // ✅ v32.2 FIX: Observações do frontend, já sanitizadas
+    // JÁ CONTÊM a nota de saldo se foi consumido
+    const frontendObs = String(paymentObservations || "").trim();
+ 
+    // ═══════════════════════════════════════════════════════════════════════
+    // ✅ v32.2 FIX: VALIDAR CONSUMO DE SALDO
+    // Se saldo foi consumido, DEVE ter a nota automática do frontend
+    // ═══════════════════════════════════════════════════════════════════════
+    if (balanceUsedValue > 0) {
+      if (!frontendObs || !frontendObs.includes("Saldo utilizado:")) {
+        console.error("[RegisterFeepayment] Consumo de saldo sem nota de descrição");
+        return res.status(400).json({
+          success: false,
+          msg: "Consumo de saldo requer nota de descrição automática.",
+          error: "MISSING_BALANCE_CONSUMED_NOTE",
+        });
+      }
+    }
+ 
     // ── 1) ALUNO ─────────────────────────────────────────────────────────────
     const studentSql = `
       SELECT
@@ -748,7 +774,7 @@ const RegisterFeepayment = async (req, res) => {
     if (!student) {
       return res.status(404).json({ success: false, msg: "Estudante não encontrado." });
     }
-
+ 
     // ── 2) DUPLICATAS DE MESES ───────────────────────────────────────────────
     const months        = [...new Set(items.map(i => i.month))];
     const placeholdersM = months.map(() => "?").join(",");
@@ -772,7 +798,7 @@ const RegisterFeepayment = async (req, res) => {
         monthsPaid: dupRows.map(r => String(r.month)),
       });
     }
-
+ 
     // ── 3) IVA DA INSTITUIÇÃO ─────────────────────────────────────────────────
     const [ivaRow] = await ExecuteQuery(res,
       `SELECT COALESCE(ed_institute_iva_value,0) AS iva, ed_institute_name FROM eduall_institutes WHERE ed_institute_code=? LIMIT 1`,
@@ -780,7 +806,7 @@ const RegisterFeepayment = async (req, res) => {
     );
     const instituteIVAPct = ivaRow?.iva * 1 || 0;
     const instituteName   = ivaRow?.ed_institute_name || "";
-
+ 
     // ── 4) PRÉ-VALIDAÇÃO DO SALDO DO BORDERÔ ─────────────────────────────────
     // Apenas leitura — sem transacção, sem escrita
     if (bordereauNum && bordereauUsedValue > 0) {
@@ -806,16 +832,16 @@ const RegisterFeepayment = async (req, res) => {
         }
       }
     }
-
+ 
     // ── 5) CALCULAR TOTAIS ────────────────────────────────────────────────────
     const invoiceLines = [];
     const dbRows       = [];
     let grandTotal     = 0;
-
+ 
     for (const it of items) {
       const { serviceId, month, price, discountPct = 0, fineType = 0, fineValue = 0, applyIVA = 0 } = it;
       const calc = computeItemTotals({ price: price * 1, discountPct, fineType, fineValue, applyIVA: !!applyIVA, instituteIVAPct });
-
+ 
       invoiceLines.push({
         itemcode: `EDSERV-${serviceId}`,
         title:    `Propina ${monthLabel(month)}`,
@@ -824,7 +850,7 @@ const RegisterFeepayment = async (req, res) => {
         discount: 0,
         quantity: "1",
       });
-
+ 
       if (calc.fineAmount > 0) {
         invoiceLines.push({
           itemcode: "FINE001",
@@ -833,7 +859,7 @@ const RegisterFeepayment = async (req, res) => {
           tax: 0, discount: 0, quantity: "1",
         });
       }
-
+ 
       grandTotal += calc.lineTotal;
       dbRows.push({
         studentId, serviceId,
@@ -851,7 +877,7 @@ const RegisterFeepayment = async (req, res) => {
         fineValue:   Number(calc.fineAmount.toFixed(2)),
       });
     }
-
+ 
     if (addons.length) {
       addons.forEach((ex, idx) => {
         invoiceLines.push({
@@ -863,9 +889,22 @@ const RegisterFeepayment = async (req, res) => {
         grandTotal += ex.value * 1;
       });
     }
-
+ 
     // ── 6) OBSERVAÇÕES ────────────────────────────────────────────────────────
+    // ✅ v32.2 FIX: As observações vêm JÁ CONSTRUÍDAS do frontend
+    // (incluem nota de saldo automática se foi consumido)
+    // Aqui apenas adicionamos detalhes institucionais complementares
+    // e informações adicionais do borderô, SEM duplicar o saldo
+    
     const obsParts = [];
+ 
+    // PARTE 1: Observações do utilizador (que já incluem a nota de saldo se necessário)
+    if (frontendObs) {
+      obsParts.push(frontendObs);
+      obsParts.push("---");
+    }
+ 
+    // PARTE 2: Detalhes institucionais do aluno
     obsParts.push(`Nº matrícula: ${student.ed_student_code || "-"}`);
     if (student.ed_class_title)         obsParts.push(`Turma: ${student.ed_class_title}`);
     if (student.ed_classroom_title)     obsParts.push(`Sala: ${student.ed_classroom_title}`);
@@ -873,30 +912,22 @@ const RegisterFeepayment = async (req, res) => {
     if (student.ed_academic_year_title) obsParts.push(`Ano letivo: ${student.ed_academic_year_title}`);
     if (instituteName)                  obsParts.push(`Instituição: ${instituteName}`);
     if (operator)                       obsParts.push(`Operador: ${operator.name}`);
-
-    if (Number(paymentType) === PAYMENT_TYPE_BALANCE && balanceUsedValue > 0) {
-      const remaining = Math.max(0, grandTotal - balanceUsedValue);
-      obsParts.push("---");
-      obsParts.push("Forma de pagamento: Saldo do aluno (PARCIAL)");
-      obsParts.push(`Total da fatura: ${grandTotal.toFixed(2)}`);
-      obsParts.push(`Saldo do aluno utilizado: ${balanceUsedValue.toFixed(2)}`);
-      remaining > 0
-        ? obsParts.push(`Valor restante (a cobrar por outro método): ${remaining.toFixed(2)}`)
-        : obsParts.push("Fatura totalmente coberta pelo saldo do aluno.");
-    }
-
+ 
+    // PARTE 3: Informações de borderô (se houver)
+    // ❌ NÃO adicionar novamente a seção de saldo aqui
+    // (já vem no frontendObs, construído automaticamente no frontend)
     if (bordereauNum && bordereauUsedValue > 0) {
-      const remaining = Math.max(0, grandTotal - bordereauUsedValue);
       obsParts.push("---");
       obsParts.push(`Borderô utilizado: ${bordereauNum}`);
       obsParts.push(`Valor do borderô aplicado: ${bordereauUsedValue.toFixed(2)}`);
+      const remaining = Math.max(0, grandTotal - bordereauUsedValue);
       remaining > 0
         ? obsParts.push(`Restante da fatura após borderô: ${remaining.toFixed(2)}`)
         : obsParts.push("Fatura totalmente coberta pelo borderô.");
     }
-
+ 
     const obs = obsParts.join("\n");
-
+ 
     // ── 7) DADOS DO CLIENTE ───────────────────────────────────────────────────
     const customer = {
       name:      student.ed_student_name         || "",
@@ -904,18 +935,20 @@ const RegisterFeepayment = async (req, res) => {
       address:   student.ed_student_address      || "",
       email:     student.ed_student_email        || "",
     };
-
+ 
     // ── 8) CRIAR FATURA ── (ANTES de qualquer escrita em BD) ─────────────────
     const vendus = await VENDUS_CreateInvoiceCodeAndDoc(req, customer, invoiceLines, paymentType, obs);
     if (!vendus?.number) {
       return res.status(500).json({ success: false, msg: "Falha ao criar fatura." });
     }
-
+ 
     // ── 9) TRANSACÇÃO PRINCIPAL ───────────────────────────────────────────────
     await ExecuteQuery(res, "START TRANSACTION", [], false);
-
+ 
     try {
       // 9.a) Inserir linhas de propina
+      // ✅ v32.2 FIX: Coluna ed_fee_payment_observations para persistir as observações
+      // que incluem a nota de saldo automática do frontend
       const insertSql = `
         INSERT INTO eduall_fees_payments (
           ed_fee_payment_student, ed_fee_payment_service, ed_fee_payment_price,
@@ -924,9 +957,10 @@ const RegisterFeepayment = async (req, res) => {
           ed_fee_payment_balance, ed_fee_payment_bordereux, ed_fee_payment_iva,
           ed_fee_payment_code, ed_fee_payment_fineType, ed_fee_payment_fineValue,
           ed_fee_payment_invoiceCode, ed_fee_payment_invoiceFile,
-          ed_fee_payment_institute_code, ed_fee_payment_operator, ed_fee_payment_operator_id
+          ed_fee_payment_institute_code, ed_fee_payment_operator, ed_fee_payment_operator_id,
+          ed_fee_payment_observations
         ) VALUES
-        ${dbRows.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(",")}
+        ${dbRows.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(",")}
       `;
       const params = [];
       for (const r of dbRows) {
@@ -935,11 +969,12 @@ const RegisterFeepayment = async (req, res) => {
           r.type, r.bankName, r.academicYearId, r.place, r.balance,
           r.bordereux, r.ivaPct, null, r.fineType, r.fineValue,
           vendus.number, vendus.id, sessionInstitute,
-          operator?.name || "operator:null", operator?.id || null
+          operator?.name || "operator:null", operator?.id || null,
+          obs, // ✅ Observações com nota de saldo + detalhes institucionais
         );
       }
       await ExecuteQuery(res, insertSql, params, false);
-
+ 
       // 9.b) Extras
       if (addons.length) {
         try {
@@ -962,7 +997,7 @@ const RegisterFeepayment = async (req, res) => {
           console.warn("Persistência de extras ignorada:", auxErr?.message || auxErr);
         }
       }
-
+ 
       // 9.c) Debitar saldo do aluno (dentro da transacção — crítico)
       if (Number(paymentType) === PAYMENT_TYPE_BALANCE && balanceUsedValue > 0) {
         try {
@@ -988,9 +1023,10 @@ const RegisterFeepayment = async (req, res) => {
           }
           const balanceAfter = Number((balanceBefore - balanceUsedValue).toFixed(2));
           const remaining    = Math.max(0, grandTotal - balanceUsedValue);
-          let deductDesc = `Pagamento parcial de propina(s) — Fatura ${vendus.number}. Créditos usados: ${balanceUsedValue.toFixed(2)} ${currency} (total: ${grandTotal.toFixed(2)} ${currency})`;
-          deductDesc += remaining > 0 ? `. Restante: ${remaining.toFixed(2)} ${currency}.` : ". Fatura totalmente coberta.";
-
+          let deductDesc = `Pagamento de propina(s) via saldo do aluno — Fatura ${vendus.number}. Valor: ${balanceUsedValue.toFixed(2)} ${currency}`;
+          deductDesc += remaining > 0 ? ` (total: ${grandTotal.toFixed(2)} ${currency}, restante: ${remaining.toFixed(2)} ${currency})` : ` (total: ${grandTotal.toFixed(2)} ${currency}, totalmente coberto)`;
+          deductDesc += ".";
+ 
           await ExecuteQuery(res,
             `UPDATE eduall_student_balance SET sb_balance = ?
              WHERE sb_student_id = ? AND sb_institute_code = ?`,
@@ -1009,19 +1045,18 @@ const RegisterFeepayment = async (req, res) => {
           console.error("Erro ao debitar saldo (não crítico):", balanceErr?.message || balanceErr);
         }
       }
-
+ 
       // ── COMMIT ── (fatura + propinas persistidas)
       await ExecuteQuery(res, "COMMIT", [], false);
-
+ 
     } catch (txErr) {
       await ExecuteQuery(res, "ROLLBACK", [], false);
       throw txErr;
     }
-
+ 
     // ── 10) DEBITAR BORDERÔ — APÓS COMMIT ────────────────────────────────────
     // Executado fora da transacção principal, na sua própria mini-transacção.
     // Se falhar, o pagamento já está registado; apenas o borderô não é debitado
-    // (aceitável — borderô é rastreável; propinas não são desfeitas por erro de borderô).
     let bordereauResult = null;
     if (bordereauNum && bordereauUsedValue > 0) {
       try {
@@ -1036,26 +1071,32 @@ const RegisterFeepayment = async (req, res) => {
           paymentType,
         });
       } catch (bErr) {
-        // Não é crítico — o pagamento foi registado com sucesso; apenas avisar
         console.error("[debitBordereau] Erro após commit:", bErr.message);
       }
     }
-
+ 
     // ── 11) AUDITORIA ─────────────────────────────────────────────────────────
     const bordereauNote = bordereauNum && bordereauUsedValue > 0
       ? `. Borderô ${bordereauNum}: ${bordereauUsedValue.toFixed(2)} usados.` : "";
-    const auditDesc = `[${operator?.name || "Desconhecido"}] Registou ${dbRows.length} linha(s) + ${addons.length} extra(s) para aluno ${student.ed_student_code}. Fatura ${vendus.number}. Total: ${grandTotal.toFixed(2)}${balanceUsedValue > 0 ? `. Saldo usado: ${balanceUsedValue.toFixed(2)}` : ""}${bordereauNote}.`;
-
+ 
+    // ✅ v32.2 FIX: Log de auditoria inclui informações de saldo se foi consumido
+    // (extraído das observações que já contêm a nota)
+    const balanceAuditNote = balanceUsedValue > 0
+      ? ` Saldo: ${balanceUsedValue.toFixed(2)}`
+      : "";
+ 
+    const auditDesc = `[${operator?.name || "Desconhecido"}] Registou ${dbRows.length} linha(s) + ${addons.length} extra(s) para aluno ${student.ed_student_code}. Fatura ${vendus.number}. Total: ${grandTotal.toFixed(2)}${balanceAuditNote}${bordereauNote}.`;
+ 
     await RegisterAuditAction({
       session: req.session,
       action:  1,
       form:    "Pagamentos de propinas (lote)",
       description: auditDesc,
     });
-
+ 
     // ── 12) INVALIDAR CACHE ──────────────────────────────────────────────────
     await RefreshFeesPaymentCache(req, res, sessionInstitute);
-
+ 
     return res.status(200).json({
       success:        true,
       invoice:        vendus,
@@ -1069,14 +1110,16 @@ const RegisterFeepayment = async (req, res) => {
         : null,
       remaining:      Math.max(0, grandTotal - balanceUsedValue),
       operator:       operator?.name || "operator:null",
+      observations:   obs, // ✅ Observações completas (saldo + institucional)
     });
-
+ 
   } catch (err) {
     try { await ExecuteQuery(res, "ROLLBACK", [], false); } catch {}
     console.error("RegisterFeepayment error:", err);
     return res.status(500).json({ success: false, msg: "Erro no processamento.", error: String(err?.message || err) });
   }
 };
+
 
 // ════════════════════════════════════════════════════════════════════════════════
 // RESTANTES CONTROLLERS
@@ -1423,6 +1466,7 @@ const FeePaymentUpdate = async (req, res) => {
 const GetSingleStudentPaymentStatus = async (req, res) => {
   const timerLabel = `GetSingleStudentPaymentStatus_${Date.now()}`;
   console.time(timerLabel);
+  console.log("here kiosso")
   try {
     const institute = req.session?.user?.eduall_user_session_curentinstitute;
     if (!institute) return res.status(400).json({ success: false, message: "Instituto inválido na sessão." });
@@ -1461,6 +1505,7 @@ const GetSingleStudentPaymentStatus = async (req, res) => {
       LEFT JOIN eduall_academic_level lvl ON lvl.ed_academic_level_id = c.ed_class_academic_level AND COALESCE(lvl.ed_academic_level_deleted,0)=0
       LEFT JOIN eduall_cicles cic ON cic.ed_cicle_id = c.ed_class_cicle AND COALESCE(cic.ed_cicle_deleted,0)=0
       LEFT JOIN eduall_faculty fac ON fac.ed_faculty_id = c.ed_class_faculty AND COALESCE(fac.ed_faculty_deleted,0)=0
+      LEFT JOIN eduall_institutes ON eduall_institutes.ed_institute_code =  s.ed_student_institute_code 
       WHERE s.ed_student_id = ? AND s.ed_student_institute_code = ? AND COALESCE(s.ed_student_deleted,0) = 0
       LIMIT 1;
     `;
@@ -1504,6 +1549,7 @@ const GetSingleStudentPaymentStatus = async (req, res) => {
         picture: student.ed_student_picture, class_title: student.ed_class_title,
         course_title: student.ed_course_title, classroom_title: student.ed_classroom_title,
         level_title: student.ed_academic_level_title, cicle_title: student.ed_cicle_title,
+        scholltype:req.session.user.eduall_user_session_curentinstitute_type,
         faculty_title: student.ed_faculty_title, year_title: student.ed_academic_year_title, academic_year: ano
       },
       months: monthsStatus

@@ -86,7 +86,7 @@ const { RegisterEmployeeAttendance, GetEmployeesAttendance, GetEmployeeAttendanc
 const { GetSingleStudentOldClasses, RegisterOldClass } = require("../Controllers/StudentOldClasses");
 const { GetsingleStudentExamNotebYSubStCls, RegisterStudentExamNotes, UpdateStudentExamNotes, DeleteStudentExamNotes, GetAllStudentFeaturedNotesByClassSubject, BulkUpsertStudentFeaturedNotes } = require("../Controllers/StudentExams");
 const { GetsingleStudentFeaturedNotebYSubStCls, RegisterStudentFeaturedNotes, UpdateStudentFeaturedNotes, DeleteStudentFeaturedNotes } = require("../Controllers/StudentFeaturedNotes");
-const { GetSingleUserInstitutes, GetInstituteAccounts, RegisterInstituteAccount, DeleteInstituteAccount, UpdateInstituteAccount, GetSingleInstituteAccount, UnifiedAccountRegister, GetAppAccounts, GetDashboardAccounts, DeleteAppAccount, UpdateDashboardAccess, GetAvailableApps, GetInstituteApps, RegisterInstituteApp, DeleteInstituteApp, UpdateLibraryPermissions, GetLibraryAccounts, DeleteLibraryAccess, UpdateLibraryAccess } = require("../Controllers/UserInstitutes"); 
+const { GetSingleUserInstitutes, GetInstituteAccounts, RegisterInstituteAccount, DeleteInstituteAccount, UpdateInstituteAccount, GetSingleInstituteAccount, UnifiedAccountRegister, GetAppAccounts, GetDashboardAccounts, DeleteAppAccount, UpdateDashboardAccess, GetAvailableApps, GetInstituteApps, RegisterInstituteApp, DeleteInstituteApp, UpdateLibraryPermissions, GetLibraryAccounts, DeleteLibraryAccess, UpdateLibraryAccess, GetSingleUserInstitutesTeacherAccounts } = require("../Controllers/UserInstitutes"); 
 const { GetSingleUserChilds, ChewckSingleUserChilds, RegisterUserChilds, GetParentsUserChildsByInstitute, GetUserChilds, UserChildDelete } = require("../Controllers/ParentsChilds");
 const { RegisteraDS, addAlbum } = require("../Controllers/Ads");
 const { RegisterStudentExamCalendar, GetExamsCalendar, GetExamsCalendarByClass, UpdateStudentExamCalendar, DeleteStudentExamCalendar, GetSingleExamCalendar } = require("../Controllers/StudentExamsCalendar");
@@ -139,7 +139,7 @@ const InvoiceController = require("../Functions/CreateInvoiceCode");
 const { generateSAFT } = require("../Functions/CreateSaftFiles");
 const { GetBookCollections, RegisterBookCollection, GetSingleBookCollection, BookCollectionDelete, BookCollectionUpdate } = require("../Controllers/BooksCollection");
 const { GetAllAuditActionsByInstitute } = require("../Controllers/Auditory");
-const { VENUDS_GetInvoicePdf, VENDUS_CreateInvoiceCodeAndDoc, VENDUS_GetSAFTFile, handleSaveConfig, handleGetConfig, handleSavePaymentMethod, handleGetPaymentMethods, handleDeletePaymentMethod, handleCreateInvoice } = require("../Functions/VENDUS");
+const { VENUDS_GetInvoicePdf, VENDUS_CreateInvoiceCodeAndDoc, VENDUS_GetSAFTFile, handleSaveConfig, handleGetConfig, handleSavePaymentMethod, handleGetPaymentMethods, handleDeletePaymentMethod, handleCreateInvoice, handleGetInvoicesByIds } = require("../Functions/VENDUS");
 const { GeminiIA, GetIAConversations } = require("../Controllers/0IA");
 const { UpdateQuarterlyNoteRestriction, GetQuarterlyNotesPermissions } = require("../Controllers/NotesRestrictions");
 const { cacheMiddleware } = require("../middleware/CacheMiddleware"); 
@@ -284,6 +284,17 @@ const {
 } = require("../Controllers/LibraryFines");
 
 
+const {
+  GetStudentBalance,
+  SearchStudentsBalance,
+  GetStudentBalanceLogs,
+  DepositStudentBalance,
+  DeductStudentBalance,
+  UpdateBalanceLog,
+  DeleteBalanceLog,
+} = require('../Controllers/StudenBalanceController');
+
+
   
  const ExecuteQuery = require("../Functions/ExecuteQuery"); 
 const { GetInvoices, GetSingleInvoice, GetInvoiceByCode, GetInvoiceByVendusNumber, RegisterInvoice, InvoiceDelete, InvoiceUpdate } = require("../Controllers/Invoices");
@@ -358,6 +369,12 @@ router.get("/eduallrfid/logs/get", AutoDBSetup, GetRFIDLogs);
 //=============   FULL INFO POR RFID
 router.get("/eduallrfid/fullinfo/:code", VerifyToken, AutoDBSetup, RFIDFullInfo);
 
+
+router.get("/vendus/invoices", VerifyToken, handleGetInvoicesByIds);
+
+
+
+
 //=============  Suspensões
 router.post("/eduallsuspensions/register", VerifyToken, AutoDBSetup, CreateSuspension);
 router.put("/eduallsuspensions/update/:ID", VerifyToken, AutoDBSetup, UpdateSuspension);
@@ -383,7 +400,7 @@ router.post("/api/lessons/register", VerifyToken, cacheMiddleware(CacheLimitTime
 router.put("/api/lessons/update/:ID", VerifyToken, cacheMiddleware(CacheLimitTime_one) , LessonUpdate_ED);
 router.delete("/api/lessons/delete/:ID", VerifyToken, cacheMiddleware(CacheLimitTime_one)  , LessonDelete_ED);
 
-
+ 
 
 //============= Noticias da eduall ========//
 router.get("/news/videos",VerifyToken,cacheMiddleware(CacheLimitTime_one),GetNewsVideos); 
@@ -1173,8 +1190,7 @@ const { GetDocuments, GetSingleDocument, RegisterDocumentsFromArray } = require(
 const { GenerateFrequencyTerm, GeneratePerformanceMap, GenerateCertificate, GenerateQualificationsStatement, GenerateIndividualBulletin, GenerateAnnualBulletin, GenerateMiniPautaBySubject, GenerateMiniPautaByClass, GenerateFinalPauta, GenerateFinalPautaExam, GenerateTeacherMiniPauta, GenerateClassGrades } = require("../Controllers/DocumentCenterGenerate");
 const { RegisterLessonPlan, GetLessonPlans, GetAllLessonPlansAdmin, GetSingleLessonPlan, UpdateLessonPlan, UpdateSchoolNotes, DeleteLessonPlan } = require("../Controllers/Lessonplancontroller");
 const { RegisterReferral, GetAllReferrals, GetSingleReferral, UpdateReferralStatus, DeleteReferral } = require("../Controllers/Referralcontroller");
-const { SearchStudentsBalance, GetStudentBalanceLogs, GetStudentBalance, DepositStudentBalance, DeductStudentBalance } = require("../Controllers/StudenBalanceController");
-const { uploadExpenses, UpdateExpenseStatus, GetExpenses, GetSingleExpense, GetExpensesSummary, RegisterExpense, UpdateExpense, DeleteExpense } = require("../Controllers/schoolExpenses");
+ const { uploadExpenses, UpdateExpenseStatus, GetExpenses, GetSingleExpense, GetExpensesSummary, RegisterExpense, UpdateExpense, DeleteExpense } = require("../Controllers/schoolExpenses");
 const { GetEnrollmentTemplates, GetSingleEnrollmentTemplate, GetActiveTemplateByModel, RegisterEnrollmentTemplate, UpdateEnrollmentTemplate, DeleteEnrollmentTemplate } = require("../Controllers/Enrollmenttemplates");
 const { GetAllCashOutflows, GetSingleCashOutflow, RegisterCashOutflow, UpdateCashOutflow, DeleteCashOutflow, GetCashOutflowReport } = require("../Controllers/Saidasdecaixa");
 const { GetFrequenciaHistorico, GetAllResponsaveisByStudent, SearchResponsavel, RegistrarFrequencia, RegistrarResponsavelTemporario, GetFrequenciaGeral, GetStudentForPortaria, SearchStudent, uploadResponsavelPortaria, RegisterResponsavelPortaria } = require("../Controllers/ParentsPickup");
@@ -1356,6 +1372,7 @@ router.post("/eduallupdatecurrentinstitutecode/post/:CODE", VerifyToken, UpdateC
  
 // ─── Rotas existentes (inalteradas) ───────────────────────────────────────────
 router.get("/eduallgetsingleuserinstitutes/get/:CODE",   VerifyToken, GetSingleUserInstitutes);
+router.get("/eduallgetsingleuserinstitutesteacheraccounts/get/:CODE",   VerifyToken, GetSingleUserInstitutesTeacherAccounts);
 router.get("/eduallgetalluserinstitutes/get",            VerifyToken, GetInstituteAccounts);
 router.post("/eduallregisteruserinstitutes/post",        VerifyToken, RegisterInstituteAccount);
 router.get("/eduallgetsingleuserinstitutes/getx/:ID",   VerifyToken, GetSingleInstituteAccount);
@@ -1829,13 +1846,6 @@ router.post("/eduallreports/class-grades", VerifyToken, GenerateClassGrades);
   
 
  
-router.get('/eduallstudentbalancesearch',  VerifyToken, SearchStudentsBalance);
-router.get('/eduallstudentbalancelogs/:studentId', VerifyToken, GetStudentBalanceLogs);
-router.get('/eduallstudentbalance/:studentId',VerifyToken, GetStudentBalance);
-router.post('/eduallstudentbalancedeposit',VerifyToken,  DepositStudentBalance);
-router.post('/eduallstudentbalancededuct',VerifyToken, DeductStudentBalance);
- 
-
  
 router.post("/eduallreferralregister/post", VerifyToken, RegisterReferral);
 router.get( "/eduallreferrallist/get", VerifyToken, GetAllReferrals);
@@ -1844,6 +1854,22 @@ router.put( "/eduallreferralstatus/update/:ID", VerifyToken, UpdateReferralStatu
 router.put( "/eduallreferraldelete/delete/:ID", VerifyToken, DeleteReferral);
 
 
+
+
+ 
+// ═════════════════════════════════════════════════════════════════════════════
+// GET - BUSCAR SALDOS E HISTÓRICO
+// ═════════════════════════════════════════════════════════════════════════════
+ 
+ 
+router.get('/eduallstudentbalance/:studentId', VerifyToken, GetStudentBalance); 
+router.get('/eduallstudentbalancelogs/:studentId', VerifyToken, GetStudentBalanceLogs); 
+router.get('/eduallstudentbalancesearch', VerifyToken, SearchStudentsBalance);  
+router.post('/eduallstudentbalancedeposit/post', VerifyToken, DepositStudentBalance); 
+router.post('/eduallstudentbalanceconsume/post', VerifyToken, DeductStudentBalance);   
+router.put('/eduallstudentbalancelog/put/:logId', VerifyToken, UpdateBalanceLog);
+router.delete('/eduallstudentbalancelog/delete/:logId', VerifyToken, DeleteBalanceLog);
+ 
 
  
  

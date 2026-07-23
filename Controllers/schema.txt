@@ -1,1594 +1,1178 @@
- 
-
-precio que me cries um code capz de gerar  claendarios custumizados e nao simplmenet listar em tabelas ter tabs para isto ens caso lsiagem com o o mdola do claneadrioed duas outras tabs para mdoelo de claendio nacional e modleo simplificado noutro tab
-os degsnd everao ser suimilase aao quet etnso nas iamegsn em anexo: e criar umc alenadrio que estar la listados as probva snesse scheduleer abaixo do tablegrid no tab1
-dveneos eguir o exemplo dos desgne me anexo vou deixa tambem alguns dos lotipos eu qtemso na iamegm ema nexo, com opção de cosneuirmo mduar. acda um dos lotipos e de tambem cosneyuirmo mudar os dados do cabeçalho e titulos. 
-afzer. isose. duar o emu code do PdExamsCalendar.jsx, o etr dosi mdoelo mdoelo ancioanl do pdf tudo igual emnso zoans de assinatura e e mdoelo indivual na iamgem ema enxo . para. tal vamso etre refazer o degn o mdoal c posi vamso ciar o claenadio de provas com base nas classes criar titulso etc beme idniso como nas iamegsn enos pdfs
-pdoes criar noavs coluns com executreqey se necessario
-
-
-
-
- import React, { useEffect, useState } from 'react'
-import { styled } from 'styled-components';
-import ShedulerComponent from '../../../General/ShedulerComponent';
-import NewExamModal from '../../components/modal/Pedagogy/NewExamModal';
-import { Link } from 'react-router-dom';
-import {BsListTask} from "react-icons/bs";
-import axios from 'axios';
-import Hoot from '../../../General/components/Hoot';
-import moment from 'moment';
-const TABLEURL = Hoot()+"eduallstudentexamcalendarget/get/"; 
-
-function PdExamsCalendar() { 
-    document.title = 'Calendário de provas'; 
-    const [data, setData] = useState([]);
-    const [load, setLoaded] = useState(false);
   
-    async function loadData(){
-      setLoaded(false);
-        try {
-            const response = await axios.get(TABLEURL); 
-            const rows = []; 
-            response.data.map((item, index)=>{  
-              rows.push({
-                   title:item.ed_subject_title,
-                   start: moment(item.ed_student_exam_date).format("YYYY-MM-DD HH:mm:ss"),  
-                   end:moment(item.ed_student_exam_date).format("YYYY-MM-DD HH:mm:ss"), //04:30 PM
-                })
-            }); 
-            setData(rows); 
-           setTimeout(() => {
-              setLoaded(true);
-           }, 100);  
-        } catch (error) {
-            
-        }
-    }
-  
-    useEffect(()=>{
-      loadData(); 
-    },[]);
+const RegisterServicePayment = async (req, res) => {
+  const timerLabel = `RegisterServicePayment_${Date.now()}`;
+  console.time(timerLabel);
 
-    return (
-      <div>
-        <div className="ed-space">
-          <div></div>
-            <div className='ed-flex'> 
-              <Link className='btn bg-green-light btn-icon' to='/pdg_exams'>
-                  <BsListTask/>
-              </Link>
-               <div className='ml-2'><NewExamModal /></div>
-            </div> 
-        </div> 
-        <Box className='mt-4'>
-            <h1 className="title">Calendário de provas</h1>
-             {load ? <ShedulerComponent data={data} /> : <ShedulerComponent data={[]} />  } 
-        </Box>
-      </div>
-    )  
-}
-
-const Box = styled.div`
-   width:100%; 
-   border-radius:6px; 
-   min-height:164px; 
-   background:var(--ed-white);  
-   box-shadow:var(--ed-shadow-df); 
-   padding:20px; 
-
-   h1.title{
-    font-size: 18px;
-    font-weight: 600;
-    margin: 0px;
-    margin-bottom:20px;
- }
- 
-`;
-
-export default PdExamsCalendar
-
-
-pegar  algumas ideias daqui:
-
-
-
-import React, { useEffect, useState, useRef } from "react";
-import { Spinner } from "react-bootstrap";
-import DashboardContainerWrapper from "../../components/elements/DashboardContainerWrapper";
-import CustomTableContainer from "../../components/elements/CustomTableContainer";
-import Hoot from "../../../General/components/Hoot";
-import axios from "axios";
-import toast from "react-hot-toast";
-import moment from "moment";
-import "moment/locale/pt-br";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-import {
-  MdOutlineClass, MdOutlinePersonSearch, MdOutlineTune,
-  MdOutlinePictureAsPdf, MdOutlineCheckCircle,
-  MdOutlineRadioButtonUnchecked, MdOutlineFilterList,
-  MdOutlineFileDownload, MdOutlineAdd, MdOutlineClose,
-  MdOutlineImage,
-} from "react-icons/md";
-import { TbReportAnalytics } from "react-icons/tb";
-
-moment.locale("pt-br");
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CONSTANTS
-// ─────────────────────────────────────────────────────────────────────────────
-const API = {
-  classes:     () => `${Hoot()}eduallclassapi/get`,
-  classGrades: () => `${Hoot()}eduallreports/class-grades`,
-};
-const ANGOLA_COAT = "https://upload.wikimedia.org/wikipedia/commons/thumb/f/ff/Emblem_of_Angola.svg/240px-Emblem_of_Angola.svg.png";
-const PURPLE_HEX  = "#6051ff";
-const GREEN_HEX   = "#22a06b";
-const F_SANS      = "'DM Sans', sans-serif";
-const F_POP       = "'Poppins', sans-serif";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
-const fmt    = (v) => { if (v===null||v===undefined||v==="") return ""; const n=parseFloat(String(v)); return isNaN(n)?"":Number.isInteger(n)?String(n):n.toFixed(1); };
-const fmtInt = (v) => { if (v===null||v===undefined||v==="") return ""; const n=Math.round(parseFloat(String(v))); return isNaN(n)?"":String(n); };
-const makeGcR = (pass=10) => (v) => { const n=parseFloat(v); return isNaN(n)?[17,17,17]:n>=pass?[26,122,26]:[204,0,0]; };
-const gcColor = (v,pass) => { if (v===null||v===undefined||v==="") return "#000"; const n=parseFloat(v); return isNaN(n)?"#000":n>=pass?"#1a7a1a":"#cc0000"; };
-const todayPT = () => new Date().toLocaleDateString("pt-PT",{day:"2-digit",month:"long",year:"numeric"});
-const eduallFooterDate = () => {
-  const now = new Date();
-  const wd  = now.toLocaleDateString("pt-PT",{weekday:"long"});
-  const d   = now.toLocaleDateString("pt-PT",{day:"2-digit",month:"long",year:"numeric"});
-  const h   = String(now.getHours()).padStart(2,"0");
-  const m   = String(now.getMinutes()).padStart(2,"0");
-  return `Gerado pela Eduall Software — ${wd.charAt(0).toUpperCase()+wd.slice(1)}, ${d} às ${h}h${m}`;
-};
-
-// image cache for PDF
-const _imgCache = {};
-async function imgFetch(src) {
-  if (!src||_imgCache[src]===null) return null;
-  if (_imgCache[src]) return _imgCache[src];
   try {
-    const blob = await (await fetch(src,{mode:"cors"})).blob();
-    return new Promise(ok=>{
-      const fr=new FileReader();
-      fr.onload=()=>{_imgCache[src]=fr.result;ok(fr.result);};
-      fr.readAsDataURL(blob);
-    });
-  } catch { _imgCache[src]=null; return null; }
-}
+    const sessionInstitute = req.session?.user?.eduall_user_session_curentinstitute;
+    const operatorId = req.session?.user?.eduall_user_session_ID;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MULTI-SELECT
-// ─────────────────────────────────────────────────────────────────────────────
-function StudentMultiSelect({ options, value, onChange }) {
-  const [search, setSearch] = React.useState("");
-  const filtered    = options.filter(o=>o.label.toLowerCase().includes(search.toLowerCase()));
-  const selectedSet = new Set(value.map(v=>v.value));
-  const toggle = (opt) => { if (selectedSet.has(opt.value)) onChange(value.filter(v=>v.value!==opt.value)); else onChange([...value,opt]); };
-  const toggleAll = () => {
-    if (filtered.every(o=>selectedSet.has(o.value))) { const fs=new Set(filtered.map(f=>f.value)); onChange(value.filter(v=>!fs.has(v.value))); }
-    else { const m=[...value]; filtered.forEach(o=>{if(!selectedSet.has(o.value))m.push(o);}); onChange(m); }
-  };
-  const allSel = filtered.length>0 && filtered.every(o=>selectedSet.has(o.value));
-  return (
-    <div style={{fontFamily:F_SANS}}>
-      <div style={{position:"relative",marginBottom:5}}>
-        <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Pesquisar aluno…"
-          style={{width:"100%",padding:"7px 28px 7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:12.5,fontFamily:F_SANS,outline:"none",color:"#0f172a",background:"#fff",boxSizing:"border-box"}}
-          onFocus={e=>e.target.style.borderColor=PURPLE_HEX} onBlur={e=>e.target.style.borderColor="#e2e8f0"}/>
-        {search&&<button onClick={()=>setSearch("")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#94a3b8",fontSize:15,padding:0}}>×</button>}
-      </div>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"3px 8px",marginBottom:3,background:"#f8fafc",borderRadius:6,fontSize:11,color:"#64748b"}}>
-        <label style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",fontWeight:500}}>
-          <input type="checkbox" checked={allSel} onChange={toggleAll} style={{width:13,height:13,accentColor:PURPLE_HEX,cursor:"pointer"}}/>
-          {allSel?"Desseleccionar todos":"Seleccionar todos"}
-        </label>
-        <span style={{background:PURPLE_HEX,color:"#fff",fontWeight:700,fontSize:11,padding:"2px 9px",borderRadius:999,boxShadow:"0 2px 6px rgba(96,81,255,.35)"}}>{value.length}/{options.length}</span>
-      </div>
-      <div style={{maxHeight:160,overflowY:"auto",border:"1.5px solid #e2e8f0",borderRadius:8,background:"#fff"}}>
-        {filtered.length===0
-          ?<div style={{padding:"10px 12px",color:"#94a3b8",fontSize:12}}>Nenhum aluno encontrado.</div>
-          :filtered.map(opt=>{
-            const checked=selectedSet.has(opt.value);
-            return(
-              <label key={opt.value} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",cursor:"pointer",borderBottom:"1px solid #f1f5f9",background:checked?"rgba(96,81,255,.04)":"#fff",fontSize:12.5,color:"#0f172a"}}
-                onMouseEnter={e=>e.currentTarget.style.background=checked?"rgba(96,81,255,.07)":"#f8fafc"}
-                onMouseLeave={e=>e.currentTarget.style.background=checked?"rgba(96,81,255,.04)":"#fff"}>
-                <input type="checkbox" checked={checked} onChange={()=>toggle(opt)} style={{width:13,height:13,accentColor:PURPLE_HEX,cursor:"pointer",flexShrink:0}}/>
-                <span style={{fontWeight:checked?600:400}}>{opt.label}</span>
-              </label>
-            );
-          })}
-      </div>
-    </div>
-  );
-}
+    console.log("\n" + "═".repeat(90));
+    console.log("REGISTAR PAGAMENTO DE SERVIÇO - VERSÃO REFATORIZADA");
+    console.log("═".repeat(90));
+    console.log(`Instituto: ${sessionInstitute}`);
+    console.log(`Operador: ID ${operatorId}`);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PDF EXPORT — formal B&W, layout=1 (A4 portrait) or layout=2 (A4 landscape, 2 per sheet)
-// ─────────────────────────────────────────────────────────────────────────────
-async function exportPDF(allDatasets, selectedSubjectIdsBySlot, customLogoUrl, layout=1, headers={}, headerLines=[]) {
-  const BK=[0,0,0];
-  const coatSrc = customLogoUrl || ANGOLA_COAT;
-  const coatB64 = await imgFetch(coatSrc);
+    if (!sessionInstitute) {
+      return res.status(401).json({ success: false, msg: "Sessão inválida." });
+    }
 
-  // Page dimensions
-  const is2 = layout===2;
-  const PW  = is2?297:210, PH=is2?210:297;
-  const orient = is2?"landscape":"portrait";
-  const pdf = new jsPDF({orientation:orient,unit:"mm",format:"a4",compress:true});
+    const {
+      student_code: studentId,
+      service_payment_type: paymentMethodIndex = "0",
+      service_payment_bank: bankName = "",
+      service_payment_place: paymentPlace = "",
+      service_payment_reference: paymentReference = "",
+      service_payment_receipt_number: receiptNumber = "",
+      service_payment_observations: observations = "",
+      service_payment_discount: discountPct = 0,
+      service_payment_value_delivered: valueDelivered = 0,
+      services = [],
+      // ─── MATRÍCULA (CHECKBOX INDEPENDENTE) ──────────────────────────────
+      has_matricula = false,
+      matricula_class = null,
+      // ─── CONFIRMAÇÃO (CHECKBOX INDEPENDENTE) ────────────────────────────
+      has_confirmacao = false,
+      confirmacao_class = null,
+      // ─── PROPINAS ──────────────────────────────────────────────────────
+      alsofeepaymenet = false,
+      feemonths = [],
+      fee_service_code = null,
+    } = req.body || {};
 
-  // Collect all (dataset, subject) pairs
-  const pages=[];
-  for(const dataset of allDatasets){
-    const {school,class:cls,students}=dataset.data;
-    const allSubjects=(students[0]?.grades||[]).map(g=>({id:g.subject_id,title:g.subject_title,is_key:g.is_key}));
-    const selIds=selectedSubjectIdsBySlot[dataset._slotId]||[];
-    const subjects=selIds.length?allSubjects.filter(s=>selIds.includes(s.id)):allSubjects;
-    for(const subj of subjects) pages.push({dataset,subj,school,cls,students});
-  }
+    console.log("\n[1] Validando dados obrigatórios...");
 
-  // Draw one pauta block starting at (offX, offY) within width W and height H
-  async function drawPauta(school,cls,students,subj,passValue,offX,offY,W,blockH){
-    const gcR=makeGcR(passValue);
-    const schoolName=school?.name||school?.institute_name||"";
-    const clsTitle=cls?.class_title||cls?.title||"";
-    const clsCode=cls?.class_code||cls?.code||"";
-    const clsPeriod=cls?.class_period||cls?.period||"";
-    const clsRoom=cls?.classroom?.title||cls?.classroom||"";
-    const dirName=cls?.class_director?.name||cls?.director_name||"";
-    const teacher=cls?.subjects?.find(s=>s.subject_id===subj.id)?.teacher_name||"";
+    if (!studentId) {
+      console.error("studentId ausente");
+      return res.status(400).json({
+        success: false,
+        msg: "ID do aluno é obrigatório.",
+      });
+    }
 
-    const M2=5; // inner margin
-    const iW=W-M2*2;
-    const midX=offX+W/2;
-    let y=offY+M2;
-
-    // Outer border (single, formal)
-    pdf.setDrawColor(...BK); pdf.setLineWidth(0.5);
-    pdf.rect(offX+1,offY+1,W-2,blockH-2);
-
-    // Logo
-    if(coatB64){ try{pdf.addImage(coatB64,"PNG",midX-8,y,16,16);}catch{} }
-    y+=18;
-
-    // Header text — dynamic lines from headerLines config
-    const lines = headerLines.length ? headerLines : [
-      {id:1,text:"REPÚBLICA DE ANGOLA",bold:false,isSchool:false},
-      {id:2,text:"MINISTÉRIO DA EDUCAÇÃO",bold:false,isSchool:false},
-      {id:3,text:"",bold:true,isSchool:true},
-    ];
-    for (const line of lines) {
-      const txt = line.isSchool ? schoolName.toUpperCase() : (line.text||"").toUpperCase();
-      if (!txt) continue;
-      if (line.bold) {
-        pdf.setFont("helvetica","bold"); pdf.setFontSize(is2?8:8.5); pdf.setTextColor(...BK);
-        pdf.text(txt,midX,y,{align:"center",maxWidth:iW}); y+=5;
-      } else {
-        pdf.setFont("helvetica","normal"); pdf.setFontSize(6.5); pdf.setTextColor(...BK);
-        pdf.text(txt,midX,y,{align:"center",maxWidth:iW}); y+=3.5;
+    if (!Array.isArray(services) || services.length === 0) {
+      if (!has_matricula && !has_confirmacao && !alsofeepaymenet) {
+        console.error("Nenhum serviço, matrícula, confirmação ou propina selecionado");
+        return res.status(400).json({
+          success: false,
+          msg: "Deve haver pelo menos um serviço, matrícula, confirmação ou propina selecionado.",
+        });
       }
     }
 
-    // Double separator line
-    pdf.setLineWidth(0.6); pdf.line(offX+M2,y,offX+M2+iW,y); y+=0.8;
-    pdf.setLineWidth(0.2); pdf.line(offX+M2,y,offX+M2+iW,y); y+=3;
+    console.log(`Dados básicos válidos | Aluno: ${studentId} | Serviços regulares: ${services.length}`);
 
-    // Discipline info line
-    pdf.setFont("helvetica","bold"); pdf.setFontSize(7); pdf.setTextColor(...BK);
-    const infoL=`DISCIPLINA: ${(subj.title||"").toUpperCase()}${subj.is_key?" [CHAVE]":""}`;
-    pdf.text(infoL,offX+M2,y);
-    const infoR=[clsTitle?`Classe: ${clsTitle}`:"",clsCode?`Turma: ${clsCode}`:"",clsPeriod?`Período: ${clsPeriod}`:"",clsRoom?`Sala: ${clsRoom}`:""].filter(Boolean).join("   ");
-    pdf.setFont("helvetica","normal"); pdf.setFontSize(6.5);
-    pdf.text(infoR,offX+M2+iW,y,{align:"right"}); y+=4;
-    if(teacher){
-      pdf.setFont("helvetica","italic"); pdf.setFontSize(6); pdf.setTextColor(80,80,80);
-      pdf.text(`Professor(a): ${teacher}`,offX+M2,y); y+=3.5;
+    // ─── VALIDAÇÃO CRÍTICA: Não permitir matrícula E confirmação simultâneas ─────
+    if (has_matricula && has_confirmacao) {
+      console.error("Matrícula E Confirmação simultâneas - NÃO PERMITIDO");
+      return res.status(400).json({
+        success: false,
+        msg: "Não é permitido fazer matrícula E confirmação na mesma operação. Um aluno deve ser matriculado primeiro, depois confirmado.",
+      });
     }
-    pdf.setDrawColor(150,150,150); pdf.setLineWidth(0.2);
-    pdf.line(offX+M2,y,offX+M2+iW,y); y+=2;
 
-    // Columns: Nº | Nome | MAC NPT MT × 3 | MAC MFD NE MEC MFA | Obs (Sit. removed)
-    // CLASSIFICAÇÃO GERAL = MAC, MFD, NE (Nota Exame), MEC (Méd.Exam+Class.), MFA (Méd.Final Anual)
-    const numW=is2?5:6, nameW=is2?34:40, obsW=is2?12:15;
-    const remW=iW-numW-nameW-obsW;
-    const gW=remW/14; // 9 tri cols + 5 geral cols
+    // ─── VALIDAÇÃO: Turmas são obrigatórias se há matrícula ou confirmação ──────
+    if ((has_matricula || has_confirmacao) && !matricula_class && !confirmacao_class) {
+      console.error("Turma não especificada para matrícula/confirmação");
+      return res.status(400).json({
+        success: false,
+        msg: "Turma é obrigatória para matrícula ou confirmação.",
+      });
+    }
 
-    const H = {
-      trim1:headers.trim1||"Iº TRIMESTRE", trim2:headers.trim2||"IIº TRIMESTRE", trim3:headers.trim3||"IIIº TRIMESTRE",
-      classGeral:headers.classGeral||"CLASSIFICAÇÃO GERAL", obs:headers.obs||"Observação",
-      mac:headers.mac||"MAC", npt:headers.npt||"NPT", mt1:headers.mt1||"MT1", mt2:headers.mt2||"MT2", mt3:headers.mt3||"MT3",
-      gMac:headers.gMac||"MAC", mfd:headers.mfd||"MFD", ne:headers.ne||"NE", mec:headers.mec||"MEC", mfa:headers.mfa||"MFA",
+    if (has_matricula && !matricula_class) {
+      console.error("Turma não especificada para matrícula");
+      return res.status(400).json({
+        success: false,
+        msg: "Turma é obrigatória para matrícula.",
+      });
+    }
+
+    if (has_confirmacao && !confirmacao_class) {
+      console.error("Turma não especificada para confirmação");
+      return res.status(400).json({
+        success: false,
+        msg: "Turma é obrigatória para confirmação.",
+      });
+    }
+
+    if (alsofeepaymenet && feemonths?.length > 0 && !fee_service_code) {
+      console.error("Propinas sem serviço de propina");
+      return res.status(400).json({
+        success: false,
+        msg: "Serviço de propina deve ser especificado.",
+      });
+    }
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // [1.5] VALIDAÇÃO DE PROPINAS JÁ PAGAS
+    // ───────────────────────────────────────────────────────────────────────────
+    if (alsofeepaymenet && feemonths?.length > 0 && fee_service_code) {
+      console.log("\n[1.5] Validando se o aluno já pagou alguma das propinas selecionadas...");
+
+      const uniqueFeeMonths = [...new Set(feemonths)];
+      const monthPlaceholders = uniqueFeeMonths.map(() => "?").join(",");
+
+      const dupFeesRows = await ExecuteQuery(
+        null,
+        `SELECT ed_fee_payment_month AS month
+         FROM eduall_fees_payments
+         WHERE ed_fee_payment_institute_code = ?
+           AND ed_fee_payment_student = ?
+           AND ed_fee_payment_month IN (${monthPlaceholders})
+           AND COALESCE(ed_fee_payment_deleted, 0) = 0
+         GROUP BY ed_fee_payment_month`,
+        [sessionInstitute, studentId, ...uniqueFeeMonths],
+        true
+      );
+
+      if (dupFeesRows?.length) {
+        const paidMonthsFormatted = formatMonthsList(dupFeesRows.map((r) => r.month));
+
+        console.error(`Propinas já pagas detectadas: ${paidMonthsFormatted}`);
+        console.log(`Meses em bruto: ${dupFeesRows.map((r) => r.month).join(", ")}`);
+        console.log(`Contagem: ${dupFeesRows.length} propina(s)`);
+
+        const errorResponse = buildDuplicateFeesErrorResponse(dupFeesRows, paidMonthsFormatted);
+
+        return res.status(errorResponse.statusCode).json(errorResponse.body);
+      }
+
+      console.log(`Nenhuma propina duplicada encontrada - pode prosseguir.`);
+    }
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // [1.6] VERIFICAR SERVIÇOS CUSTOMIZADOS
+    // ───────────────────────────────────────────────────────────────────────────
+    console.log("\n[1.6] Verificando serviços customizados...");
+
+    const customServices = services.filter(s => s.isCustomService === true);
+    if (customServices.length > 0) {
+      console.log(`Encontrados ${customServices.length} serviço(s) customizado(s)`);
+
+      const [defaultProvider] = await ExecuteQuery(
+        null,
+        `SELECT ed_provider_id FROM eduall_providers 
+         WHERE ed_provider_institute_code = ? AND ed_provider_deleted = 0 
+         LIMIT 1`,
+        [sessionInstitute],
+        true
+      );
+
+      const [defaultCoin] = await ExecuteQuery(
+        null,
+        `SELECT ed_coin_id FROM eduall_coins 
+         WHERE ed_coin_institute_code = ? AND ed_coin_deleted = 0 
+         LIMIT 1`,
+        [sessionInstitute],
+        true
+      );
+
+      if (!defaultProvider) {
+        console.error("Nenhum fornecedor registado para a escola");
+        return res.status(400).json({
+          success: false,
+          msg: "Nenhum fornecedor registado para esta escola. Registre um fornecedor primeiro.",
+          error: "NO_PROVIDER"
+        });
+      }
+
+      if (!defaultCoin) {
+        console.error("Nenhuma moeda registada para a escola");
+        return res.status(400).json({
+          success: false,
+          msg: "Nenhuma moeda registada para esta escola. Registre uma moeda primeiro.",
+          error: "NO_COIN"
+        });
+      }
+
+      for (const customSrv of customServices) {
+        try {
+          const insertCustomQuery = `
+            INSERT INTO eduall_services (
+              ed_service_title,
+              ed_service_type,
+              ed_service_provider,
+              ed_service_price,
+              ed_service_iva,
+              ed_service_description,
+              ed_service_coin,
+              ed_service_is_matricula,
+              ed_service_is_confirmation,
+              ed_service_institute_code
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `;
+
+          const insertCustomParams = [
+            customSrv.service_name || "Serviço Customizado",
+            "custom",
+            defaultProvider.ed_provider_id,
+            customSrv.price || 0,
+            0,
+            customSrv.service_name || "Serviço registado no pagamento",
+            defaultCoin.ed_coin_id,
+            0,
+            0,
+            sessionInstitute
+          ];
+
+          const serviceResult = await ExecuteQuery(
+            null,
+            insertCustomQuery,
+            insertCustomParams,
+            false,
+            {
+              db: "eduall_services",
+              type: "insert",
+              data: req,
+            }
+          );
+
+          const generatedId = serviceResult?.insertId || serviceResult?.ed_service_id;
+
+          if (!generatedId) {
+            console.error(`Não foi gerado ID para serviço customizado: ${customSrv.service_name}`);
+            return res.status(500).json({
+              success: false,
+              msg: `Falha ao obter ID do serviço customizado "${customSrv.service_name}".`,
+              error: "NO_INSERT_ID"
+            });
+          }
+
+          customSrv.code = generatedId;
+          customSrv._registered = true;
+
+          console.log(`Serviço customizado registado: "${customSrv.service_name}" (ID: ${customSrv.code})`);
+
+          await RegisterAuditAction({
+            session: req.session,
+            action: 1,
+            form: "Serviços - Customizado",
+            description: `Registrou serviço customizado "${customSrv.service_name}" no pagamento do aluno ${studentId}. Preço: ${customSrv.price}.`,
+          });
+
+        } catch (customErr) {
+          console.error(`Erro ao registar serviço customizado: ${customSrv.service_name}`);
+          console.error(`Mensagem: ${customErr.message}`);
+          return res.status(500).json({
+            success: false,
+            msg: `Falha ao registar o serviço customizado "${customSrv.service_name}".`,
+            error: customErr.message,
+          });
+        }
+      }
+    }
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // [2] RESOLVER MÉTODO DE PAGAMENTO
+    // ───────────────────────────────────────────────────────────────────────────
+    console.log("\n[2] Resolvendo método de pagamento...");
+
+    const paymentMethods = await getPaymentMethods(req);
+    if (!paymentMethods || paymentMethods.length === 0) {
+      console.error("Nenhum método de pagamento configurado!");
+      return res.status(400).json({
+        success: false,
+        msg: "Nenhum método de pagamento configurado no sistema!",
+        error: "NO_PAYMENT_METHODS"
+      });
+    }
+
+    const selectedPaymentMethod = resolvePaymentMethod(Number(paymentMethodIndex), paymentMethods);
+    if (!selectedPaymentMethod) {
+      console.error(`Método de pagamento inválido: ${paymentMethodIndex}`);
+      return res.status(400).json({
+        success: false,
+        msg: "Método de pagamento inválido!",
+        error: "INVALID_PAYMENT_METHOD"
+      });
+    }
+
+    console.log(`Método: ${selectedPaymentMethod.name} (ID Vendus: ${selectedPaymentMethod.vendus_id})`);
+
+    const needsBordereau = requiresBordereau(selectedPaymentMethod.name);
+    if (needsBordereau && !paymentReference) {
+      console.error("Borderô obrigatório para este método");
+      return res.status(400).json({
+        success: false,
+        msg: `O método "${selectedPaymentMethod.name}" requer número de borderô/referência.`,
+      });
+    }
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // [3] BUSCAR DADOS DO ALUNO
+    // ───────────────────────────────────────────────────────────────────────────
+    console.log("\n[3] Buscando aluno...");
+
+    const [student] = await ExecuteQuery(
+      null,
+      `SELECT
+        s.ed_student_id, s.ed_student_code, s.ed_student_name,
+        s.ed_student_identityCard, s.ed_student_email, s.ed_student_address,
+        s.ed_student_class, s.ed_student_enrolled, cls.ed_class_title, room.ed_classroom_title,
+        crs.ed_course_title, ay.ed_academic_year_title
+       FROM eduall_students s
+       LEFT JOIN eduall_class cls ON cls.ed_class_id = s.ed_student_class AND COALESCE(cls.ed_class_deleted,0)=0
+       LEFT JOIN eduall_classrooms room ON room.ed_classroom_id = cls.ed_class_room AND COALESCE(room.ed_classroom_deleted,0)=0
+       LEFT JOIN eduall_courses crs ON crs.ed_course_id = cls.ed_class_course AND COALESCE(crs.ed_course_deleted,0)=0
+       LEFT JOIN eduall_academic_year ay ON ay.ed_academic_year_id = cls.ed_class_year AND COALESCE(ay.ed_academic_year_deleted,0)=0
+       WHERE s.ed_student_id = ? AND s.ed_student_institute_code = ? AND COALESCE(s.ed_student_deleted,0)=0
+       LIMIT 1`,
+      [studentId, sessionInstitute],
+      true
+    );
+
+    if (!student) {
+      console.error(`Aluno ${studentId} não encontrado`);
+      return res.status(404).json({
+        success: false,
+        msg: "Aluno não encontrado.",
+      });
+    }
+
+    console.log(`Aluno encontrado: ${student.ed_student_name} (${student.ed_student_code})`);
+    console.log(`Estado de matrícula: ${student.ed_student_enrolled}`);
+    console.log(`Turma atual: ${student.ed_student_class}`);
+
+    // ─── VALIDAÇÃO DE MATRÍCULA/CONFIRMAÇÃO ────────────────────────────────
+    if (has_matricula && student.ed_student_enrolled >= 1) {
+      console.error(`Aluno ${studentId} já foi matriculado (enrolled: ${student.ed_student_enrolled})`);
+      return res.status(409).json({
+        success: false,
+        msg: "Este aluno já foi matriculado! Não é possível fazer nova matrícula.",
+        error: "ALREADY_ENROLLED"
+      });
+    }
+
+    if (has_confirmacao && (!student.ed_student_enrolled || student.ed_student_enrolled < 1)) {
+      console.error(`Aluno ${studentId} não foi matriculado (enrolled: ${student.ed_student_enrolled})`);
+      return res.status(409).json({
+        success: false,
+        msg: "Este aluno NÃO foi matriculado ainda! Faça a matrícula primeiro.",
+        error: "NOT_ENROLLED"
+      });
+    }
+
+    // ─── VALIDAÇÃO: Confirmação não pode ser na mesma turma ──────────────────
+    if (has_confirmacao && confirmacao_class && student.ed_student_class === confirmacao_class) {
+      console.error(`Tentativa de confirmação na mesma turma ${confirmacao_class}`);
+      return res.status(409).json({
+        success: false,
+        msg: "A confirmação de matrícula deve ser para uma turma DIFERENTE da atual. O aluno já está nesta turma.",
+        error: "CONFIRMATION_SAME_CLASS"
+      });
+    }
+
+    const [institute] = await ExecuteQuery(
+      null,
+      `SELECT ed_institute_name FROM eduall_institutes WHERE ed_institute_code=? LIMIT 1`,
+      [sessionInstitute],
+      true
+    );
+    const instituteName = institute?.ed_institute_name || "";
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // [4] PROCESSAR SERVIÇOS E CALCULAR TOTAIS
+    // ───────────────────────────────────────────────────────────────────────────
+    console.log("\n[4] Processando serviços e calculando totais...");
+
+    let totalInvoiceValue = 0;
+    const processedServices = [];
+
+    // ─── SERVIÇOS REGULARES ────────────────────────────────────────────────────
+    for (const service of services) {
+      const { code, amount = 1, price, discount = discountPct, is_matricula, is_confirmation, isCustomService, service_name, label } = service;
+
+      const amountVal = parseFloat(amount) || 1;
+      const priceVal = parseFloat(price) || 0;
+      const discountVal = parseFloat(discount) || 0;
+
+      if (priceVal < 0) {
+        console.error(`Preço inválido para serviço ${code}`);
+        return res.status(400).json({
+          success: false,
+          msg: `Preço inválido para o serviço ${code}.`,
+        });
+      }
+
+      let serviceName = service_name || label || null;
+
+      if (!serviceName && !isCustomService) {
+        try {
+          const [serviceInfo] = await ExecuteQuery(
+            null,
+            `SELECT ed_service_title FROM eduall_services 
+             WHERE ed_service_id = ? AND ed_service_institute_code = ? 
+             AND COALESCE(ed_service_deleted,0)=0 LIMIT 1`,
+            [code, sessionInstitute],
+            true
+          );
+
+          if (serviceInfo) {
+            serviceName = serviceInfo.ed_service_title;
+            console.log(`Nome do serviço buscado da BD: "${serviceName}" (ID: ${code})`);
+          }
+        } catch (err) {
+          console.warn(`Não foi possível buscar nome do serviço ${code} na BD`);
+        }
+      }
+
+      serviceName = serviceName || String(code);
+
+      const discountAmount = discountVal > 0 ? (priceVal * discountVal) / 100 : 0;
+      const baseAfterDiscount = Math.max(0, priceVal - discountAmount);
+      const lineTotal = baseAfterDiscount * amountVal;
+
+      processedServices.push({
+        code,
+        name: serviceName,
+        amount: amountVal,
+        price: priceVal,
+        discount: discountVal,
+        discountAmount,
+        baseAfterDiscount,
+        lineTotal,
+        is_matricula: is_matricula || 0,
+        is_confirmation: is_confirmation || 0,
+        isCustom: isCustomService || false,
+      });
+
+      totalInvoiceValue += lineTotal;
+
+      const badge = isCustomService ? "NEW" : "OK";
+      console.log(`${badge} ${serviceName} | Qtd: ${amountVal} | Preço: ${formatCurrency(priceVal)} | Total: ${formatCurrency(lineTotal)}`);
+    }
+
+    // ─── SERVIÇO DE MATRÍCULA ───────────────────────────────────────────────────
+    let matriculaTotal = 0;
+    if (has_matricula) {
+      const matriculaService = services.find(s => s.isMatriculaService === true);
+      if (matriculaService) {
+        const matriculaPrice = parseFloat(matriculaService.price) || 0;
+        matriculaTotal = matriculaPrice;
+        totalInvoiceValue += matriculaTotal;
+        console.log(`MATRÍCULA: ${formatCurrency(matriculaPrice)}`);
+      }
+    }
+
+    // ─── SERVIÇO DE CONFIRMAÇÃO ────────────────────────────────────────────────
+    let confirmacaoTotal = 0;
+    if (has_confirmacao) {
+      const confirmacaoService = services.find(s => s.isConfirmacaoService === true);
+      if (confirmacaoService) {
+        const confirmacaoPrice = parseFloat(confirmacaoService.price) || 0;
+        confirmacaoTotal = confirmacaoPrice;
+        totalInvoiceValue += confirmacaoTotal;
+        console.log(`CONFIRMAÇÃO: ${formatCurrency(confirmacaoPrice)}`);
+      }
+    }
+
+    // ─── PROPINAS ──────────────────────────────────────────────────────────────
+    let feesTotalValue = 0;
+    if (alsofeepaymenet && feemonths?.length > 0 && fee_service_code) {
+      const [feeSrv] = await ExecuteQuery(
+        null,
+        `SELECT ed_service_id, ed_service_title, ed_service_price FROM eduall_services
+         WHERE ed_service_id = ? AND ed_service_institute_code = ? AND COALESCE(ed_service_deleted,0)=0 LIMIT 1`,
+        [fee_service_code, sessionInstitute],
+        true
+      );
+
+      if (feeSrv) {
+        const feePrice = parseFloat(feeSrv.ed_service_price) || 0;
+        feesTotalValue = feePrice * feemonths.length;
+        totalInvoiceValue += feesTotalValue;
+        console.log(`Propinas: ${feemonths.length} mês(es) * ${formatCurrency(feePrice)} = ${formatCurrency(feesTotalValue)}`);
+      }
+    }
+
+    console.log(`\nTOTAL: ${formatCurrency(totalInvoiceValue)}`);
+
+    const [operatorUser] = await ExecuteQuery(
+      null,
+      `SELECT ed_user_account_name FROM eduall_user_accounts 
+       WHERE ed_user_account_id = ? AND COALESCE(ed_user_account_deleted,0)=0 LIMIT 1`,
+      [operatorId],
+      true
+    );
+
+    const operatorName = operatorUser?.ed_user_account_name || `Operador ${operatorId}`;
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // [5] CONSTRUIR OBSERVAÇÕES (COMPATÍVEL COM VENDUS)
+    // ───────────────────────────────────────────────────────────────────────────
+    console.log("\n[5] Construindo observações...");
+
+    // ✅ Determinar qual turma vai aparecer nas observações
+    // A turma que aparece será a turma do payload (matricula_class ou confirmacao_class)
+    // Esta será a turma FUTURA do aluno depois da operação
+    const classForObservations = has_matricula ? matricula_class : (has_confirmacao ? confirmacao_class : student.ed_student_class);
+    const classForObservationsLabel = await getClassLabel(classForObservations, sessionInstitute);
+
+    const obsParts = [];
+    obsParts.push(`Nº matrícula: ${student.ed_student_code || "-"}`);
+    obsParts.push(`Turma (futura): ${classForObservationsLabel}`);
+    if (student.ed_classroom_title) obsParts.push(`Sala: ${student.ed_classroom_title}`);
+    if (student.ed_course_title) obsParts.push(`Curso: ${student.ed_course_title}`);
+    if (student.ed_academic_year_title) obsParts.push(`Ano letivo: ${student.ed_academic_year_title}`);
+    if (instituteName) obsParts.push(`Instituição: ${instituteName}`);
+    obsParts.push(`Forma de pagamento: ${selectedPaymentMethod.name}`);
+
+    if (has_matricula) obsParts.push(`[MATRÍCULA]`);
+    if (has_confirmacao) obsParts.push(`[CONFIRMAÇÃO DE MATRÍCULA]`);
+
+     
+    if (observations) obsParts.push(`Observações: ${observations}`);
+    obsParts.push(`Operador: ${operatorName}`);
+
+    const obs = obsParts.join("\n");
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // [6] PREPARAR DADOS PARA FATURA (VENDUS)
+    // ───────────────────────────────────────────────────────────────────────────
+    const customer = {
+      name: student.ed_student_name || "",
+      fiscal_id: student.ed_student_identityCard || "",
+      address: student.ed_student_address || "",
+      email: student.ed_student_email || "",
     };
 
-    const head=[
-      [
-        {content:"Nº",rowSpan:2,styles:{valign:"middle",halign:"center",fontSize:5.5}},
-        {content:"NOME COMPLETO",rowSpan:2,styles:{valign:"middle",halign:"center",fontSize:6}},
-        {content:H.trim1,colSpan:3,styles:{halign:"center",fontSize:5.5,fontStyle:"bold"}},
-        {content:H.trim2,colSpan:3,styles:{halign:"center",fontSize:5.5,fontStyle:"bold"}},
-        {content:H.trim3,colSpan:3,styles:{halign:"center",fontSize:5.5,fontStyle:"bold"}},
-        {content:H.classGeral,colSpan:5,styles:{halign:"center",fontSize:5.5,fontStyle:"bold"}},
-        {content:H.obs,rowSpan:2,styles:{valign:"middle",halign:"center",fontSize:5}},
-      ],
-      [
-        {content:H.mac,styles:{halign:"center",fontSize:5}},{content:H.npt,styles:{halign:"center",fontSize:5}},{content:H.mt1,styles:{halign:"center",fontSize:5}},
-        {content:H.mac,styles:{halign:"center",fontSize:5}},{content:H.npt,styles:{halign:"center",fontSize:5}},{content:H.mt2,styles:{halign:"center",fontSize:5}},
-        {content:H.mac,styles:{halign:"center",fontSize:5}},{content:H.npt,styles:{halign:"center",fontSize:5}},{content:H.mt3,styles:{halign:"center",fontSize:5}},
-        {content:H.gMac,styles:{halign:"center",fontSize:5}},
-        {content:H.mfd,styles:{halign:"center",fontSize:5}},
-        {content:H.ne,styles:{halign:"center",fontSize:5}},
-        {content:H.mec,styles:{halign:"center",fontSize:5}},
-        {content:H.mfa,styles:{halign:"center",fontSize:5}},
-      ],
-    ];
+    const invoiceLines = processedServices.map((srv) => ({
+      itemcode: `EDSERV-${srv.code}`,
+      title: srv.name || `Serviço ${srv.code}`,
+      price: Number(srv.baseAfterDiscount.toFixed(2)),
+      tax: 0,
+      discount: srv.discount,
+      quantity: String(srv.amount),
+    }));
 
-    const minRows=is2?20:25;
-    const body=students.map((st,idx)=>{
-      const g=st.grades?.find(gg=>gg.subject_id===subj.id);
-      if(!g)return[idx+1,st.student_name||"",...Array(15).fill("")];
-      const t1=g.terms?.find(t=>t.quarter===1)||{},t2=g.terms?.find(t=>t.quarter===2)||{},t3=g.terms?.find(t=>t.quarter===3)||{};
-      // MAC geral = média dos MACs dos 3 trimestres
-      const macVals=[t1.mac,t2.mac,t3.mac].filter(v=>v!==null&&v!==undefined);
-      const macGeral=macVals.length?Math.round(macVals.reduce((a,b)=>a+b,0)/macVals.length):null;
-      return[
-        idx+1, st.student_name||"",
-        fmt(t1.mac),fmt(t1.npt),fmtInt(t1.mt),
-        fmt(t2.mac),fmt(t2.npt),fmtInt(t2.mt),
-        fmt(t3.mac),fmt(t3.npt),fmtInt(t3.mt),
-        fmtInt(macGeral),      // MAC geral
-        fmtInt(g.mfd),         // MFD
-        fmt(g.exam_score),     // NE — Nota de Exame
-        fmt(g.resource_score), // MEC — Média Exame + Classificação
-        fmtInt(g.mf),          // MFA — Média Final Anual
-        "",                    // Observação
-      ];
-    });
-    while(body.length<minRows) body.push(["","",...Array(15).fill("")]);
-
-    autoTable(pdf,{
-      startY:y, margin:{left:offX+M2,right:PW-(offX+M2+iW)},
-      tableWidth:iW, head, body, theme:"grid",
-      styles:{fontSize:6,cellPadding:0.8,lineColor:[0,0,0],lineWidth:0.2,textColor:[0,0,0],font:"helvetica",overflow:"ellipsize"},
-      headStyles:{fillColor:[255,255,255],textColor:[0,0,0],fontStyle:"bold",halign:"center",lineWidth:0.3,lineColor:[0,0,0]},
-      columnStyles:{
-        0:{halign:"center",cellWidth:numW},
-        1:{halign:"left",cellWidth:nameW,fontSize:is2?5.5:6},
-        2:{halign:"center",cellWidth:gW},3:{halign:"center",cellWidth:gW},4:{halign:"center",cellWidth:gW},
-        5:{halign:"center",cellWidth:gW},6:{halign:"center",cellWidth:gW},7:{halign:"center",cellWidth:gW},
-        8:{halign:"center",cellWidth:gW},9:{halign:"center",cellWidth:gW},10:{halign:"center",cellWidth:gW},
-        11:{halign:"center",cellWidth:gW},12:{halign:"center",cellWidth:gW},
-        13:{halign:"center",cellWidth:gW},14:{halign:"center",cellWidth:gW},15:{halign:"center",cellWidth:gW},
-        16:{halign:"left",cellWidth:obsW},
-      },
-      didParseCell(d){
-        if(d.section!=="body")return;
-        const ri=d.row.index,ci=d.column.index;
-        if(ri>=students.length)return;
-        const g=students[ri]?.grades?.find(gg=>gg.subject_id===subj.id);if(!g)return;
-        const t1=g.terms?.find(t=>t.quarter===1)||{},t2=g.terms?.find(t=>t.quarter===2)||{},t3=g.terms?.find(t=>t.quarter===3)||{};
-        const macVals2=[t1.mac,t2.mac,t3.mac].filter(v=>v!==null&&v!==undefined);
-        const macG=macVals2.length?Math.round(macVals2.reduce((a,b)=>a+b,0)/macVals2.length):null;
-        const gm={
-          2:t1.mac,3:t1.npt,4:t1.mt,
-          5:t2.mac,6:t2.npt,7:t2.mt,
-          8:t3.mac,9:t3.npt,10:t3.mt,
-          11:macG,12:g.mfd,13:g.exam_score,14:g.resource_score,15:g.mf,
-        };
-        if(gm[ci]!==undefined&&gm[ci]!==null){d.cell.styles.textColor=gcR(gm[ci]);d.cell.styles.fontStyle="bold";}
-      },
-    });
-
-    let ty=pdf.lastAutoTable.finalY+4;
-
-    // Professor line — always shown, with blank line if no name
-    pdf.setFont("helvetica","bold");pdf.setFontSize(6.5);pdf.setTextColor(...BK);
-    pdf.text("Professor(a):",offX+M2,ty);
-    const profLabelW=pdf.getTextWidth("Professor(a):");
-    if(teacher){
-      pdf.setFont("helvetica","normal");pdf.setFontSize(6.5);
-      pdf.text(teacher,offX+M2+profLabelW+2,ty);
-    } else {
-      pdf.setDrawColor(...BK);pdf.setLineWidth(0.25);
-      pdf.line(offX+M2+profLabelW+2,ty+0.3,offX+M2+iW*0.5,ty+0.3);
-    }
-    ty+=6;
-
-    // Signatures
-    pdf.setFont("helvetica","bold");pdf.setFontSize(6.5);pdf.setTextColor(...BK);
-    pdf.text("O Director de Turma",offX+M2+16,ty,{align:"center"});
-    pdf.setDrawColor(...BK);pdf.setLineWidth(0.3);pdf.line(offX+M2,ty+1.5,offX+M2+32,ty+1.5);
-    if(dirName){pdf.setFont("helvetica","normal");pdf.setFontSize(5.5);pdf.setTextColor(60,60,60);pdf.text(dirName,offX+M2+16,ty+4.5,{align:"center"});}
-    pdf.setFont("helvetica","bold");pdf.setFontSize(6.5);pdf.setTextColor(...BK);
-    pdf.text("O Director Pedagógico",offX+M2+iW-16,ty,{align:"center"});
-    pdf.line(offX+M2+iW-32,ty+1.5,offX+M2+iW,ty+1.5);
-    ty+=9;
-
-    // Dashed separator
-    pdf.setDrawColor(160,160,160);pdf.setLineWidth(0.25);
-    pdf.setLineDash([1.5,1.5],0);pdf.line(offX+M2,ty,offX+M2+iW,ty);pdf.setLineDash([],0);
-    ty+=4;
-
-    // MAPA ESTATÍSTICO title
-    pdf.setFont("helvetica","bold");pdf.setFontSize(7.5);pdf.setTextColor(...BK);
-    pdf.text("MAPA ESTATÍSTICO",midX,ty,{align:"center"});
-    ty+=6;
-
-    // 3 trimester stat tables compact
-    for(let qi=0;qi<3;qi++){
-      const qLabel=["Iº TRIMESTRE","IIº TRIMESTRE","IIIº TRIMESTRE"][qi];
-      ty+=2; // margin above trimester title
-      pdf.setFont("helvetica","bold");pdf.setFontSize(6.5);pdf.setTextColor(...BK);
-      pdf.text(qLabel,midX,ty,{align:"center"}); ty+=3;
-      autoTable(pdf,{
-        startY:ty, margin:{left:offX+M2,right:PW-(offX+M2+iW)}, tableWidth:iW,
-        head:[[
-          {content:"ALUNOS MATRICULADOS",rowSpan:2,styles:{valign:"middle",halign:"center",fontSize:5,fontStyle:"bold"}},
-          {content:"ALUNOS AVALIADOS",colSpan:2,styles:{halign:"center",fontSize:5,fontStyle:"bold"}},
-          {content:"Nº DE POSITIVOS",colSpan:2,styles:{halign:"center",fontSize:5,fontStyle:"bold"}},
-          {content:"%",rowSpan:2,styles:{valign:"middle",halign:"center",fontSize:5,fontStyle:"bold"}},
-          {content:"%",rowSpan:2,styles:{valign:"middle",halign:"center",fontSize:5,fontStyle:"bold"}},
-          {content:"DESISTENTES",colSpan:2,styles:{halign:"center",fontSize:5,fontStyle:"bold"}},
-        ],[
-          {content:"MF",styles:{halign:"center",fontSize:4.5}},{content:"F",styles:{halign:"center",fontSize:4.5}},
-          {content:"M",styles:{halign:"center",fontSize:4.5}},{content:"F",styles:{halign:"center",fontSize:4.5}},
-          {content:"MF",styles:{halign:"center",fontSize:4.5}},{content:"F",styles:{halign:"center",fontSize:4.5}},
-        ]],
-        body:[["","","","","","","","",""]],
-        theme:"grid",
-        styles:{fontSize:5.5,cellPadding:1,lineColor:[0,0,0],lineWidth:0.2,textColor:[0,0,0],font:"helvetica",halign:"center",minCellHeight:5},
-        headStyles:{fillColor:[245,245,245],textColor:[0,0,0],fontStyle:"bold",halign:"center",lineWidth:0.25,lineColor:[0,0,0]},
+    // Adicionar linha de matrícula se aplicável
+    if (has_matricula && matriculaTotal > 0) {
+      invoiceLines.push({
+        itemcode: `EDMAT-${studentId}`,
+        title: `Matrícula`,
+        price: Number(matriculaTotal.toFixed(2)),
+        tax: 0,
+        discount: 0,
+        quantity: "1",
       });
-      ty=pdf.lastAutoTable.finalY+(qi<2?1:0);
     }
 
-    // Footer
-    pdf.setFont("helvetica","italic");pdf.setFontSize(5.5);pdf.setTextColor(160,160,160);
-    pdf.text(eduallFooterDate(),midX,offY+blockH-2,{align:"center"});
-  }
+    // Adicionar linha de confirmação se aplicável
+    if (has_confirmacao && confirmacaoTotal > 0) {
+      invoiceLines.push({
+        itemcode: `EDCONF-${studentId}`,
+        title: `Confirmação de Matrícula`,
+        price: Number(confirmacaoTotal.toFixed(2)),
+        tax: 0,
+        discount: 0,
+        quantity: "1",
+      });
+    }
 
-  if(is2){
-    // Layout 2: A4 landscape, 2 pautas side by side per sheet
-    const HALF=PW/2;
-    for(let i=0;i<pages.length;i+=2){
-      if(i>0)pdf.addPage([PW,PH],orient);
-      // vertical divider
-      pdf.setDrawColor(180,180,180);pdf.setLineWidth(0.3);
-      pdf.line(HALF,3,HALF,PH-3);
-      const {dataset:dL,subj:sL,school:scL,cls:cL,students:stL}=pages[i];
-      await drawPauta(scL,cL,stL,sL,dL.pass_value??10, 0,0,HALF,PH);
-      if(pages[i+1]){
-        const {dataset:dR,subj:sR,school:scR,cls:cR,students:stR}=pages[i+1];
-        await drawPauta(scR,cR,stR,sR,dR.pass_value??10, HALF,0,HALF,PH);
+    if (feesTotalValue > 0 && alsofeepaymenet && fee_service_code) {
+      const monthsFormatted = formatMonthsList(feemonths);
+
+      invoiceLines.push({
+        itemcode: `EDFEE-${fee_service_code}`,
+        title: `Propinas (${monthsFormatted})`,
+        price: Number((feesTotalValue / feemonths.length).toFixed(2)),
+        tax: 0,
+        discount: 0,
+        quantity: String(feemonths.length),
+      });
+    }
+
+    console.log("\nLinhas de fatura preparadas:");
+    invoiceLines.forEach((line, idx) => {
+      console.log(`[${idx + 1}] ${line.title} | Preço: ${line.price} | Qtd: ${line.quantity}`);
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // [7] CRIAR FATURA NO VENDUS
+    // ───────────────────────────────────────────────────────────────────────────
+    console.log("\n[7] Criando fatura no Vendus...");
+    const startVendusTime = Date.now();
+
+    let vendus;
+    try {
+      vendus = await VENDUS_CreateInvoiceCodeAndDoc(
+        req,
+        customer,
+        invoiceLines,
+        Number(paymentMethodIndex),
+        obs
+      );
+    } catch (vendusErr) {
+      console.error(`[VENDUS] ERRO:`, vendusErr.message || vendusErr);
+      return res.status(500).json({
+        success: false,
+        msg: "Falha ao criar fatura Vendus. Pagamento NÃO foi registado.",
+        vendusError: vendusErr.message || String(vendusErr),
+      });
+    }
+
+    if (!vendus || !vendus.number || !vendus.id) {
+      console.error(`[VENDUS] Resposta inválida:`, JSON.stringify(vendus));
+      return res.status(500).json({
+        success: false,
+        msg: "Resposta Vendus inválida. Pagamento NÃO foi registado.",
+      });
+    }
+
+    const vendusTime = Date.now() - startVendusTime;
+    console.log(`[VENDUS] Fatura criada com sucesso!`);
+    console.log(`Número: ${vendus.number}`);
+    console.log(`ID: ${vendus.id}`);
+    console.log(`Valor: ${formatCurrency(totalInvoiceValue)}`);
+    console.log(`PDF: ${vendus.output}`);
+    console.log(`Tempo: ${vendusTime}ms`);
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // [8] INICIAR TRANSAÇÃO DE BD
+    // ───────────────────────────────────────────────────────────────────────────
+    console.log("\n[8] Iniciando transação de BD...");
+
+    const paymentCode = `SP-${Date.now()}-${studentId}`;
+
+    await ExecuteQuery(null, "START TRANSACTION", [], false);
+
+    try {
+
+      // ───────────────────────────────────────────────────────────────────────
+      // INSERIR PAGAMENTO DE SERVIÇO
+      // ───────────────────────────────────────────────────────────────────────
+      const insertPaymentQuery = `
+        INSERT INTO eduall_service_payments (
+          ed_service_payment_code,
+          ed_service_payment_student_code,
+          ed_service_payment_amount,
+          ed_service_payment_discount,
+          ed_service_payment_type,
+          ed_service_payment_bank,
+          ed_service_payment_place,
+          ed_service_payment_reference,
+          ed_service_payment_receipt_number,
+          ed_service_payment_observations,
+          ed_service_payment_value_delivered,
+          ed_service_payment_exchange,
+          ed_service_payment_invoiceCode,
+          ed_service_payment_file_code,
+          ed_service_payment_has_matricula,
+          ed_service_payment_has_confirmacao,
+          ed_service_payment_new_class,
+          ed_service_payment_includes_fees,
+          ed_service_payment_fee_count,
+          ed_service_payment_operator,
+          ed_service_payment_operator_id,
+          ed_service_payment_institute_code,
+          ed_service_payment_registerDate
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW()
+        )
+      `;
+
+      const newClassForPayment = has_matricula ? matricula_class : (has_confirmacao ? confirmacao_class : null);
+
+      const insertPaymentParams = [
+        paymentCode,
+        studentId,
+        processedServices.length,
+        discountPct,
+        selectedPaymentMethod.vendus_id,
+        bankName || null,
+        paymentPlace || null,
+        paymentReference || null,
+        receiptNumber || null,
+        obs,
+        valueDelivered || 0,
+        0,
+        vendus.number,
+        vendus.id,
+        has_matricula ? 1 : 0,
+        has_confirmacao ? 1 : 0,
+        newClassForPayment || null,
+        alsofeepaymenet ? 1 : 0,
+        feemonths?.length || 0,
+        `Operador ${operatorId}`,
+        operatorId || null,
+        sessionInstitute,
+      ];
+
+      await ExecuteQuery(null, insertPaymentQuery, insertPaymentParams, false, {
+        db: "eduall_service_payments",
+        type: "insert",
+        data: req,
+      });
+
+      console.log(`Pagamento registado: ${paymentCode}`);
+
+      // ───────────────────────────────────────────────────────────────────────
+      // INSERIR ITENS DE SERVIÇO
+      // ───────────────────────────────────────────────────────────────────────
+      for (const srv of processedServices) {
+        const itemQuery = `
+          INSERT INTO eduall_service_payment_items (
+            ed_service_payment_code,
+            ed_service_id,
+            ed_service_quantity,
+            ed_service_unit_price,
+            ed_service_discount_percent,
+            ed_service_is_matricula,
+            ed_service_is_confirmation,
+            ed_service_institute_code
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+
+        const itemParams = [
+          paymentCode,
+          srv.code,
+          srv.amount,
+          srv.price,
+          srv.discount,
+          srv.is_matricula,
+          srv.is_confirmation,
+          sessionInstitute,
+        ];
+
+        await ExecuteQuery(null, itemQuery, itemParams, false, {
+          db: "eduall_service_payment_items",
+          type: "insert",
+        });
       }
+
+      console.log(`${processedServices.length} item(ns) de serviço registado(s)`);
+
+      // ═══════════════════════════════════════════════════════════════════════════
+      // ✅ PROCESSAR MATRÍCULA: Atualizar Turma do Aluno
+      // ═══════════════════════════════════════════════════════════════════════════
+      if (has_matricula && matricula_class) {
+        console.log(`\n[MATRÍCULA] Processando matrícula para turma ${matricula_class}...`);
+
+        const currentClass = student.ed_student_class;
+        const newClass = matricula_class;
+
+        console.log(`Turma atual: ${currentClass} | Turma nova: ${newClass}`);
+
+        // ✅ Se as turmas são diferentes: registar a turma antiga no histórico
+        if (currentClass && currentClass !== newClass) {
+          console.log(`Turmas diferentes! Registando turma antiga ${currentClass} no histórico...`);
+
+          await ExecuteQuery(
+            null,
+            `INSERT INTO eduall_student_old_classes(ed_student_old_class_student, ed_student_old_class) 
+             VALUES (?, ?)`,
+            [studentId, currentClass],
+            false
+          );
+
+          console.log(`✅ Turma antiga ${currentClass} registada no histórico`);
+        } else if (currentClass === newClass) {
+          console.log(`✅ Turmas são iguais (${newClass}). Aluno permanece na mesma turma. Nenhum histórico registado.`);
+        } else {
+          console.log(`⚠️ Aluno não tem turma anterior (null). Nenhum histórico a registar.`);
+        }
+
+        // ✅ Atualizar a turma do aluno
+        await ExecuteQuery(
+          null,
+          `UPDATE eduall_students 
+           SET ed_student_class = ?, ed_student_enrolled = 1
+           WHERE ed_student_id = ? AND ed_student_institute_code = ?`,
+          [newClass, studentId, sessionInstitute],
+          false,
+          {
+            db: "eduall_students",
+            type: "update",
+            data: req,
+          }
+        );
+
+        console.log(`✅ Aluno movido para turma ${newClass} | Estado: matriculado (enrolled=1)`);
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════════
+      // ✅ PROCESSAR CONFIRMAÇÃO: Atualizar Turma do Aluno
+      // ═══════════════════════════════════════════════════════════════════════════
+      if (has_confirmacao && confirmacao_class) {
+        console.log(`\n[CONFIRMAÇÃO] Processando confirmação para turma ${confirmacao_class}...`);
+
+        const currentClass = student.ed_student_class;
+        const newClass = confirmacao_class;
+
+        console.log(`Turma atual: ${currentClass} | Turma nova: ${newClass}`);
+
+        // ✅ Validação: A confirmação deve SER para uma turma diferente
+        // (Esta validação já foi feita acima, mas deixamos aqui por segurança)
+        if (currentClass === newClass) {
+          console.error(`❌ Tentativa de confirmação na mesma turma ${newClass}`);
+          throw new Error(`Confirmação não pode ser na mesma turma. Turma atual: ${currentClass}, Turma solicitada: ${newClass}`);
+        }
+
+        // ✅ Registar a turma antiga (que é obrigatório em confirmação)
+        console.log(`Registando turma anterior ${currentClass} no histórico...`);
+
+        await ExecuteQuery(
+          null,
+          `INSERT INTO eduall_student_old_classes(ed_student_old_class_student, ed_student_old_class) 
+           VALUES (?, ?)`,
+          [studentId, currentClass],
+          false
+        );
+
+        console.log(`✅ Turma antiga ${currentClass} registada no histórico`);
+
+        // ✅ Atualizar a turma e o estado do aluno
+        await ExecuteQuery(
+          null,
+          `UPDATE eduall_students 
+           SET ed_student_class = ?, ed_student_enrolled = 2
+           WHERE ed_student_id = ? AND ed_student_institute_code = ?`,
+          [newClass, studentId, sessionInstitute],
+          false,
+          {
+            db: "eduall_students",
+            type: "update",
+            data: req,
+          }
+        );
+
+        console.log(`✅ Aluno movido para turma ${newClass} | Estado: confirmado (enrolled=2)`);
+      }
+
+      // ───────────────────────────────────────────────────────────────────────
+      // PROCESSAR PROPINAS: Registar pagamento de propinas
+      // ───────────────────────────────────────────────────────────────────────
+      if (alsofeepaymenet && feemonths?.length > 0 && fee_service_code) {
+        const [feeSrvForPrice] = await ExecuteQuery(
+          null,
+          `SELECT ed_service_price FROM eduall_services
+           WHERE ed_service_id = ? AND ed_service_institute_code = ? AND COALESCE(ed_service_deleted,0)=0 LIMIT 1`,
+          [fee_service_code, sessionInstitute],
+          true
+        );
+
+        const feeHistoricalPrice = feeSrvForPrice?.ed_service_price || 0;
+
+        for (const month of feemonths) {
+          const feeQuery = `
+            INSERT INTO eduall_fees_payments (
+              ed_fee_payment_student,
+              ed_fee_payment_month,
+              ed_fee_payment_service,
+              ed_fee_payment_price,
+              ed_fee_payment_invoiceCode,
+              ed_fee_payment_institute_code,
+              ed_fee_payment_registerDate
+            ) VALUES (?, ?, ?, ?, ?, ?, NOW())
+          `;
+
+          const feeParams = [
+            studentId,
+            month,
+            fee_service_code,
+            feeHistoricalPrice,
+            paymentCode,
+            sessionInstitute,
+          ];
+
+          await ExecuteQuery(null, feeQuery, feeParams, false);
+        }
+
+        console.log(`${feemonths.length} propina(s) registada(s) com preço histórico: ${formatCurrency(feeHistoricalPrice)}`);
+      }
+
+      await ExecuteQuery(null, "COMMIT", [], false);
+      console.log(`✅ Transação confirmada com sucesso`);
+
+    } catch (txErr) {
+      await ExecuteQuery(null, "ROLLBACK", [], false);
+      console.error(`[TX] Erro:`, txErr.message);
+      throw txErr;
     }
-  } else {
-    // Layout 1: A4 portrait, 1 pauta per page
-    for(let i=0;i<pages.length;i++){
-      if(i>0)pdf.addPage([PW,PH],orient);
-      const {dataset:d,subj:s,school:sc,cls:c,students:st}=pages[i];
-      await drawPauta(sc,c,st,s,d.pass_value??10, 0,0,PW,PH);
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // [9] REGISTAR AUDITORIA
+    // ───────────────────────────────────────────────────────────────────────────
+    console.log("\n[9] Registando auditoria...");
+
+    let auditDesc = `[ID ${operatorId}] Registou pagamento de serviço(s) para ${student.ed_student_code}. `;
+    auditDesc += `Método: ${selectedPaymentMethod.name}. `;
+    auditDesc += `Fatura: ${vendus.number}. `;
+    auditDesc += `Total: ${formatCurrency(totalInvoiceValue)}.`;
+
+    if (customServices.length > 0) {
+      auditDesc += ` [${customServices.length} SERVIÇO(S) CUSTOMIZADO(S)]`;
     }
+
+    if (has_matricula) {
+      auditDesc += ` [MATRÍCULA para turma ${matricula_class}]`;
+    }
+    if (has_confirmacao) {
+      auditDesc += ` [CONFIRMAÇÃO para turma ${confirmacao_class}]`;
+    }
+    if (alsofeepaymenet && feemonths?.length > 0) {
+      const monthsFormatted = formatMonthsList(feemonths);
+      auditDesc += ` [PROPINAS: ${monthsFormatted}]`;
+    }
+
+    await RegisterAuditAction({
+      session: req.session,
+      action: 1,
+      form: "Pagamentos de Serviços",
+      description: auditDesc,
+    });
+
+    console.log(`✅ Auditoria registada`);
+
+    console.log("\n" + "═".repeat(90));
+    console.log("PAGAMENTO REGISTADO COM SUCESSO");
+    console.log("═".repeat(90) + "\n");
+
+    try {
+      console.timeEnd(timerLabel);
+    } catch (e) {
+      // Ignore
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Pagamento registado com sucesso!",
+      payment: {
+        code: paymentCode,
+        studentId: student.ed_student_id,
+        studentCode: student.ed_student_code,
+        studentName: student.ed_student_name,
+        services: processedServices.map(s => ({
+          id: s.code,
+          title: s.name,
+          amount: s.amount,
+          price: s.price,
+          discount: s.discount,
+          total: Number(s.lineTotal.toFixed(2)),
+          isCustom: s.isCustom,
+        })),
+        matricula: has_matricula ? {
+          done: true,
+          newClass: matricula_class,
+          amount: matriculaTotal
+        } : null,
+        confirmacao: has_confirmacao ? {
+          done: true,
+          newClass: confirmacao_class,
+          amount: confirmacaoTotal
+        } : null,
+        subtotal: Number((totalInvoiceValue - feesTotalValue).toFixed(2)),
+        fees: feesTotalValue > 0 ? Number(feesTotalValue.toFixed(2)) : 0,
+        total: Number(totalInvoiceValue.toFixed(2)),
+      },
+      invoiceValue: Number(totalInvoiceValue.toFixed(2)),
+      vendus: {
+        number: vendus.number,
+        id: vendus.id,
+        output: vendus.output,
+        source: vendus.source,
+        ownKey: vendus.ownKey,
+        warning: vendus.warning,
+      },
+      paymentMethod: {
+        id: selectedPaymentMethod.vendus_id,
+        name: selectedPaymentMethod.name,
+      },
+      operator: {
+        id: operatorId,
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+  } catch (error) {
+    console.error(`\n[RegisterServicePayment] ERRO GERAL:`, error.message || error);
+    console.error(`Stack:`, error.stack);
+    console.log("═".repeat(90) + "\n");
+
+    try {
+      console.timeEnd(timerLabel);
+    } catch (e) {
+      // Ignore
+    }
+
+    return res.status(500).json({
+      success: false,
+      msg: "Erro ao processar o pagamento.",
+      error: String(error.message || error),
+    });
   }
-
-  pdf.save(`Pautas_${layout===2?"dupla_":""}${moment().format("YYYY-MM-DD_HH-mm")}.pdf`);
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// UNIFIED LANDSCAPE PDF ENGINE — Modelo Normal + Modelo Exame
-// Both: A4 landscape, all disciplines as columns
-//
-// model="normal"  → sub-cols: MT1 | MT2 | MT3 | MFD  (configurable, removable)
-//                   sigs: Professor | Sub-Dir Pedagógico | Director
-// model="exame"   → sub-cols: MFD | NE | MF | REC     (configurable, removable)
-//                   sigs: Corpo de Júri | Sub-Dir Pedagógico | Director da Escola
-// hiddenCols = Set of col keys to skip (e.g. "MFD","NE","REC")
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Default sub-column definitions per model
-const MODEL_COLS = {
-  normal: [
-    {key:"MT1", label:"MT1", getValue:(g)=>{ const t=g?.terms?.find(t=>t.quarter===1)||{}; return t.mt??null; }},
-    {key:"MT2", label:"MT2", getValue:(g)=>{ const t=g?.terms?.find(t=>t.quarter===2)||{}; return t.mt??null; }},
-    {key:"MT3", label:"MT3", getValue:(g)=>{ const t=g?.terms?.find(t=>t.quarter===3)||{}; return t.mt??null; }},
-    {key:"MFD", label:"MFD", getValue:(g)=>g?.mfd??null},
-  ],
-  exame: [
-    {key:"MFD", label:"MFD", getValue:(g)=>g?.mfd??null},
-    {key:"NE",  label:"NE",  getValue:(g)=>g?.exam_score??null},
-    {key:"MF",  label:"MF",  getValue:(g)=>g?.mf??null},
-    {key:"REC", label:"REC", getValue:()=>null},  // manual fill
-  ],
 };
 
-async function exportLandscapePDF(allDatasets, customLogoUrl, model, hiddenCols, headerLines) {
-  const BK=[0,0,0];
-  const coatSrc=customLogoUrl||ANGOLA_COAT;
-  const coatB64=await imgFetch(coatSrc);
 
-  const PW=297,PH=210,M=7;
-  const pdf=new jsPDF({orientation:"landscape",unit:"mm",format:"a4",compress:true});
 
-  const allModelCols = MODEL_COLS[model]||MODEL_COLS.normal;
-  const activeCols   = allModelCols.filter(c=>!hiddenCols.has(c.key));
-  const nSub = activeCols.length;
 
-  for(let di=0;di<allDatasets.length;di++){
-    if(di>0) pdf.addPage([PW,PH],"landscape");
-    const dataset=allDatasets[di];
-    const {school,class:cls,students}=dataset.data;
-    const passValue=dataset.pass_value??10;
-    const gcR=makeGcR(passValue);
-    const schoolName=school?.name||school?.institute_name||"";
-    const clsTitle=cls?.class_title||cls?.title||"";
-    const clsCode=cls?.class_code||cls?.code||"";
-    const clsPeriod=cls?.class_period||cls?.period||"";
-    const clsRoom=cls?.classroom?.title||cls?.classroom||"";
-    const dirName=cls?.class_director?.name||cls?.director_name||"";
-    const teacherName=cls?.class_director?.name||"";
-    const allSubjects=students[0]?.grades?.map(g=>({id:g.subject_id,title:g.subject_title,is_key:g.is_key}))||[];
 
-    let y=M;
 
-    // Logo
-    if(coatB64){try{pdf.addImage(coatB64,"PNG",PW/2-7,y,14,14);}catch{}}
-    y+=16;
 
-    // Header lines
-    const defLines=[
-      {id:1,text:"REPÚBLICA DE ANGOLA",bold:false,isSchool:false},
-      {id:2,text:"MINISTÉRIO DA EDUCAÇÃO",bold:false,isSchool:false},
-      {id:3,text:"",bold:true,isSchool:true},
-    ];
-    const hLines=(headerLines&&headerLines.length)?headerLines:defLines;
-    for(const line of hLines){
-      const txt=line.isSchool?schoolName.toUpperCase():(line.text||"").toUpperCase();
-      if(!txt)continue;
-      pdf.setFont("helvetica",line.bold?"bold":"normal");
-      pdf.setFontSize(line.bold?7.5:6);
-      pdf.setTextColor(...BK);
-      pdf.text(txt,PW/2,y,{align:"center",maxWidth:PW-M*2});
-      y+=line.bold?4:3;
-    }
 
-    // Title
-    y+=1;
-    const titleText=model==="exame"
-      ?"PAUTA PARA AS CLASSES DE EXAME"
-      :"PAUTA DE CLASSIFICAÇÃO";
-    pdf.setFont("helvetica","bold");pdf.setFontSize(7.5);pdf.setTextColor(...BK);
-    pdf.text(titleText,PW/2,y,{align:"center"});
-    y+=4;
+forma correta d efaezr matricula :
 
-    // Info line
-    pdf.setFont("helvetica","normal");pdf.setFontSize(6);
-    const parts=[
-      clsCode   ?`TURMA: ${clsCode}`   :"",
-      clsTitle  ?`CLASSE: ${clsTitle}` :"",
-      clsPeriod ?`PERÍODO: ${clsPeriod}`:"",
-      clsRoom   ?`SALA: ${clsRoom}`    :"",
-    ].filter(Boolean).join("     ");
-    pdf.text(parts,PW/2,y,{align:"center"});
-    y+=3;
+  try {
+    const students  = req.body.enrollment_students || [req.body.enrollment_student];
+    const service   = req.body.enrollment_service;
+    const newClass  = req.body.enrollment_class;
+    const institute = req.session.user.eduall_user_session_curentinstitute;
+    const docsPayload = Array.isArray(req.body.enrollment_docs) ? req.body.enrollment_docs : [];
 
-    // Double separator
-    pdf.setDrawColor(...BK);pdf.setLineWidth(0.6);pdf.line(M,y,PW-M,y);y+=0.8;
-    pdf.setLineWidth(0.2);pdf.line(M,y,PW-M,y);y+=2;
+    if (!students || students.length === 0)
+      return res.status(400).json({ success: false, msg: "Nenhum estudante selecionado!" });
 
-    // Column widths
-    const nW=6,nameW=30,obsW=8;
-    const remW=(PW-M*2)-nW-nameW-obsW;
-    const dW=remW/allSubjects.length;
-    const sW=dW/nSub;
+    // Buscar estudantes
+    const studentRows = await ExecuteQuery(
+      res,
+      `SELECT ed_student_id, ed_student_code, ed_student_name, ed_student_class
+       FROM eduall_students
+       WHERE ed_student_deleted = 0
+         AND ed_student_institute_code = ?
+         AND ed_student_id IN (${students.map(() => "?").join(",")})`,
+      [institute, ...students],
+      true,
+      { db: "eduall_students", type: "select", data: req }
+    );
 
-    // Head rows
-    const headRow1=[
-      {content:"Nº",rowSpan:3,styles:{valign:"middle",halign:"center",fontSize:5,fontStyle:"bold"}},
-      {content:"NOME COMPLETO",rowSpan:3,styles:{valign:"middle",halign:"center",fontSize:5,fontStyle:"bold"}},
-      {content:"DISCIPLINAS",colSpan:allSubjects.length*nSub,styles:{halign:"center",fontSize:5.5,fontStyle:"bold"}},
-      {content:"OBS",rowSpan:3,styles:{valign:"middle",halign:"center",fontSize:4.5,fontStyle:"bold"}},
-    ];
-    const headRow2=allSubjects.map(s=>({
-      content:s.title.length>10?s.title.slice(0,10)+"…":s.title,
-      colSpan:nSub,
-      styles:{halign:"center",fontSize:4,fontStyle:"bold"},
-    }));
-    const headRow3=[];
-    allSubjects.forEach(()=>{
-      activeCols.forEach(c=>{
-        headRow3.push({content:c.label,styles:{halign:"center",fontSize:3.8,fontStyle:"bold"}});
+    if (!studentRows || studentRows.length === 0)
+      return res.status(404).json({ success: false, msg: "Nenhum estudante encontrado!" });
+
+    // Verificar já matriculados
+    const existing = await ExecuteQuery(
+      res,
+      `SELECT ed_enrollment_student FROM eduall_enrollment
+       WHERE ed_enrollment_deleted = 0
+         AND ed_enrollment_institute_code = ?
+         AND ed_enrollment_student IN (${students.map(() => "?").join(",")})`,
+      [institute, ...students],
+      true,
+      { db: "eduall_enrollment", type: "select", data: req }
+    );
+
+    const alreadyEnrolledIds = new Set(existing.map(e => e.ed_enrollment_student));
+    const toEnroll      = studentRows.filter(s => !alreadyEnrolledIds.has(s.ed_student_id));
+    const alreadyEnrolled = studentRows.filter(s =>  alreadyEnrolledIds.has(s.ed_student_id));
+
+    if (toEnroll.length === 0)
+      return res.status(200).json({
+        success: false,
+        msg: `Os ${alreadyEnrolled.length} estudante(s) selecionados já estão matriculados!`,
       });
-    });
 
-    // Body
-    const bodyRows=students.map((st,idx)=>{
-      const row=[idx+1,st.student_name||""];
-      allSubjects.forEach(subj=>{
-        const g=st.grades?.find(gg=>gg.subject_id===subj.id);
-        activeCols.forEach(c=>{
-          const v=c.getValue(g);
-          row.push(v!=null?(c.key==="NE"?fmt(v):fmtInt(v)):"");
-        });
-      });
-      row.push("");
-      return row;
-    });
-    const minR=model==="exame"?42:35;
-    while(bodyRows.length<minR) bodyRows.push(Array(2+allSubjects.length*nSub+1).fill(""));
+    // Ano lectivo da nova turma
+    const newClassYear = await ExecuteQuery(
+      res,
+      `SELECT ed_class_year FROM eduall_class WHERE ed_class_id = ?`,
+      [newClass]
+    );
 
-    // Col styles
-    const colStyles={
-      0:{halign:"center",cellWidth:nW},
-      1:{halign:"left",cellWidth:nameW,fontSize:4.5},
-    };
-    let ci=2;
-    allSubjects.forEach(()=>{ activeCols.forEach(()=>{colStyles[ci]={halign:"center",cellWidth:sW,fontSize:4.5};ci++;}); });
-    colStyles[ci]={halign:"center",cellWidth:obsW};
+    // Inserir matrículas
+    const valuesPlaceholders = toEnroll.map(() => "(?, ?, ?)").join(",");
+    const insertParams = [];
+    toEnroll.forEach(s => insertParams.push(s.ed_student_id, service, institute));
 
-    autoTable(pdf,{
-      startY:y,margin:{left:M,right:M},
-      tableWidth:PW-M*2,
-      head:[headRow1,headRow2,headRow3],
-      body:bodyRows,
-      theme:"grid",
-      styles:{fontSize:4.5,cellPadding:0.5,lineColor:BK,lineWidth:0.15,textColor:BK,font:"helvetica",overflow:"ellipsize"},
-      headStyles:{fillColor:[255,255,255],textColor:BK,fontStyle:"bold",halign:"center",lineWidth:0.2,lineColor:BK},
-      columnStyles:colStyles,
-      didParseCell(d){
-        if(d.section!=="body")return;
-        const ri=d.row.index; if(ri>=students.length)return;
-        const ci2=d.column.index;
-        if(ci2<2||ci2>=2+allSubjects.length*nSub)return;
-        const dIdx=Math.floor((ci2-2)/nSub);
-        const sIdx=(ci2-2)%nSub;
-        const g=students[ri]?.grades?.find(gg=>gg.subject_id===allSubjects[dIdx]?.id);
-        const v=activeCols[sIdx]?.getValue(g);
-        if(v!=null){d.cell.styles.textColor=gcR(v);d.cell.styles.fontStyle="bold";}
-      },
-    });
+    await ExecuteQuery(
+      res,
+      `INSERT INTO eduall_enrollment(ed_enrollment_student, ed_enrollment_service, ed_enrollment_institute_code)
+       VALUES ${valuesPlaceholders}`,
+      insertParams,
+      false,
+      { db: "eduall_enrollment", type: "insert", data: req }
+    );
 
-    let ty=pdf.lastAutoTable.finalY+3;
+    // Buscar IDs das matrículas recém-criadas para associar documentos
+    const insertedEnrollments = await ExecuteQuery(
+      res,
+      `SELECT ed_enrollment_id, ed_enrollment_student FROM eduall_enrollment
+       WHERE ed_enrollment_deleted = 0
+         AND ed_enrollment_institute_code = ?
+         AND ed_enrollment_student IN (${toEnroll.map(() => "?").join(",")})
+       ORDER BY ed_enrollment_id DESC`,
+      [institute, ...toEnroll.map(s => s.ed_student_id)],
+      true,
+      { db: "eduall_enrollment", type: "select", data: req }
+    );
 
-    // Signatures
-    if(model==="exame"){
-      // Corpo de Júri | Sub-Director | Director da Escola
-      pdf.setFont("helvetica","bold");pdf.setFontSize(6);pdf.setTextColor(...BK);
-      pdf.text("Corpo de Júri",M,ty);
-      pdf.setFont("helvetica","normal");pdf.setFontSize(5.5);
-      [1,2,3].forEach((n,i)=>{
-        pdf.text(`${n}.`,M,ty+4+i*5);
-        pdf.setDrawColor(...BK);pdf.setLineWidth(0.25);
-        pdf.line(M+4,ty+4.5+i*5,M+40,ty+4.5+i*5);
-      });
-      const mid=PW/2;
-      pdf.setFont("helvetica","bold");pdf.setFontSize(6);pdf.setTextColor(...BK);
-      pdf.text("O Sub-Director Pedagógico",mid,ty,{align:"center"});
-      pdf.setDrawColor(...BK);pdf.setLineWidth(0.3);
-      pdf.line(mid-35,ty+8,mid+35,ty+8);
-      if(dirName){pdf.setFont("helvetica","normal");pdf.setFontSize(5.5);pdf.setTextColor(60,60,60);pdf.text(dirName,mid,ty+12,{align:"center"});}
-      pdf.setFont("helvetica","bold");pdf.setFontSize(6);pdf.setTextColor(...BK);
-      pdf.text("O Director da Escola",PW-M,ty,{align:"right"});
-      pdf.setDrawColor(...BK);pdf.setLineWidth(0.3);
-      pdf.line(PW-M-70,ty+8,PW-M,ty+8);
-    } else {
-      // Professor | Sub-Director Pedagógico | Director
-      const col1=PW*0.2, col2=PW/2, col3=PW*0.8;
-      pdf.setFont("helvetica","bold");pdf.setFontSize(6);pdf.setTextColor(...BK);
-      pdf.text("O (A) Professor (A)",col1,ty,{align:"center"});
-      pdf.setDrawColor(...BK);pdf.setLineWidth(0.3);
-      pdf.line(col1-30,ty+8,col1+30,ty+8);
-      pdf.text("O (A) Subdirector(A) Pedagógico",col2,ty,{align:"center"});
-      pdf.line(col2-40,ty+8,col2+40,ty+8);
-      pdf.setFont("helvetica","normal");pdf.setFontSize(5.5);pdf.setTextColor(80,80,80);
-      pdf.text("    /    /",col2,ty+12,{align:"center"});
-      pdf.setFont("helvetica","bold");pdf.setFontSize(6);pdf.setTextColor(...BK);
-      pdf.text("O (A) Director (A)",col3,ty,{align:"right"});
-      pdf.line(col3-30,ty+8,col3,ty+8);
-      pdf.setFont("helvetica","normal");pdf.setFontSize(5.5);pdf.setTextColor(80,80,80);
-      pdf.text("    /    /",col3-15,ty+12);
-    }
+    // Processar turmas dos estudantes
+    for (const student of toEnroll) {
+      const oldClass = student.ed_student_class;
 
-    // Footer
-    pdf.setFont("helvetica","italic");pdf.setFontSize(4.5);pdf.setTextColor(160,160,160);
-    pdf.text(eduallFooterDate(),PW/2,PH-2.5,{align:"center"});
-  }
+      if (oldClass && oldClass != newClass) {
+        const oldClassYear = await ExecuteQuery(
+          res,
+          `SELECT ed_class_year FROM eduall_class WHERE ed_class_id = ?`,
+          [oldClass]
+        );
+        if (
+          oldClassYear.length &&
+          newClassYear.length &&
+          oldClassYear[0].ed_class_year !== newClassYear[0].ed_class_year
+        ) {
+          await ExecuteQuery(
+            res,
+            `INSERT INTO eduall_student_old_classes(ed_student_old_class_student, ed_student_old_class) VALUES (?, ?)`,
+            [student.ed_student_id, oldClass]
+          );
+        }
+      }
 
-  pdf.save(`Pauta_${model==="exame"?"Exame":"Normal"}_${moment().format("YYYY-MM-DD_HH-mm")}.pdf`);
-}
+      await ExecuteQuery(
+        res,
+        `UPDATE eduall_students SET ed_student_class = ? WHERE ed_student_id = ?`,
+        [newClass, student.ed_student_id]
+      );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// UNIFIED LANDSCAPE PREVIEW — Modelo Normal + Modelo Exame
-// ─────────────────────────────────────────────────────────────────────────────
-function LandscapePreview({ classData, customLogoUrl, headerLines, model, hiddenCols }) {
-  const {school,class:cls,students}=classData.data;
-  const passValue=classData.pass_value??10;
-  const schoolName=school?.name||school?.institute_name||"";
-  const clsTitle=cls?.class_title||cls?.title||"";
-  const clsCode=cls?.class_code||cls?.code||"";
-  const clsPeriod=cls?.class_period||cls?.period||"";
-  const clsRoom=cls?.classroom?.title||cls?.classroom||"";
-  const dirName=cls?.class_director?.name||cls?.director_name||"";
-  const logoSrc=customLogoUrl||ANGOLA_COAT;
-  const allSubjects=students[0]?.grades?.map(g=>({id:g.subject_id,title:g.subject_title,is_key:g.is_key}))||[];
-
-  const allModelCols=MODEL_COLS[model]||MODEL_COLS.normal;
-  const activeCols=allModelCols.filter(c=>!hiddenCols.has(c.key));
-
-  const B="1px solid #000";
-  const TH=(e={})=>({border:B,fontFamily:F_POP,fontSize:"3.8pt",fontWeight:700,textAlign:"center",padding:"1.5px 1px",background:"#fff",textTransform:"uppercase",...e});
-  const TD=(e={})=>({border:B,fontFamily:F_POP,fontSize:"4.5pt",padding:"1.5px 1px",textAlign:"center",...e});
-
-  const defLines=[
-    {id:1,text:"REPÚBLICA DE ANGOLA",bold:false,isSchool:false},
-    {id:2,text:"MINISTÉRIO DA EDUCAÇÃO",bold:false,isSchool:false},
-    {id:3,text:"",bold:true,isSchool:true},
-  ];
-  const hLines=(headerLines&&headerLines.length)?headerLines:defLines;
-  const titleText=model==="exame"?"PAUTA PARA AS CLASSES DE EXAME":"PAUTA DE CLASSIFICAÇÃO";
-
-  return (
-    <div style={{background:"#fff",border:"1.5px solid #d0d0d0",borderRadius:4,padding:"8px 10px",fontFamily:F_POP,boxShadow:"0 4px 16px rgba(0,0,0,.12)",overflowX:"auto"}}>
-      {/* HEADER */}
-      <div style={{textAlign:"center",marginBottom:4}}>
-        <img key={logoSrc} src={logoSrc} alt="" style={{width:26,height:26,objectFit:"contain",display:"block",margin:"0 auto 2px"}} onError={e=>e.target.style.display="none"}/>
-        {hLines.map(line=>{
-          const txt=line.isSchool?schoolName.toUpperCase():(line.text||"").toUpperCase();
-          if(!txt)return null;
-          return line.bold
-            ?<div key={line.id} style={{fontFamily:F_POP,fontSize:"6.5pt",fontWeight:800,letterSpacing:"0.3px"}}>{txt}</div>
-            :<div key={line.id} style={{fontFamily:F_POP,fontSize:"5pt",color:"#444"}}>{txt}</div>;
-        })}
-        <div style={{fontFamily:F_POP,fontSize:"6.5pt",fontWeight:800,marginTop:2}}>{titleText}</div>
-        <div style={{fontFamily:F_SANS,fontSize:"5pt",color:"#555",marginTop:1}}>
-          {[clsCode&&`Turma: ${clsCode}`,clsTitle&&`Classe: ${clsTitle}`,clsPeriod&&`Período: ${clsPeriod}`,clsRoom&&`Sala: ${clsRoom}`].filter(Boolean).join("   ")}
-        </div>
-        <div style={{borderBottom:"2px solid #000",marginTop:3}}/>
-        <div style={{borderBottom:"0.5px solid #000",marginTop:"1px",marginBottom:3}}/>
-      </div>
-
-      {/* TABLE */}
-      <div style={{overflowX:"auto"}}>
-        <table style={{borderCollapse:"collapse",width:"100%",tableLayout:"auto"}}>
-          <thead>
-            <tr>
-              <th rowSpan={3} style={TH({verticalAlign:"middle",minWidth:18,fontSize:"4.5pt"})}>Nº</th>
-              <th rowSpan={3} style={TH({textAlign:"left",paddingLeft:3,verticalAlign:"middle",minWidth:90,fontSize:"4.5pt"})}>NOME COMPLETO</th>
-              <th colSpan={allSubjects.length*activeCols.length} style={TH({background:"#f8fafc",fontSize:"5pt"})}>DISCIPLINAS</th>
-              <th rowSpan={3} style={TH({verticalAlign:"middle",minWidth:16})}>OBS</th>
-            </tr>
-            <tr>
-              {allSubjects.map(s=>(
-                <th key={s.id} colSpan={activeCols.length} style={TH({background:"#f8fafc",fontSize:"3.5pt",maxWidth:40})}>
-                  {s.title.length>10?s.title.slice(0,10)+"…":s.title}
-                </th>
-              ))}
-            </tr>
-            <tr>
-              {allSubjects.map(s=>activeCols.map(c=>(
-                <th key={`${s.id}-${c.key}`} style={TH({fontSize:"3.5pt",minWidth:10})}>{c.label}</th>
-              )))}
-            </tr>
-          </thead>
-          <tbody>
-            {students.map((st,idx)=>(
-              <tr key={st.student_id} style={{background:idx%2===0?"#fff":"#f9f9f9"}}>
-                <td style={TD({color:"#888",fontSize:"4pt"})}>{idx+1}</td>
-                <td style={TD({textAlign:"left",paddingLeft:3,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:90,fontSize:"4pt"})} title={st.student_name}>{st.student_name}</td>
-                {allSubjects.map(subj=>{
-                  const g=st.grades?.find(gg=>gg.subject_id===subj.id);
-                  return activeCols.map(c=>{
-                    const v=c.getValue(g);
-                    return(
-                      <td key={`${subj.id}-${c.key}`} style={TD({color:gcColor(v,passValue),fontWeight:v!=null?700:400,fontSize:"4pt"})}>
-                        {v!=null?(c.key==="NE"?fmt(v):fmtInt(v)):""}
-                      </td>
-                    );
-                  });
-                })}
-                <td style={TD()}></td>
-              </tr>
-            ))}
-            {Array(Math.max(0,3-students.length)).fill(null).map((_,i)=>(
-              <tr key={`b${i}`} style={{height:11}}>
-                {Array(2+allSubjects.length*activeCols.length+1).fill(null).map((__,j)=><td key={j} style={TD()}></td>)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* SIGNATURES */}
-      {model==="exame"?(
-        <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontFamily:F_SANS}}>
-          <div style={{fontSize:"5pt"}}>
-            <div style={{fontWeight:700,marginBottom:3,fontSize:"5.5pt"}}>Corpo de Júri</div>
-            {[1,2,3].map(n=>(
-              <div key={n} style={{display:"flex",alignItems:"center",gap:4,marginBottom:4}}>
-                <span style={{fontWeight:600}}>{n}.</span>
-                <span style={{borderBottom:"1px solid #000",display:"inline-block",width:80}}></span>
-              </div>
-            ))}
-          </div>
-          <div style={{textAlign:"center",fontSize:"5.5pt"}}>
-            <div style={{fontWeight:700}}>O Sub-Director Pedagógico</div>
-            <div style={{borderBottom:"1px solid #000",width:110,margin:"8px auto 2px"}}/>
-            {dirName&&<div style={{color:"#555",fontSize:"5pt"}}>{dirName}</div>}
-          </div>
-          <div style={{textAlign:"right",fontSize:"5.5pt"}}>
-            <div style={{fontWeight:700}}>O Director da Escola</div>
-            <div style={{borderBottom:"1px solid #000",width:110,margin:"8px 0 2px auto"}}/>
-          </div>
-        </div>
-      ):(
-        <div style={{display:"flex",justifyContent:"space-around",marginTop:6,fontFamily:F_SANS}}>
-          {[
-            {label:"O (A) Professor (A)"},
-            {label:"O (A) Subdirector(A) Pedagógico",sub:"___/___/___"},
-            {label:"O (A) Director (A)",sub:"___/___/___"},
-          ].map((s,i)=>(
-            <div key={i} style={{textAlign:"center",fontSize:"5.5pt",flex:1}}>
-              <div style={{fontWeight:700}}>{s.label}</div>
-              <div style={{borderBottom:"1px solid #000",width:100,margin:"8px auto 2px"}}/>
-              {s.sub&&<div style={{fontSize:"5pt",color:"#555"}}>{s.sub}</div>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PautaPreview({ classData, subjId, passValue, customLogoUrl, headers={}, headerLines=[] }) {
-  const {school,class:cls,students} = classData.data;
-  const grade      = students[0]?.grades?.find(g=>g.subject_id===subjId);
-  const subjTitle  = grade?.subject_title||"";
-  const isKey      = grade?.is_key||false;
-  const teacher    = cls?.subjects?.find(s=>s.subject_id===subjId)?.teacher_name||"";
-  const schoolName = school?.name||school?.institute_name||"";
-  const clsTitle   = cls?.class_title||cls?.title||"";
-  const clsCode    = cls?.class_code||cls?.code||"";
-  const clsPeriod  = cls?.class_period||cls?.period||"";
-  const clsRoom    = cls?.classroom?.title||cls?.classroom||"";
-  const dirName    = cls?.class_director?.name||cls?.director_name||"";
-  const logoSrc    = customLogoUrl||ANGOLA_COAT;
-
-  const B  = "1px solid #000";
-  const BL = "1px solid #ccc";
-  const TH = (e={}) => ({border:B,fontFamily:F_POP,fontSize:"5.5pt",fontWeight:700,textAlign:"center",padding:"2px 1px",background:"#fff",textTransform:"uppercase",...e});
-  const TD = (e={}) => ({border:B,fontFamily:F_POP,fontSize:"6pt",padding:"2px 2px",textAlign:"center",...e});
-
-  const H = {
-    trim1:headers.trim1||"Iº TRIMESTRE", trim2:headers.trim2||"IIº TRIMESTRE", trim3:headers.trim3||"IIIº TRIMESTRE",
-    classGeral:headers.classGeral||"CLASSIFICAÇÃO GERAL", obs:headers.obs||"Observação",
-    mac:headers.mac||"MAC", npt:headers.npt||"NPT", mt1:headers.mt1||"MT1", mt2:headers.mt2||"MT2", mt3:headers.mt3||"MT3",
-    gMac:headers.gMac||"MAC", mfd:headers.mfd||"MFD", ne:headers.ne||"NE", mec:headers.mec||"MEC", mfa:headers.mfa||"MFA",
-  };
-
-  return (
-    <div style={{background:"#fff",border:"1.5px solid #d0d0d0",borderRadius:4,padding:"10px 12px",fontFamily:F_POP,boxShadow:"0 4px 16px rgba(0,0,0,.12)",maxWidth:760,margin:"0 auto"}}>
-
-      {/* HEADER */}
-      <div style={{textAlign:"center",marginBottom:5}}>
-        <img key={logoSrc} src={logoSrc} alt="" style={{width:36,height:36,objectFit:"contain",display:"block",margin:"0 auto 3px"}} onError={e=>e.target.style.display="none"}/>
-        {(headerLines.length?headerLines:[
-          {id:1,text:"REPÚBLICA DE ANGOLA",bold:false,isSchool:false},
-          {id:2,text:"MINISTÉRIO DA EDUCAÇÃO",bold:false,isSchool:false},
-          {id:3,text:"",bold:true,isSchool:true},
-        ]).map(line=>{
-          const txt=line.isSchool?schoolName.toUpperCase():(line.text||"").toUpperCase();
-          if(!txt) return null;
-          return line.bold
-            ?<div key={line.id} style={{fontFamily:F_POP,fontSize:"9pt",fontWeight:800,letterSpacing:"0.5px"}}>{txt}</div>
-            :<div key={line.id} style={{fontFamily:F_POP,fontSize:"6.5pt",color:"#444"}}>{txt}</div>;
-        })}
-        <div style={{borderBottom:"2px solid #000",marginTop:5}}/>
-      </div>
-
-      {/* INFO LINE */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
-        <div style={{fontFamily:F_POP,fontSize:"7pt",fontWeight:700}}>
-          DISCIPLINA: <span style={{color:"#1a3a6b"}}>{subjTitle.toUpperCase()}</span>
-          {isKey&&<span style={{marginLeft:4,fontSize:"6pt",background:"#f59e0b",color:"#fff",padding:"0 4px",borderRadius:99,fontWeight:700}}>★ CHAVE</span>}
-        </div>
-        <div style={{display:"flex",gap:10,fontFamily:F_POP,fontSize:"6.5pt",color:"#333"}}>
-          {clsTitle&&<span><b>classe:</b> {clsTitle}</span>}
-          {clsCode&&<span><b>Turma:</b> <span style={{color:"#cc0000",fontWeight:700}}>{clsCode}</span></span>}
-          {clsPeriod&&<span><b>período:</b> {clsPeriod}</span>}
-          {clsRoom&&<span><b>sala:</b> {clsRoom}</span>}
-        </div>
-      </div>
-      {teacher
-        ?<div style={{fontFamily:F_POP,fontSize:"6pt",fontStyle:"italic",color:"#555",marginBottom:4}}>Professor(a): {teacher}</div>
-        :<div style={{fontFamily:F_POP,fontSize:"6pt",color:"#555",marginBottom:4,display:"flex",alignItems:"center",gap:4}}>
-          <span style={{fontWeight:700}}>Professor(a):</span>
-          <span style={{borderBottom:"1px solid #555",display:"inline-block",width:160}}></span>
-         </div>}
-      <div style={{borderTop:"1px solid #bbb",marginBottom:5}}/>
-
-      {/* GRADES TABLE */}
-      <div style={{overflowX:"auto",marginBottom:10}}>
-        <table style={{borderCollapse:"collapse",width:"100%",tableLayout:"fixed",fontSize:"6pt"}}>
-          <colgroup>
-            <col style={{width:"3%"}}/><col style={{width:"18%"}}/>
-            {Array(9).fill(null).map((_,i)=><col key={i} style={{width:"4.2%"}}/>)}
-            {Array(5).fill(null).map((_,i)=><col key={i+9} style={{width:"4.5%"}}/>)}
-            <col style={{width:"4%"}}/><col style={{width:"7%"}}/>
-          </colgroup>
-          <thead>
-            <tr>
-              <th rowSpan={2} style={TH({verticalAlign:"middle"})}>Nº</th>
-              <th rowSpan={2} style={TH({textAlign:"left",paddingLeft:3,verticalAlign:"middle"})}>NOME COMPLETO</th>
-              <th colSpan={3} style={TH()}>{H.trim1}</th>
-              <th colSpan={3} style={TH()}>{H.trim2}</th>
-              <th colSpan={3} style={TH()}>{H.trim3}</th>
-              <th colSpan={5} style={TH()}>{H.classGeral}</th>
-              <th rowSpan={2} style={TH({verticalAlign:"middle",fontSize:"4.5pt"})}>{H.obs}</th>
-            </tr>
-            <tr>
-              {[H.mac,H.npt,H.mt1,H.mac,H.npt,H.mt2,H.mac,H.npt,H.mt3,H.gMac,H.mfd,H.ne,H.mec,H.mfa].map((h,i)=>(
-                <th key={i} style={TH({fontSize:"4.5pt",padding:"2px 1px"})}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {students.map((st,idx)=>{
-              const g=st.grades?.find(gg=>gg.subject_id===subjId);
-              const t1=g?.terms?.find(t=>t.quarter===1)||{},t2=g?.terms?.find(t=>t.quarter===2)||{},t3=g?.terms?.find(t=>t.quarter===3)||{};
-              const macVals=[t1.mac,t2.mac,t3.mac].filter(v=>v!==null&&v!==undefined);
-              const macGeral=macVals.length?Math.round(macVals.reduce((a,b)=>a+b,0)/macVals.length):null;
-              const vals=[
-                t1.mac,t1.npt,t1.mt,
-                t2.mac,t2.npt,t2.mt,
-                t3.mac,t3.npt,t3.mt,
-                macGeral,g?.mfd,g?.exam_score,g?.resource_score,g?.mf,
-              ];
-              return(
-                <tr key={st.student_id} style={{background:idx%2===0?"#fff":"#f9f9f9"}}>
-                  <td style={TD({color:"#888"})}>{idx+1}</td>
-                  <td style={TD({textAlign:"left",paddingLeft:3,fontWeight:500,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"})} title={st.student_name}>{st.student_name}</td>
-                  {vals.map((v,vi)=>(
-                    <td key={vi} style={TD({fontWeight:(v!==null&&v!==undefined)?700:400,color:gcColor(v,passValue)})}>
-                      {vi===2||vi===5||vi===8||vi===9||vi===10||vi===13?fmtInt(v):fmt(v)}
-                    </td>
-                  ))}
-                  <td style={TD()}></td>
-                </tr>
-              );
-            })}
-            {Array(Math.max(0,5-students.length)).fill(null).map((_,i)=>(
-              <tr key={`b${i}`} style={{height:13}}>{Array(16).fill(null).map((__,j)=><td key={j} style={TD()}></td>)}</tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* SIGNATURES */}
-      <div style={{display:"flex",justifyContent:"space-between",marginBottom:10,fontFamily:F_POP,fontSize:"6.5pt"}}>
-        <div style={{textAlign:"center"}}>
-          <div style={{borderBottom:"1px solid #000",width:110,marginBottom:2}}/>
-          <div style={{fontWeight:700}}>O Director de Turma</div>
-          {dirName&&<div style={{color:"#555",fontSize:"6pt"}}>{dirName}</div>}
-        </div>
-        <div style={{textAlign:"center"}}>
-          <div style={{borderBottom:"1px solid #000",width:110,marginBottom:2}}/>
-          <div style={{fontWeight:700}}>O Director Pedagógico</div>
-        </div>
-      </div>
-
-      {/* SEPARATOR dashed */}
-      <div style={{borderTop:"1px dashed #999",marginBottom:8}}/>
-
-      {/* MAPA ESTATÍSTICO */}
-      <div style={{fontFamily:F_POP,fontSize:"9pt",fontWeight:800,textAlign:"center",marginBottom:6}}>MAPA ESTATÍSTICO</div>
-      {[0,1,2].map(qi=>(
-        <div key={qi} style={{marginBottom:8}}>
-          <div style={{fontFamily:F_POP,fontSize:"7.5pt",fontWeight:700,textAlign:"center",marginBottom:3,marginTop:qi>0?7:0}}>
-            {["Iº TRIMESTRE","IIº TRIMESTRE","IIIº TRIMESTRE"][qi]}
-          </div>
-          <table style={{borderCollapse:"collapse",width:"100%"}}>
-            <thead>
-              <tr>
-                <th rowSpan={2} style={TH({verticalAlign:"middle",fontSize:"5.5pt",width:"18%"})}>ALUNOS<br/>MATRICULADOS</th>
-                <th colSpan={2} style={TH({fontSize:"5.5pt",width:"16%"})}>ALUNOS<br/>AVALIADOS</th>
-                <th colSpan={2} style={TH({fontSize:"5.5pt",width:"16%"})}>Nº DE<br/>POSITIVOS</th>
-                <th rowSpan={2} style={TH({verticalAlign:"middle",fontSize:"5.5pt",width:"8%"})}>%</th>
-                <th rowSpan={2} style={TH({verticalAlign:"middle",fontSize:"5.5pt",width:"8%"})}>%</th>
-                <th colSpan={2} style={TH({fontSize:"5.5pt",width:"16%"})}>DESISTENTES</th>
-              </tr>
-              <tr>
-                {["MF","F","M","F","MF","F"].map((h,i)=><th key={i} style={TH({fontSize:"5pt"})}>{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              <tr style={{height:16}}>
-                {Array(9).fill(null).map((_,i)=><td key={i} style={TD()}></td>)}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CSS
-// ─────────────────────────────────────────────────────────────────────────────
-const UI_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700;800&display=swap');
-  .cgr-root*,.cgr-root*::before,.cgr-root*::after{box-sizing:border-box;}
-  .cgr-root{font-family:'DM Sans',sans-serif;}
-  .cgr-topbar{display:flex;align-items:center;gap:14px;margin-bottom:22px;}
-  .cgr-topbar-icon{width:44px;height:44px;border-radius:12px;background:var(--ed-purple,${PURPLE_HEX});display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 14px rgba(96,81,255,.3);}
-  .cgr-topbar-title{font-size:18px;font-weight:700;color:#0f172a;}
-  .cgr-topbar-sub{font-size:12.5px;color:#64748b;margin-top:1px;}
-  .cgr-panel{background:#fff;border:1px solid #e2e8f0;border-radius:16px;margin-bottom:16px;overflow:hidden;}
-  .cgr-phdr{padding:13px 20px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:9px;}
-  .cgr-phdr-icon{width:28px;height:28px;border-radius:8px;background:#f8fafc;border:1px solid #e2e8f0;display:flex;align-items:center;justify-content:center;color:#475569;flex-shrink:0;}
-  .cgr-pttl{font-size:11.5px;font-weight:700;color:#334155;text-transform:uppercase;letter-spacing:.5px;}
-  .cgr-pbody{padding:16px 20px;}
-  .cgr-row{display:flex;gap:12px;flex-wrap:wrap;}
-  .cgr-col{flex:1;min-width:140px;}
-  .cgr-lbl{font-size:11px;font-weight:600;color:#64748b;margin-bottom:6px;display:flex;align-items:center;gap:4px;}
-  .cgr-sel{width:100%;padding:9px 12px;border-radius:10px;border:1.5px solid #e2e8f0;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;color:#0f172a;outline:none;transition:border-color .15s,box-shadow .15s;cursor:pointer;}
-  .cgr-sel:focus{border-color:var(--ed-purple,${PURPLE_HEX});box-shadow:0 0 0 3px rgba(96,81,255,.13);}
-  .cgr-divider{height:1px;background:#f1f5f9;margin:0;}
-  .cgr-subj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:7px;}
-  .cgr-subj-chip{display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:10px;border:1.5px solid #e2e8f0;background:#f8fafc;cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif;color:#475569;transition:all .15s;user-select:none;text-align:left;}
-  .cgr-subj-chip:hover{border-color:#cbd5e1;background:#f1f5f9;}
-  .cgr-subj-chip.sel{background:rgba(96,81,255,.07);border-color:var(--ed-purple,${PURPLE_HEX});color:var(--ed-purple,${PURPLE_HEX});font-weight:600;}
-  .cgr-key-badge{font-size:8.5px;background:#f59e0b;color:#fff;padding:1px 4px;border-radius:999px;font-weight:700;flex-shrink:0;}
-  .cgr-action-bar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:14px 20px;border-top:1px solid #f1f5f9;background:#fff;}
-  .cgr-stats{display:flex;gap:8px;flex-wrap:wrap;}
-  .cgr-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 16px;border-radius:999px;font-size:12px;font-weight:600;}
-  .cgr-chip.cp{background:rgba(96,81,255,.1);color:#6051ff;border:1.5px solid rgba(96,81,255,.2);}
-  .cgr-chip.cg{background:rgba(34,160,107,.1);color:${GREEN_HEX};border:1.5px solid rgba(34,160,107,.2);}
-  .cgr-chip.cs{background:#f8fafc;color:#475569;border:1px solid #e2e8f0;}
-  .cgr-pdf-btn{padding:9px 22px;font-size:13px;font-weight:600;border-radius:10px;border:none;background:var(--ed-purple,${PURPLE_HEX});color:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:filter .15s,transform .1s;font-family:'DM Sans',sans-serif;box-shadow:0 2px 12px rgba(96,81,255,.35);}
-  .cgr-pdf-btn:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px);}
-  .cgr-pdf-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;}
-  .cgr-add-btn{padding:8px 16px;font-size:12.5px;font-weight:600;border-radius:10px;border:1.5px solid var(--ed-purple,${PURPLE_HEX});background:transparent;color:var(--ed-purple,${PURPLE_HEX});cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-family:'DM Sans',sans-serif;transition:all .15s;}
-  .cgr-add-btn:hover{background:rgba(96,81,255,.06);}
-  .cgr-class-card{background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;overflow:hidden;margin-bottom:12px;}
-  .cgr-class-card-hdr{padding:10px 16px;background:#f8fafc;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;}
-  .cgr-class-card-body{padding:14px 16px;}
-  .cgr-rm-btn{background:none;border:none;cursor:pointer;color:#94a3b8;padding:3px;border-radius:6px;display:flex;align-items:center;transition:color .15s;}
-  .cgr-rm-btn:hover{color:#cc0000;}
-  .cgr-file-btn{width:100%;padding:8px 12px;border-radius:10px;border:1.5px dashed #cbd5e1;background:#f8fafc;font-size:12.5px;color:#64748b;cursor:pointer;display:flex;align-items:center;gap:8px;transition:all .15s;font-family:'DM Sans',sans-serif;}
-  .cgr-file-btn:hover{border-color:var(--ed-purple,${PURPLE_HEX});color:var(--ed-purple,${PURPLE_HEX});}
-  .cgr-file-input{position:absolute;inset:0;opacity:0;cursor:pointer;}
-  .cgr-logo-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;margin-top:5px;background:rgba(96,81,255,.07);border:1px solid rgba(96,81,255,.22);font-size:11px;color:var(--ed-purple,${PURPLE_HEX});}
-  .cgr-logo-x{cursor:pointer;opacity:.6;background:none;border:none;color:inherit;padding:0;font-size:13px;line-height:1;}
-  .cgr-logo-x:hover{opacity:1;}
-  .cgr-prev-area{background:var(--ed-background-color,#f5f5f5);border-radius:14px;padding:20px;border:1px solid #ebebeb;overflow:auto;}
-  .cgr-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:52px 20px;gap:10px;text-align:center;}
-  .cgr-empty-icon{width:56px;height:56px;border-radius:16px;background:rgba(96,81,255,.07);border:1.5px solid rgba(96,81,255,.18);display:flex;align-items:center;justify-content:center;color:var(--ed-purple,${PURPLE_HEX});margin-bottom:4px;}
-  .cgr-empty-title{font-size:14px;font-weight:600;color:#334155;}
-  .cgr-empty-sub{font-size:12.5px;color:#94a3b8;}
-  .cgr-loading{display:flex;align-items:center;gap:10px;padding:22px;color:#64748b;font-size:13px;}
-  .cgr-tab-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
-  .cgr-tab{padding:5px 14px;font-size:11.5px;font-weight:500;border-radius:999px;border:1.5px solid #e2e8f0;background:#f8fafc;color:#475569;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;}
-  .cgr-tab:hover{border-color:#cbd5e1;background:#f1f5f9;}
-  .cgr-tab.active{background:var(--ed-purple,${PURPLE_HEX});border-color:var(--ed-purple,${PURPLE_HEX});color:#fff;}
-`;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CLASS SLOT
-// ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
-// HEADERS EDITOR
-// ─────────────────────────────────────────────────────────────────────────────
-function HeadersEditor({ headers, onChange, onReset, headerLines, onLinesChange, onLinesReset }) {
-  const [open, setOpen] = useState(false);
-  const [dragIdx, setDragIdx] = useState(null);
-  const set = (k,v) => onChange(prev=>({...prev,[k]:v}));
-
-  const addLine = () => {
-    const newId = Math.max(0,...headerLines.map(l=>l.id))+1;
-    onLinesChange(prev=>[...prev,{id:newId,text:"",bold:false,isSchool:false}]);
-  };
-  const removeLine = (id) => onLinesChange(prev=>prev.filter(l=>l.id!==id));
-  const updateLine = (id,field,val) => onLinesChange(prev=>prev.map(l=>l.id===id?{...l,[field]:val}:l));
-  const moveLine = (fromIdx,toIdx) => {
-    onLinesChange(prev=>{
-      const arr=[...prev];
-      const [item]=arr.splice(fromIdx,1);
-      arr.splice(toIdx,0,item);
-      return arr;
-    });
-  };
-
-  const inp = (key, placeholder) => (
-    <input
-      type="text" value={headers[key]} placeholder={placeholder}
-      onChange={e=>set(key,e.target.value)}
-      style={{width:"100%",padding:"5px 8px",border:"1.5px solid #e2e8f0",borderRadius:7,
-        fontSize:11.5,fontFamily:"'DM Sans',sans-serif",outline:"none",
-        color:"#0f172a",background:"#fff",boxSizing:"border-box",textTransform:"uppercase"}}
-      onFocus={e=>e.target.style.borderColor=PURPLE_HEX}
-      onBlur={e=>e.target.style.borderColor="#e2e8f0"}
-    />
-  );
-
-  return (
-    <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,overflow:"hidden"}}>
-      {/* Toggle */}
-      <button onClick={()=>setOpen(v=>!v)} style={{
-        width:"100%",padding:"9px 12px",background:"none",border:"none",cursor:"pointer",
-        display:"flex",alignItems:"center",justifyContent:"space-between",
-        fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:600,color:"#334155",
-      }}>
-        <span style={{display:"flex",alignItems:"center",gap:7}}>
-          <span style={{width:18,height:18,borderRadius:5,background:PURPLE_HEX,display:"inline-flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:10,fontWeight:800,flexShrink:0}}>T</span>
-          Personalizar cabeçalhos da tabela
-        </span>
-        <span style={{fontSize:10,opacity:.5}}>{open?"▼":"▶"}</span>
-      </button>
-
-      {open && (
-        <div style={{padding:"0 12px 14px",borderTop:"1px solid #e2e8f0"}}>
-
-          {/* ── TOP HEADER LINES ── */}
-          <div style={{fontSize:10.5,fontWeight:700,color:"#334155",marginTop:12,marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-            <span>Linhas do cabeçalho (abaixo do logotipo)</span>
-            <button onClick={addLine} style={{padding:"2px 10px",fontSize:11,fontWeight:600,borderRadius:7,cursor:"pointer",fontFamily:"'DM Sans',sans-serif",background:PURPLE_HEX,color:"#fff",border:"none"}}>
-              + Adicionar linha
-            </button>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:12}}>
-            {headerLines.map((line,idx)=>(
-              <div key={line.id}
-                draggable
-                onDragStart={()=>setDragIdx(idx)}
-                onDragOver={e=>{e.preventDefault();}}
-                onDrop={e=>{e.preventDefault();if(dragIdx!==null&&dragIdx!==idx){moveLine(dragIdx,idx);setDragIdx(null);}}}
-                onDragEnd={()=>setDragIdx(null)}
-                style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",
-                  background:"#fff",borderRadius:8,border:"1.5px solid #e2e8f0",
-                  opacity:dragIdx===idx?0.4:1,cursor:"grab",
-                  boxShadow:"0 1px 3px rgba(0,0,0,.06)"}}>
-                {/* Drag handle */}
-                <span style={{color:"#cbd5e1",fontSize:13,cursor:"grab",flexShrink:0,userSelect:"none"}}>⠿</span>
-                {/* Text input — disabled if isSchool */}
-                {line.isSchool
-                  ?<div style={{flex:1,padding:"4px 8px",background:"#f1f5f9",borderRadius:6,fontSize:11.5,color:"#64748b",fontFamily:"'DM Sans',sans-serif",border:"1px solid #e2e8f0"}}>
-                    Nome da escola <span style={{fontSize:10,color:"#94a3b8"}}>(automático)</span>
-                  </div>
-                  :<input type="text" value={line.text} onChange={e=>updateLine(line.id,"text",e.target.value)}
-                    placeholder="Texto da linha…"
-                    style={{flex:1,padding:"4px 8px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:11.5,fontFamily:"'DM Sans',sans-serif",outline:"none",color:"#0f172a",background:"#fff"}}
-                    onFocus={e=>e.target.style.borderColor=PURPLE_HEX}
-                    onBlur={e=>e.target.style.borderColor="#e2e8f0"}
-                  />
-                }
-                {/* Bold toggle */}
-                <button onClick={()=>updateLine(line.id,"bold",!line.bold)}
-                  title="Negrito"
-                  style={{padding:"3px 8px",borderRadius:6,border:`1.5px solid ${line.bold?PURPLE_HEX:"#e2e8f0"}`,
-                    background:line.bold?`rgba(96,81,255,.1)`:"#f8fafc",
-                    color:line.bold?PURPLE_HEX:"#94a3b8",fontWeight:800,fontSize:12,cursor:"pointer",flexShrink:0,fontFamily:"serif"}}>
-                  B
-                </button>
-                {/* Remove — don't allow removing isSchool */}
-                {!line.isSchool&&(
-                  <button onClick={()=>removeLine(line.id)}
-                    style={{padding:"3px 7px",borderRadius:6,border:"1.5px solid #fca5a5",background:"#fff1f2",color:"#dc2626",fontWeight:700,fontSize:13,cursor:"pointer",flexShrink:0,lineHeight:1}}>
-                    ×
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          <button onClick={onLinesReset} style={{
-            padding:"4px 12px",fontSize:11,fontWeight:600,borderRadius:7,cursor:"pointer",
-            fontFamily:"'DM Sans',sans-serif",background:"none",color:"#94a3b8",
-            border:"1.5px solid #e2e8f0",marginBottom:14,transition:"all .15s",
-          }}
-            onMouseEnter={e=>{e.currentTarget.style.color="#cc0000";e.currentTarget.style.borderColor="#fca5a5";}}
-            onMouseLeave={e=>{e.currentTarget.style.color="#94a3b8";e.currentTarget.style.borderColor="#e2e8f0";}}>
-            ↺ Repor linhas originais
-          </button>
-
-          {/* ── COLUMN HEADERS ── */}
-          <div style={{borderTop:"1px solid #e2e8f0",paddingTop:12}}>
-            <div style={{fontSize:10.5,fontWeight:700,color:"#334155",marginBottom:8}}>Grupos (linha 1)</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:6}}>
-              {[["trim1","Iº TRIMESTRE"],["trim2","IIº TRIMESTRE"],["trim3","IIIº TRIMESTRE"]].map(([k,p])=>(
-                <div key={k}><div style={{fontSize:10,color:"#94a3b8",marginBottom:2}}>{p}</div>{inp(k,p)}</div>
-              ))}
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:6,marginBottom:12}}>
-              <div><div style={{fontSize:10,color:"#94a3b8",marginBottom:2}}>CLASSIFICAÇÃO GERAL</div>{inp("classGeral","CLASSIFICAÇÃO GERAL")}</div>
-              <div><div style={{fontSize:10,color:"#94a3b8",marginBottom:2}}>OBSERVAÇÃO</div>{inp("obs","Observação")}</div>
-            </div>
-            <div style={{fontSize:10.5,fontWeight:700,color:"#334155",marginBottom:8}}>Sub-colunas (linha 2)</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6,marginBottom:6}}>
-              {[["mac","MAC"],["npt","NPT"],["mt1","MT1"],["mt2","MT2"],["mt3","MT3"]].map(([k,p])=>(
-                <div key={k}><div style={{fontSize:10,color:"#94a3b8",marginBottom:2}}>{p} (trim.)</div>{inp(k,p)}</div>
-              ))}
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6,marginBottom:12}}>
-              {[["gMac","MAC"],["mfd","MFD"],["ne","NE"],["mec","MEC"],["mfa","MFA"]].map(([k,p])=>(
-                <div key={k}><div style={{fontSize:10,color:"#94a3b8",marginBottom:2}}>{p} (class.)</div>{inp(k,p)}</div>
-              ))}
-            </div>
-            <button onClick={onReset} style={{
-              padding:"5px 14px",fontSize:11.5,fontWeight:600,borderRadius:8,cursor:"pointer",
-              fontFamily:"'DM Sans',sans-serif",background:"none",color:"#94a3b8",
-              border:"1.5px solid #e2e8f0",transition:"all .15s",
-            }}
-              onMouseEnter={e=>{e.currentTarget.style.color="#cc0000";e.currentTarget.style.borderColor="#fca5a5";}}
-              onMouseLeave={e=>{e.currentTarget.style.color="#94a3b8";e.currentTarget.style.borderColor="#e2e8f0";}}>
-              ↺ Repor colunas originais
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ClassSlot({ slotId, allClasses, onRemove, onDataChange, onSubjSelChange }) {
-  const [selectedClass,    setSelectedClass]    = useState("");
-  const [studentsOptions,  setStudentsOptions]  = useState([]);
-  const [selectedStudents, setSelectedStudents] = useState([]);
-  const [loading,          setLoading]          = useState(false);
-  const [data,             setData]            = useState(null);
-  const [selectedSubjects, setSelectedSubjects] = useState([]);
-
-  const handleClassChange = (e) => {
-    const val=e.target.value;
-    setSelectedClass(val); setData(null); setSelectedSubjects([]);
-    onDataChange(slotId,null);
-    if(!val){setStudentsOptions([]);setSelectedStudents([]);return;}
-    axios.get(`${Hoot()}eduallgetstudentsbyclass/${val}`)
-      .then(r=>{const list=(r.data||[]).map(s=>({value:String(s.ed_student_id),label:s.ed_student_name}));setStudentsOptions(list);setSelectedStudents(list);})
-      .catch(()=>{setStudentsOptions([]);setSelectedStudents([]);});
-  };
-
-  useEffect(()=>{
-    if(!selectedClass||!selectedStudents?.length){setData(null);onDataChange(slotId,null);return;}
-    let cancelled=false; setLoading(true);
-    axios.post(API.classGrades(),{classId:Number(selectedClass),studentIds:selectedStudents.map(s=>Number(s.value))})
-      .then(res=>{
-        if(cancelled)return;
-        if(res.data?.success){
-          const d={...res.data,_slotId:slotId};
-          setData(d);
-          const subs=res.data.data?.students?.[0]?.grades?.map(g=>g.subject_id)||[];
-          setSelectedSubjects(subs);
-          onDataChange(slotId,d);
-          onSubjSelChange(slotId,subs);
-        } else {toast.error(res.data?.message||"Erro.");setData(null);onDataChange(slotId,null);}
-      })
-      .catch(()=>{if(!cancelled){toast.error("Erro de comunicação.");setData(null);onDataChange(slotId,null);}})
-      .finally(()=>{if(!cancelled)setLoading(false);});
-    return()=>{cancelled=true;};
-  },[selectedClass,selectedStudents]);
-
-  const allSubjects=data?.data?.students?.[0]?.grades?.map(g=>({id:g.subject_id,title:g.subject_title,is_key:g.is_key}))||[];
-  const toggleSubj=(id)=>{const next=selectedSubjects.includes(id)?selectedSubjects.filter(x=>x!==id):[...selectedSubjects,id];setSelectedSubjects(next);onSubjSelChange(slotId,next);};
-  const toggleAll=()=>{const next=selectedSubjects.length===allSubjects.length?[]:allSubjects.map(s=>s.id);setSelectedSubjects(next);onSubjSelChange(slotId,next);};
-  const clsLabel=allClasses.find(c=>c.value==selectedClass)?.label||"";
-
-  return(
-    <div className="cgr-class-card">
-      <div className="cgr-class-card-hdr">
-        <div style={{display:"flex",alignItems:"center",gap:9}}>
-          <div style={{width:22,height:22,borderRadius:6,background:PURPLE_HEX,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:11,fontWeight:700}}>{slotId}</div>
-          <span style={{fontSize:13,fontWeight:600,color:"#334155"}}>{clsLabel||"Nova turma"}</span>
-          {loading&&<Spinner size="sm" animation="border" style={{width:13,height:13,borderWidth:2}}/>}
-        </div>
-        <button className="cgr-rm-btn" onClick={()=>onRemove(slotId)} title="Remover"><MdOutlineClose size={15}/></button>
-      </div>
-      <div className="cgr-class-card-body">
-        <div className="cgr-row">
-          <div className="cgr-col">
-            <div className="cgr-lbl"><MdOutlineClass size={12}/> Turma</div>
-            <select className="cgr-sel" value={selectedClass} onChange={handleClassChange}>
-              <option value="">Selecione…</option>
-              {allClasses.map(c=><option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
-          </div>
-          <div className="cgr-col" style={{flex:2}}>
-            <div className="cgr-lbl"><MdOutlinePersonSearch size={12}/> Alunos</div>
-            {selectedClass
-              ?(studentsOptions.length>0?<StudentMultiSelect options={studentsOptions} value={selectedStudents} onChange={setSelectedStudents}/>:<div style={{fontSize:12,color:"#94a3b8"}}>A carregar…</div>)
-              :<div style={{fontSize:12,color:"#94a3b8"}}>Seleccione uma turma.</div>}
-          </div>
-        </div>
-        {allSubjects.length>0&&(
-          <div style={{marginTop:12}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
-              <div className="cgr-lbl" style={{marginBottom:0}}><MdOutlineFilterList size={12}/> Disciplinas</div>
-              <button onClick={toggleAll} style={{background:PURPLE_HEX,color:"#fff",border:"none",cursor:"pointer",fontSize:11,fontFamily:F_SANS,fontWeight:600,padding:"4px 12px",borderRadius:999,boxShadow:"0 2px 6px rgba(96,81,255,.32)",transition:"filter .15s"}}
-                onMouseEnter={e=>e.currentTarget.style.filter="brightness(1.1)"} onMouseLeave={e=>e.currentTarget.style.filter="none"}>
-                {selectedSubjects.length===allSubjects.length?"Remover todas":"Seleccionar todas"}
-              </button>
-            </div>
-            <div className="cgr-subj-grid">
-              {allSubjects.map(s=>(
-                <button key={s.id} className={`cgr-subj-chip${selectedSubjects.includes(s.id)?" sel":""}`} onClick={()=>toggleSubj(s.id)}>
-                  {selectedSubjects.includes(s.id)?<MdOutlineCheckCircle size={13}/>:<MdOutlineRadioButtonUnchecked size={13}/>}
-                  <span style={{flex:1,fontSize:11.5,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{s.title?.length>18?s.title.slice(0,18)+"…":s.title}</span>
-                  {s.is_key&&<span className="cgr-key-badge">★</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN
-// ─────────────────────────────────────────────────────────────────────────────
-export default function ClassGradesComponent() {
-  document.title="Mini Pautas";
-
-  const [allClasses,     setAllClasses]     = useState([]);
-  const [slots,          setSlots]          = useState([1]);
-  const [slotData,       setSlotData]       = useState({});
-  const [slotSubjSel,    setSlotSubjSel]    = useState({});
-  const [exportingPdf,   setExportingPdf]   = useState(false);
-  const [previewSlot,    setPreviewSlot]    = useState(1);
-  const [previewSubjIdx, setPreviewSubjIdx] = useState(0);
-  // Custom logo
-  const [logoFile,       setLogoFile]       = useState(null);
-  const [logoUrl,        setLogoUrl]        = useState("");
-  const [layout,         setLayout]         = useState(1); // 1 = 1 pauta/pág, 2 = 2 pautas/folha
-  // Editable column headers
-  const [headers, setHeaders] = useState({
-    trim1:"Iº TRIMESTRE", trim2:"IIº TRIMESTRE", trim3:"IIIº TRIMESTRE",
-    classGeral:"CLASSIFICAÇÃO GERAL", obs:"Observação",
-    mac:"MAC", npt:"NPT", mt1:"MT1", mt2:"MT2", mt3:"MT3",
-    gMac:"MAC", mfd:"MFD", ne:"NE", mec:"MEC", mfa:"MFA",
-  });
-  const resetHeaders = () => setHeaders({
-    trim1:"Iº TRIMESTRE", trim2:"IIº TRIMESTRE", trim3:"IIIº TRIMESTRE",
-    classGeral:"CLASSIFICAÇÃO GERAL", obs:"Observação",
-    mac:"MAC", npt:"NPT", mt1:"MT1", mt2:"MT2", mt3:"MT3",
-    gMac:"MAC", mfd:"MFD", ne:"NE", mec:"MEC", mfa:"MFA",
-  });
-  // Editable top header lines (below logo)
-  const DEF_LINES = [
-    {id:1, text:"REPÚBLICA DE ANGOLA",    bold:false, isSchool:false},
-    {id:2, text:"MINISTÉRIO DA EDUCAÇÃO", bold:false, isSchool:false},
-    {id:3, text:"",                        bold:true,  isSchool:true},  // school name placeholder
-  ];
-  const [headerLines, setHeaderLines] = useState(DEF_LINES);
-  const resetHeaderLines = () => setHeaderLines(DEF_LINES);
-
-  // Pauta model: "normal" | "exame"
-  const [pautaModel,  setPautaModel]  = useState("normal");
-  // Hidden sub-columns (Set of col keys like "MFD","NE","REC")
-  const [hiddenCols,  setHiddenCols]  = useState(new Set());
-  const toggleHiddenCol = (key) => setHiddenCols(prev=>{
-    const next=new Set(prev);
-    next.has(key)?next.delete(key):next.add(key);
-    return next;
-  });
-
-  useEffect(()=>{
-    axios.get(API.classes())
-      .then(r=>setAllClasses(Array.isArray(r.data)?r.data.map(c=>({value:c.ed_class_id,label:c.ed_class_title})):[]))
-      .catch(()=>setAllClasses([]));
-  },[]);
-
-  useEffect(()=>{
-    if(!logoFile){setLogoUrl("");return;}
-    const url=URL.createObjectURL(logoFile);
-    // Clear any cached version of the previous blob so PDF re-fetches
-    Object.keys(_imgCache).forEach(k=>{ if(k.startsWith("blob:")) delete _imgCache[k]; });
-    setLogoUrl(url);
-    return()=>URL.revokeObjectURL(url);
-  },[logoFile]);
-
-  const addSlot    = ()=>{const id=Math.max(0,...slots)+1;setSlots(p=>[...p,id]);};
-  const removeSlot = (id)=>{
-    setSlots(p=>p.filter(s=>s!==id));
-    setSlotData(p=>{const n={...p};delete n[id];return n;});
-    setSlotSubjSel(p=>{const n={...p};delete n[id];return n;});
-    if(previewSlot===id){const rem=slots.filter(s=>s!==id);setPreviewSlot(rem[0]||null);}
-  };
-  const handleDataChange   = (id,d)=>{setSlotData(p=>({...p,[id]:d}));if(d){setPreviewSlot(id);setPreviewSubjIdx(0);}};
-  const handleSubjSelChange = (id,s)=>setSlotSubjSel(p=>({...p,[id]:s}));
-
-  const allDatasets = slots.map(id=>slotData[id]).filter(Boolean);
-  const totalPages  = allDatasets.reduce((acc,d)=>{const sel=slotSubjSel[d._slotId]||[];const s=d.data?.students?.[0]?.grades||[];return acc+(sel.length?sel.length:s.length);},0);
-  const canExport   = allDatasets.length>0&&allDatasets.some(d=>(slotSubjSel[d._slotId]||[]).length>0);
-
-  const handleExportPDF=async()=>{
-    if(!canExport)return;
-    setExportingPdf(true);
-    try{
-      await exportLandscapePDF(allDatasets,logoUrl||null,pautaModel,hiddenCols,headerLines);
-      toast.success("PDF exportado!");
-    }
-    catch(e){console.error(e);toast.error("Erro ao exportar PDF.");}
-    finally{setExportingPdf(false);}
-  };
-
-  // Preview
-  const pvData     = previewSlot?slotData[previewSlot]:null;
-  const pvSubjects = pvData?(pvData.data?.students?.[0]?.grades?.map(g=>({id:g.subject_id,title:g.subject_title}))||[]):[];
-  const pvSubjSel  = pvData?(slotSubjSel[previewSlot]||pvSubjects.map(s=>s.id)):[];
-  const pvFiltered = pvSubjects.filter(s=>pvSubjSel.includes(s.id));
-  const pvSubj     = pvFiltered[Math.min(previewSubjIdx,pvFiltered.length-1)];
-
-  return(
-    <DashboardContainerWrapper content={
-      <div className="cgr-root">
-        <style>{UI_CSS}</style>
-
-        {/* TOPBAR */}
-        <div className="cgr-topbar">
-          <div className="cgr-topbar-icon"><TbReportAnalytics size={22} color="#fff"/></div>
-          <div>
-            <div className="cgr-topbar-title">Mini Pauta de Classificação</div>
-            <div className="cgr-topbar-sub">PDF formal · 1 ou 2 pautas por folha · Mapa estatístico por trimestre</div>
-          </div>
-        </div>
-
-        {/* CONFIG PANEL */}
-        <div className="cgr-panel">
-          <div className="cgr-phdr">
-            <div className="cgr-phdr-icon"><MdOutlineTune size={14}/></div>
-            <span className="cgr-pttl">Configurações</span>
-          </div>
-          <div className="cgr-pbody">
-            {/* LOGO UPLOAD */}
-            <div style={{marginBottom:16}}>
-              <div className="cgr-lbl"><MdOutlineImage size={12}/> Logotipo personalizado (centro do cabeçalho)</div>
-              <div style={{position:"relative",display:"inline-block",width:"100%"}}>
-                <div className="cgr-file-btn">
-                  <MdOutlineImage size={14}/>{logoFile?logoFile.name:"Carregar imagem…"}
-                </div>
-                <input type="file" accept="image/*" className="cgr-file-input" onChange={e=>setLogoFile(e.target.files?.[0]||null)}/>
-              </div>
-              {logoFile&&(
-                <span className="cgr-logo-chip">
-                  <MdOutlineCheckCircle size={11}/>
-                  {logoFile.name.length>24?logoFile.name.slice(0,24)+"…":logoFile.name}
-                  <button className="cgr-logo-x" onClick={()=>setLogoFile(null)}>×</button>
-                </span>
-              )}
-              {logoUrl&&(
-                <div style={{marginTop:7,display:"flex",alignItems:"center",gap:8}}>
-                  <img src={logoUrl} alt="preview" style={{width:36,height:36,objectFit:"contain",border:"1px solid #e2e8f0",borderRadius:6}}/>
-                  <span style={{fontSize:11,color:"#94a3b8"}}>Substituirá as armas de Angola</span>
-                </div>
-              )}
-            </div>
-            <div className="cgr-divider" style={{margin:"0 -20px 16px"}}/>
-
-            {/* HEADER LABELS EDITOR */}
-            <HeadersEditor
-              headers={headers} onChange={setHeaders} onReset={resetHeaders}
-              headerLines={headerLines} onLinesChange={setHeaderLines} onLinesReset={resetHeaderLines}
-            />
-            <div className="cgr-divider" style={{margin:"16px -20px 16px"}}/>
-
-            {/* MODELO DE PAUTA */}
-            <div style={{marginBottom:14}}>
-              <div className="cgr-lbl">Modelo de pauta</div>
-              <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:12}}>
-                {[{v:"normal",l:"Modelo Normal (1ª–5ª Classe)"},{v:"exame",l:"Classes de Exame (6ª / 9ª / 12ª)"}].map(o=>(
-                  <button key={o.v} onClick={()=>{setPautaModel(o.v);setHiddenCols(new Set());}}
-                    style={{padding:"7px 18px",fontSize:12,fontWeight:600,borderRadius:999,cursor:"pointer",fontFamily:F_SANS,transition:"all .15s",
-                      background:pautaModel===o.v?PURPLE_HEX:"#f8fafc",
-                      color:pautaModel===o.v?"#fff":"#64748b",
-                      border:pautaModel===o.v?`1.5px solid ${PURPLE_HEX}`:"1.5px solid #e2e8f0",
-                      boxShadow:pautaModel===o.v?"0 2px 8px rgba(96,81,255,.3)":"none"}}>
-                    {o.l}
-                  </button>
-                ))}
-              </div>
-
-              {/* Column visibility toggles */}
-              <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 12px"}}>
-                <div style={{fontSize:11,fontWeight:600,color:"#64748b",marginBottom:7,fontFamily:F_SANS}}>
-                  Colunas visíveis por disciplina
-                </div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {(MODEL_COLS[pautaModel]||MODEL_COLS.normal).map(c=>{
-                    const active=!hiddenCols.has(c.key);
-                    return(
-                      <button key={c.key} onClick={()=>toggleHiddenCol(c.key)}
-                        style={{padding:"4px 13px",fontSize:11.5,fontWeight:600,borderRadius:999,cursor:"pointer",fontFamily:F_SANS,transition:"all .15s",
-                          background:active?PURPLE_HEX:"#f1f5f9",
-                          color:active?"#fff":"#94a3b8",
-                          border:active?`1.5px solid ${PURPLE_HEX}`:"1.5px solid #e2e8f0",
-                          textDecoration:active?"none":"line-through",
-                          opacity:active?1:0.7}}>
-                        {c.key}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div style={{fontSize:10,color:"#94a3b8",marginTop:6,fontFamily:F_SANS}}>
-                  Clique para mostrar/ocultar cada coluna no PDF e na pré-visualização
-                </div>
-              </div>
-            </div>
-            <div className="cgr-divider" style={{margin:"0 -20px 16px"}}/>
-
-            {/* TURMAS */}
-            {slots.map(id=>(
-              <ClassSlot key={id} slotId={id} allClasses={allClasses}
-                onRemove={removeSlot} onDataChange={handleDataChange} onSubjSelChange={handleSubjSelChange}/>
-            ))}
-            <button className="cgr-add-btn" onClick={addSlot}>
-              <MdOutlineAdd size={15}/> Adicionar turma
-            </button>
-          </div>
-
-          {(allDatasets.length>0||exportingPdf)&&(
-            <>
-              <div className="cgr-divider"/>
-              <div className="cgr-action-bar">
-                <div className="cgr-stats">
-                  <span className="cgr-chip cp">{allDatasets.length} turma{allDatasets.length!==1?"s":""}</span>
-                  <span className="cgr-chip cg">{allDatasets.length} folha{allDatasets.length!==1?"s":""} A4</span>
-                  <span style={{fontSize:11,color:"#64748b",fontFamily:F_SANS,padding:"4px 10px",borderRadius:999,background:"#f8fafc",border:"1px solid #e2e8f0"}}>
-                    {pautaModel==="exame"?"6ª/9ª/12ª Classe":"Modelo Normal"} · landscape
-                  </span>
-                </div>
-                <button className="cgr-pdf-btn" onClick={handleExportPDF} disabled={exportingPdf||!canExport}>
-                  {exportingPdf
-                    ?<><Spinner size="sm" animation="border" style={{width:14,height:14,borderWidth:2,borderColor:"#fff",borderRightColor:"transparent"}}/> A gerar…</>
-                    :<><MdOutlinePictureAsPdf size={17}/> Exportar Pauta PDF</>}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* PREVIEW */}
-        <CustomTableContainer
-          title={pvData
-            ?`Pré-visualização — ${pautaModel==="exame"?"Exame":"Normal"} · ${pvData.data?.class?.class_title||""}`
-            :"Pré-visualização"}
-          content={
-            !pvData?(
-              <div className="cgr-empty">
-                <div className="cgr-empty-icon"><MdOutlineFileDownload size={24}/></div>
-                <div className="cgr-empty-title">Nenhuma pauta gerada</div>
-                <div className="cgr-empty-sub">Seleccione uma turma e os alunos para começar.</div>
-              </div>
-            ):(
-              <div className="cgr-prev-area">
-                {allDatasets.length>1&&(
-                  <div className="cgr-tab-row">
-                    {allDatasets.map(d=>(
-                      <button key={d._slotId} className={`cgr-tab${previewSlot===d._slotId?" active":""}`}
-                        onClick={()=>{setPreviewSlot(d._slotId);setPreviewSubjIdx(0);}}>
-                        {allClasses.find(c=>c.value==d.data?.class?.class_id)?.label||`Turma ${d._slotId}`}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <LandscapePreview
-                  key={`${previewSlot}-${logoUrl}-${pautaModel}-${[...hiddenCols].join(",")}`}
-                  classData={pvData}
-                  customLogoUrl={logoUrl||null}
-                  headerLines={headerLines}
-                  model={pautaModel}
-                  hiddenCols={hiddenCols}
-                />
-              </div>
-            )
+      // Inserir documentos para cada matrícula criada (se existirem no payload)
+      if (docsPayload.length > 0) {
+        const enrollment = insertedEnrollments.find(e => e.ed_enrollment_student == student.ed_student_id);
+        if (enrollment) {
+          for (const doc of docsPayload) {
+            await ExecuteQuery(
+              res,
+              `INSERT INTO eduall_enrollment_docs
+               (ed_enroll_doc_enrollment, ed_enroll_doc_name, ed_enroll_doc_status,
+                ed_enroll_doc_file, ed_enroll_doc_file_name, ed_enroll_doc_institute)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+              [
+                enrollment.ed_enrollment_id,
+                doc.name   || "Documento",
+                doc.status ?? 0,
+                doc.file   || null,
+                doc.fileName || null,
+                institute,
+              ]
+            );
           }
-        />
-      </div>
-    }/>
-  );
-}
+        }
+      }
+    }
 
+    // Auditoria
+    Promise.all(
+      toEnroll.map(student =>
+        RegisterAuditAction({
+          session:     req.session,
+          action:      1,
+          form:        "Matrículas",
+          description: `Registrou matrícula para o estudante nº #${student.ed_student_code} – ${student.ed_student_name}`,
+        })
+      )
+    ).catch(err => console.error("Erro ao registar auditoria:", err));
 
+    const message =
+      alreadyEnrolled.length > 0
+        ? `Matrícula efetuada para ${toEnroll.length} estudante(s). ${alreadyEnrolled.length} já estavam matriculados e foram ignorados.`
+        : `Matrícula efetuada com sucesso para ${toEnroll.length} estudante(s)!`;
+
+    console.log(`🗄️🐢 BASE DE DADOS (lento) -> RegisterEnrollment: ${toEnroll.length} registo(s) inserido(s)`);
+    await RefreshEnrollmentCache(req, res, institute);
+
+    return res.status(200).json({ success: true, msg: message });
+
+  } catch (error) {
+    console.error("Erro ao registar matrículas:", error);
+    res.status(500).json({ success: false, msg: "Erro ao efetuar matrícula!", error: error.message });
+  }

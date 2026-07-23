@@ -1,10 +1,22 @@
+const dbConfig = {
+  port: 3306,
+  user: "eduallsi_andre",
+  password: "q!s&$AXo@{dc",
+  database: "eduallsi_andre",
+  host: "cpanel154.dnscpanel.com"
+ };
+module.exports = dbConfig;   
+ 
 
+
+/*
  const dbConfig = {
-    host:  'srv2122.hstgr.io',
-    user:  'u101094084_eddbapp',
-    password:  'E*Td4Pj=',
-    database: 'u101094084_eduallsoftware',
-    port:  3306,
+        port: 3306,
+        user: "eduallsi_andre",
+        password: "q!s&$AXo@{dc",
+        database: "eduallsi_andre",
+        host: "cpanel154.dnscpanel.com",
  };
 
-module.exports = dbConfig;  
+module.exports = dbConfig;   
+*/

@@ -1690,6 +1690,44 @@ const GetSingleUserInstitutes = async (req, res) => {
   }
 };
 
+
+const GetSingleUserInstitutesTeacherAccounts = async (req, res) => {
+  try {
+    const { CODE } = req.params;
+    if (!CODE) return res.status(400).json({ success: false, msg: "Código do usuário inválido!" });
+
+    const rows = await ExecuteQuery(
+      res,
+      `SELECT ui.*, i.*, e.*, l.*
+       FROM eduall_user_institutes ui
+       INNER JOIN eduall_institutes i ON ui.ed_user_institute_code = i.ed_institute_code
+       INNER JOIN eduall_employees e
+         ON ui.ed_user_institute_employeeCode = e.ed_employee_id AND e.ed_employee_deleted = 0
+       INNER JOIN eduall_institutes_licences l
+         ON l.ed_institute_licence_instituteCode = i.ed_institute_code
+         AND l.ed_institute_licence_type IN (0, 2, 3, 4, 5)
+         AND l.ed_institute_licence_endDate > NOW()
+       WHERE ui.ed_user_institute_deleted = 0 AND ui.ed_user_institute_userCode = ?`,
+      [CODE],
+      true,
+      { db: "eduall_user_institutes", type: "select", data: req }
+    );
+
+    if (!rows || rows.length === 0)
+      return res.status(404).json({ success: false, msg: "Nenhum instituto válido encontrado para este usuário!" });
+
+    return res.status(200).json(rows);
+  } catch (err) {
+    return res.status(500).json({ success: false, msg: "Erro ao buscar institutos!", error: err.message });
+  }
+};
+
+
+
+
+
+
+
 // ─── Exports ──────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -1708,6 +1746,7 @@ module.exports = {
   GetInstituteAccounts,
   GetSingleInstituteAccount,
   GetSingleUserInstitutes,
+  GetSingleUserInstitutesTeacherAccounts,
   GetLibraryAccounts,
   UpdateLibraryAccess, 
   DeleteLibraryAccess,

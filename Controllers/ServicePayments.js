@@ -630,24 +630,26 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
 // ─────────────────────────────────────────────────────────────────────────────
  
  
-const RegisterServicePayment = async (req, res) => {
+
+
+ const RegisterServicePayment = async (req, res) => {
   const timerLabel = `RegisterServicePayment_${Date.now()}`;
   console.time(timerLabel);
-
+ 
   try {
     const sessionInstitute = req.session?.user?.eduall_user_session_curentinstitute;
     const operatorId = req.session?.user?.eduall_user_session_ID;
-
-    console.log("\n" + "═".repeat(90));
-    console.log("REGISTAR PAGAMENTO DE SERVIÇO - VERSÃO REFATORIZADA");
-    console.log("═".repeat(90));
+ 
+    console.log("\n" + "=".repeat(90));
+    console.log("REGISTAR PAGAMENTO DE SERVICO");
+    console.log("=".repeat(90));
     console.log(`Instituto: ${sessionInstitute}`);
     console.log(`Operador: ID ${operatorId}`);
-
+ 
     if (!sessionInstitute) {
-      return res.status(401).json({ success: false, msg: "Sessão inválida." });
+      return res.status(401).json({ success: false, msg: "Sessao invalida." });
     }
-
+ 
     const {
       student_code: studentId,
       service_payment_type: paymentMethodIndex = "0",
@@ -656,575 +658,626 @@ const RegisterServicePayment = async (req, res) => {
       service_payment_reference: paymentReference = "",
       service_payment_receipt_number: receiptNumber = "",
       service_payment_observations: observations = "",
+      balance_used = 0,
       service_payment_discount: discountPct = 0,
-      service_payment_value_delivered: valueDelivered = 0,
       services = [],
-      // ─── MATRÍCULA (CHECKBOX INDEPENDENTE) ──────────────────────────────
       has_matricula = false,
       matricula_class = null,
-      // ─── CONFIRMAÇÃO (CHECKBOX INDEPENDENTE) ────────────────────────────
+      matricula_service: matriculaServiceFromBody = null,
       has_confirmacao = false,
       confirmacao_class = null,
-      // ─── PROPINAS ──────────────────────────────────────────────────────
+      confirmacao_service: confirmacaoServiceFromBody = null,
       alsofeepaymenet = false,
       feemonths = [],
-      fee_service_code = null,
+      fee_service_code: feeServiceFromBody = null,
     } = req.body || {};
-
-    console.log("\n[1] Validando dados obrigatórios...");
-
+ 
+    const OTHER_SERVICE_ID = "OTHER_CUSTOM";
+ 
+    // ✅ Helper: número positivo e finito, ou NaN caso contrário
+    const toPositiveNumber = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : NaN;
+    };
+ 
+    console.log("\n[VALIDACOES] Iniciando validacoes...");
+ 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // ✅ VALIDAR CONSUMO DE SALDO
+    // ═══════════════════════════════════════════════════════════════════════════════
+    if (balance_used > 0) {
+      console.log(`[SALDO] Balance Used: ${balance_used}`);
+ 
+      if (!observations || !observations.includes("[SALDO CONSUMIDO")) {
+        console.error("Consumo de saldo sem nota de descrição");
+        return res.status(400).json({
+          success: false,
+          msg: "Consumo de saldo requer nota de descrição automatica.",
+          error: "MISSING_BALANCE_CONSUMED_NOTE"
+        });
+      }
+ 
+      console.log(`[SALDO] Nota de consumo validada`);
+    }
+ 
     if (!studentId) {
       console.error("studentId ausente");
       return res.status(400).json({
         success: false,
-        msg: "ID do aluno é obrigatório.",
+        msg: "ID do aluno e obrigatorio.",
       });
     }
-
+ 
     if (!Array.isArray(services) || services.length === 0) {
       if (!has_matricula && !has_confirmacao && !alsofeepaymenet) {
-        console.error("Nenhum serviço, matrícula, confirmação ou propina selecionado");
+        console.error("Nenhum servico selecionado");
         return res.status(400).json({
           success: false,
-          msg: "Deve haver pelo menos um serviço, matrícula, confirmação ou propina selecionado.",
+          msg: "Deve haver pelo menos um servico, matricula, confirmacao ou propina selecionado.",
         });
       }
     }
-
-    console.log(`Dados básicos válidos | Aluno: ${studentId} | Serviços regulares: ${services.length}`);
-
-    // ─── VALIDAÇÃO CRÍTICA: Não permitir matrícula E confirmação simultâneas ─────
+ 
+    console.log(`Dados basicos validos | Aluno: ${studentId} | Servicos: ${services.length}`);
+ 
     if (has_matricula && has_confirmacao) {
-      console.error("Matrícula E Confirmação simultâneas - NÃO PERMITIDO");
+      console.error("Matricula E Confirmacao simultaneas - NAO PERMITIDO");
       return res.status(400).json({
         success: false,
-        msg: "Não é permitido fazer matrícula E confirmação na mesma operação. Um aluno deve ser matriculado primeiro, depois confirmado.",
+        msg: "Nao e permitido fazer matricula E confirmacao na mesma operacao.",
       });
     }
-
-    // ─── VALIDAÇÃO: Turmas são obrigatórias se há matrícula ou confirmação ──────
-    if ((has_matricula || has_confirmacao) && !matricula_class && !confirmacao_class) {
-      console.error("Turma não especificada para matrícula/confirmação");
-      return res.status(400).json({
-        success: false,
-        msg: "Turma é obrigatória para matrícula ou confirmação.",
-      });
-    }
-
-    if (has_matricula && !matricula_class) {
-      console.error("Turma não especificada para matrícula");
-      return res.status(400).json({
-        success: false,
-        msg: "Turma é obrigatória para matrícula.",
-      });
-    }
-
-    if (has_confirmacao && !confirmacao_class) {
-      console.error("Turma não especificada para confirmação");
-      return res.status(400).json({
-        success: false,
-        msg: "Turma é obrigatória para confirmação.",
-      });
-    }
-
-    if (alsofeepaymenet && feemonths?.length > 0 && !fee_service_code) {
-      console.error("Propinas sem serviço de propina");
-      return res.status(400).json({
-        success: false,
-        msg: "Serviço de propina deve ser especificado.",
-      });
-    }
-
-    // ───────────────────────────────────────────────────────────────────────────
-    // [1.5] VALIDAÇÃO DE PROPINAS JÁ PAGAS
-    // ───────────────────────────────────────────────────────────────────────────
-    if (alsofeepaymenet && feemonths?.length > 0 && fee_service_code) {
-      console.log("\n[1.5] Validando se o aluno já pagou alguma das propinas selecionadas...");
-
-      const uniqueFeeMonths = [...new Set(feemonths)];
-      const monthPlaceholders = uniqueFeeMonths.map(() => "?").join(",");
-
-      const dupFeesRows = await ExecuteQuery(
-        null,
-        `SELECT ed_fee_payment_month AS month
-         FROM eduall_fees_payments
-         WHERE ed_fee_payment_institute_code = ?
-           AND ed_fee_payment_student = ?
-           AND ed_fee_payment_month IN (${monthPlaceholders})
-           AND COALESCE(ed_fee_payment_deleted, 0) = 0
-         GROUP BY ed_fee_payment_month`,
-        [sessionInstitute, studentId, ...uniqueFeeMonths],
-        true
-      );
-
-      if (dupFeesRows?.length) {
-        const paidMonthsFormatted = formatMonthsList(dupFeesRows.map((r) => r.month));
-
-        console.error(`Propinas já pagas detectadas: ${paidMonthsFormatted}`);
-        console.log(`Meses em bruto: ${dupFeesRows.map((r) => r.month).join(", ")}`);
-        console.log(`Contagem: ${dupFeesRows.length} propina(s)`);
-
-        const errorResponse = buildDuplicateFeesErrorResponse(dupFeesRows, paidMonthsFormatted);
-
-        return res.status(errorResponse.statusCode).json(errorResponse.body);
-      }
-
-      console.log(`Nenhuma propina duplicada encontrada - pode prosseguir.`);
-    }
-
-    // ───────────────────────────────────────────────────────────────────────────
-    // [1.6] VERIFICAR SERVIÇOS CUSTOMIZADOS
-    // ───────────────────────────────────────────────────────────────────────────
-    console.log("\n[1.6] Verificando serviços customizados...");
-
-    const customServices = services.filter(s => s.isCustomService === true);
-    if (customServices.length > 0) {
-      console.log(`Encontrados ${customServices.length} serviço(s) customizado(s)`);
-
-      const [defaultProvider] = await ExecuteQuery(
-        null,
-        `SELECT ed_provider_id FROM eduall_providers 
-         WHERE ed_provider_institute_code = ? AND ed_provider_deleted = 0 
-         LIMIT 1`,
-        [sessionInstitute],
-        true
-      );
-
-      const [defaultCoin] = await ExecuteQuery(
-        null,
-        `SELECT ed_coin_id FROM eduall_coins 
-         WHERE ed_coin_institute_code = ? AND ed_coin_deleted = 0 
-         LIMIT 1`,
-        [sessionInstitute],
-        true
-      );
-
-      if (!defaultProvider) {
-        console.error("Nenhum fornecedor registado para a escola");
-        return res.status(400).json({
-          success: false,
-          msg: "Nenhum fornecedor registado para esta escola. Registre um fornecedor primeiro.",
-          error: "NO_PROVIDER"
-        });
-      }
-
-      if (!defaultCoin) {
-        console.error("Nenhuma moeda registada para a escola");
-        return res.status(400).json({
-          success: false,
-          msg: "Nenhuma moeda registada para esta escola. Registre uma moeda primeiro.",
-          error: "NO_COIN"
-        });
-      }
-
-      for (const customSrv of customServices) {
+ 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // ✅ PROCESSAR SERVICOS CUSTOMIZADOS COM ON DUPLICATE KEY UPDATE
+    // (preço do serviço customizado SEMPRE vem do frontend)
+    // ═══════════════════════════════════════════════════════════════════════════════
+    console.log("\n[SERVICOS] Processando servicos (incluindo customizados)...");
+ 
+    const processedServices = [];
+ 
+    for (const service of services) {
+      const {
+        code,
+        amount = 1,
+        price,
+        unit_price,
+        discount = discountPct,
+        service_name,
+        isEnrollmentService = false,
+        isConfirmationService = false,
+        isFeeService = false,
+        is_enrollment = 0,
+        is_confirmation = 0,
+      } = service;
+ 
+      // ✅ Preço enviado pelo frontend (unit_price tem prioridade, price é fallback)
+      const rawPrice = unit_price ?? price;
+ 
+      if (code === OTHER_SERVICE_ID) {
+        console.log(`[CUSTOM] Detectado serviço customizado: "${service_name}" | Preço enviado: ${rawPrice}`);
+ 
+        // ✅ VALIDAR
+        if (!service_name || !service_name.trim()) {
+          return res.status(400).json({
+            success: false,
+            msg: "Serviço customizado requer nome/descrição.",
+          });
+        }
+ 
+        const customPrice = toPositiveNumber(rawPrice);
+        if (!customPrice || customPrice <= 0) {
+          console.error(`❌ Serviço customizado com preço zerado/inválido: ${rawPrice}`);
+          return res.status(400).json({
+            success: false,
+            msg: "Serviço customizado requer preço válido (maior que zero).",
+            error: "ZERO_OR_INVALID_PRICE"
+          });
+        }
+ 
         try {
-          const insertCustomQuery = `
+          // ✅ USAR ON DUPLICATE KEY UPDATE
+          const upsertQuery = `
             INSERT INTO eduall_services (
               ed_service_title,
               ed_service_type,
-              ed_service_provider,
               ed_service_price,
-              ed_service_iva,
-              ed_service_description,
-              ed_service_coin,
-              ed_service_is_matricula,
-              ed_service_is_confirmation,
-              ed_service_institute_code
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ed_service_provider,
+              ed_service_institute_code,
+              ed_service_registerDate
+            ) VALUES (?, ?, ?, ?, ?, NOW())
+            ON DUPLICATE KEY UPDATE
+              ed_service_price = VALUES(ed_service_price),
+              ed_service_provider = VALUES(ed_service_provider)
           `;
-
-          const insertCustomParams = [
-            customSrv.service_name || "Serviço Customizado",
-            "custom",
-            defaultProvider.ed_provider_id,
-            customSrv.price || 0,
-            0,
-            customSrv.service_name || "Serviço registado no pagamento",
-            defaultCoin.ed_coin_id,
-            0,
-            0,
-            sessionInstitute
-          ];
-
-          const serviceResult = await ExecuteQuery(
+ 
+          console.log(`[CUSTOM] Executando UPSERT...`);
+ 
+          await ExecuteQuery(
             null,
-            insertCustomQuery,
-            insertCustomParams,
-            false,
-            {
-              db: "eduall_services",
-              type: "insert",
-              data: req,
-            }
+            upsertQuery,
+            [
+              service_name.trim(),
+              "custom",
+              customPrice,
+              `Operador ${operatorId}`,
+              sessionInstitute,
+            ],
+            false
           );
-
-          const generatedId = serviceResult?.insertId || serviceResult?.ed_service_id;
-
-          if (!generatedId) {
-            console.error(`Não foi gerado ID para serviço customizado: ${customSrv.service_name}`);
-            return res.status(500).json({
-              success: false,
-              msg: `Falha ao obter ID do serviço customizado "${customSrv.service_name}".`,
-              error: "NO_INSERT_ID"
-            });
+ 
+          // ✅ RECUPERAR ID
+          const [serviceResult] = await ExecuteQuery(
+            null,
+            `SELECT ed_service_id FROM eduall_services 
+             WHERE ed_service_title = ? 
+             AND ed_service_institute_code = ? 
+             AND COALESCE(ed_service_deleted, 0) = 0
+             LIMIT 1`,
+            [service_name.trim(), sessionInstitute],
+            true
+          );
+ 
+          if (!serviceResult || !serviceResult.ed_service_id) {
+            throw new Error(`Falha ao recuperar ID do serviço: ${service_name}`);
           }
-
-          customSrv.code = generatedId;
-          customSrv._registered = true;
-
-          console.log(`Serviço customizado registado: "${customSrv.service_name}" (ID: ${customSrv.code})`);
-
-          await RegisterAuditAction({
-            session: req.session,
-            action: 1,
-            form: "Serviços - Customizado",
-            description: `Registrou serviço customizado "${customSrv.service_name}" no pagamento do aluno ${studentId}. Preço: ${customSrv.price}.`,
+ 
+          const customServiceId = serviceResult.ed_service_id;
+          console.log(`[CUSTOM] ✓ Serviço garantido | ID: ${customServiceId}`);
+ 
+          processedServices.push({
+            code: customServiceId,
+            amount,
+            price: customPrice,          // ✅ PRECO DO FRONTEND
+            discount,
+            service_name,
+            isEnrollmentService: false,
+            isConfirmationService: false,
+            isFeeService: false,
           });
-
-        } catch (customErr) {
-          console.error(`Erro ao registar serviço customizado: ${customSrv.service_name}`);
-          console.error(`Mensagem: ${customErr.message}`);
-          return res.status(500).json({
+ 
+        } catch (err) {
+          console.error(`[CUSTOM] Erro:`, err.message);
+          return res.status(400).json({
             success: false,
-            msg: `Falha ao registar o serviço customizado "${customSrv.service_name}".`,
-            error: customErr.message,
+            msg: err.message || "Erro ao processar serviço customizado.",
           });
         }
+ 
+      } else {
+        // ✅ SERVICO NORMAL - preço também vem do frontend
+        processedServices.push({
+          code,
+          amount,
+          price: rawPrice,
+          discount,
+          service_name,
+          isEnrollmentService: !!(isEnrollmentService || is_enrollment == 1 || is_enrollment === true),
+          isConfirmationService: !!(isConfirmationService || is_confirmation == 1 || is_confirmation === true),
+          isFeeService: !!isFeeService,
+        });
       }
     }
-
-    // ───────────────────────────────────────────────────────────────────────────
-    // [2] RESOLVER MÉTODO DE PAGAMENTO
-    // ───────────────────────────────────────────────────────────────────────────
-    console.log("\n[2] Resolvendo método de pagamento...");
-
-    const paymentMethods = await getPaymentMethods(req);
-    if (!paymentMethods || paymentMethods.length === 0) {
-      console.error("Nenhum método de pagamento configurado!");
+ 
+    console.log(`[SERVICOS] ✓ ${processedServices.length} serviço(s) processado(s)`);
+ 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // ✅ VALIDAR EXISTENCIA DOS SERVICOS NA BD E USAR PRECO ENVIADO PELO FRONTEND
+    //    (a BD é usada apenas para confirmar que o serviço existe e pertence ao
+    //    instituto, e para obter o título/tipo — NUNCA para sobrepor o preço)
+    // ═══════════════════════════════════════════════════════════════════════════════
+    console.log("\n[BUSCA DE DADOS] Confirmando existência dos serviços e usando preços do frontend...");
+ 
+    const enrichedServices = [];
+ 
+    for (const service of processedServices) {
+      const { code, amount = 1, price, discount = discountPct } = service;
+ 
+      console.log(`[BUSCA] Confirmando serviço ID: ${code}`);
+ 
+      const [serviceData] = await ExecuteQuery(
+        null,
+        `SELECT 
+          ed_service_id,
+          ed_service_title,
+          ed_service_type
+         FROM eduall_services 
+         WHERE ed_service_id = ? 
+         AND ed_service_institute_code = ? 
+         AND COALESCE(ed_service_deleted,0)=0 
+         LIMIT 1`,
+        [code, sessionInstitute],
+        true
+      );
+ 
+      if (!serviceData) {
+        console.error(`Servico ${code} nao encontrado`);
+        return res.status(404).json({
+          success: false,
+          msg: `Servico ${code} nao encontrado na base de dados.`,
+        });
+      }
+ 
+      const amountVal = Math.max(1, parseFloat(amount) || 1);
+      const serviceName = serviceData.ed_service_title || service.service_name || `Serviço ${code}`;
+ 
+      // ✅ PRECO SEMPRE DO FRONTEND (payload), NUNCA DA BD
+      const priceVal = toPositiveNumber(price);
+      const discountVal = Math.max(0, parseFloat(discount) || 0);
+ 
+      console.log(`[PRECO] ${serviceName} (ID: ${code}) | Preço frontend: ${priceVal}`);
+ 
+      // ✅ NUNCA REGISTAR SERVICO COM VALOR ZERADO/INVALIDO
+      if (!priceVal || priceVal <= 0) {
+        console.error(`❌ PRECO INVALIDO/ZERADO: ${serviceName} (${code}) = ${price}`);
+        return res.status(400).json({
+          success: false,
+          msg: `Serviço ${code} (${serviceName}) tem preço inválido ou zerado: ${price}`,
+          error: "ZERO_OR_INVALID_PRICE"
+        });
+      }
+ 
+      if (!Number.isFinite(amountVal) || amountVal <= 0) {
+        console.error(`❌ QUANTIDADE INVALIDA: ${serviceName} (${code}) = ${amount}`);
+        return res.status(400).json({
+          success: false,
+          msg: `Serviço ${code} (${serviceName}) tem quantidade inválida: ${amount}`,
+        });
+      }
+ 
+      const subtotal = priceVal * amountVal;
+      const discountAmount = (subtotal * discountVal) / 100;
+      const lineTotal = subtotal - discountAmount;
+ 
+      // ✅ NUNCA REGISTAR LINHA COM TOTAL ZERADO (ex.: desconto de 100%)
+      if (!lineTotal || lineTotal <= 0) {
+        console.error(`❌ TOTAL DA LINHA ZERADO/INVALIDO: ${serviceName} (${code}) = ${lineTotal}`);
+        return res.status(400).json({
+          success: false,
+          msg: `Serviço ${code} (${serviceName}) resulta num total zerado após desconto.`,
+          error: "ZERO_LINE_TOTAL"
+        });
+      }
+ 
+      enrichedServices.push({
+        code,
+        title: serviceName,
+        type: serviceData.ed_service_type,
+        amountVal,
+        priceVal,                                  // ✅ DO FRONTEND
+        discountVal,
+        discountAmount,
+        subtotal,
+        lineTotal,
+        isEnrollmentService: service.isEnrollmentService,
+        isConfirmationService: service.isConfirmationService,
+        isFeeService: service.isFeeService,
+      });
+ 
+      console.log(`  ✓ ${serviceName} (ID: ${code}) | Preço: ${priceVal} | Qtd: ${amountVal} | Total: ${lineTotal}`);
+    }
+ 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // ✅ SEPARAR SERVICOS ESPECIAIS (MATRICULA / CONFIRMACAO / PROPINA) DOS REGULARES
+    // ═══════════════════════════════════════════════════════════════════════════════
+    const matriculaEntry = enrichedServices.find(s => s.isEnrollmentService);
+    const confirmacaoEntry = enrichedServices.find(s => s.isConfirmationService);
+    const feeEntry = enrichedServices.find(s => s.isFeeService);
+ 
+    const regularServices = enrichedServices.filter(
+      s => !s.isEnrollmentService && !s.isConfirmationService && !s.isFeeService
+    );
+ 
+    const matricula_service = matriculaServiceFromBody || matriculaEntry?.code || null;
+    const confirmacao_service = confirmacaoServiceFromBody || confirmacaoEntry?.code || null;
+    const fee_service_code = feeServiceFromBody || feeEntry?.code || null;
+ 
+    if (has_matricula && !matriculaEntry) {
+      console.error("has_matricula=true mas nenhum serviço de matrícula foi enviado em services[]");
       return res.status(400).json({
         success: false,
-        msg: "Nenhum método de pagamento configurado no sistema!",
+        msg: "Serviço de matrícula não foi enviado corretamente.",
+      });
+    }
+ 
+    if (has_confirmacao && !confirmacaoEntry) {
+      console.error("has_confirmacao=true mas nenhum serviço de confirmação foi enviado em services[]");
+      return res.status(400).json({
+        success: false,
+        msg: "Serviço de confirmação não foi enviado corretamente.",
+      });
+    }
+ 
+    if (alsofeepaymenet && feemonths?.length > 0 && !feeEntry) {
+      console.error("alsofeepaymenet=true mas nenhum serviço de propina foi enviado em services[]");
+      return res.status(400).json({
+        success: false,
+        msg: "Serviço de propina não foi enviado corretamente.",
+      });
+    }
+ 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // ✅ VALIDACOES DE TURMAS
+    // ═══════════════════════════════════════════════════════════════════════════════
+    console.log("\n[VALIDACOES] Validando turmas...");
+ 
+    if (has_matricula) {
+      const [classExists] = await ExecuteQuery(
+        null,
+        `SELECT ed_class_id FROM eduall_class WHERE ed_class_id = ? AND ed_class_institute_code = ? LIMIT 1`,
+        [matricula_class, sessionInstitute],
+        true
+      );
+ 
+      if (!classExists) {
+        return res.status(400).json({
+          success: false,
+          msg: `Turma de matricula ${matricula_class} nao existe.`,
+        });
+      }
+    }
+ 
+    if (has_confirmacao) {
+      const [classExists] = await ExecuteQuery(
+        null,
+        `SELECT ed_class_id FROM eduall_class WHERE ed_class_id = ? AND ed_class_institute_code = ? LIMIT 1`,
+        [confirmacao_class, sessionInstitute],
+        true
+      );
+ 
+      if (!classExists) {
+        return res.status(400).json({
+          success: false,
+          msg: `Turma de confirmacao ${confirmacao_class} nao existe.`,
+        });
+      }
+    }
+ 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // ✅ VALIDAR METODO DE PAGAMENTO
+    // ═══════════════════════════════════════════════════════════════════════════════
+    console.log("[VALIDACOES] Validando metodo de pagamento...");
+ 
+    const paymentMethods = await getPaymentMethods(req);
+    if (!paymentMethods || paymentMethods.length === 0) {
+      return res.status(400).json({
+        success: false,
+        msg: "Nenhum metodo de pagamento configurado no sistema!",
         error: "NO_PAYMENT_METHODS"
       });
     }
-
+ 
     const selectedPaymentMethod = resolvePaymentMethod(Number(paymentMethodIndex), paymentMethods);
     if (!selectedPaymentMethod) {
-      console.error(`Método de pagamento inválido: ${paymentMethodIndex}`);
       return res.status(400).json({
         success: false,
-        msg: "Método de pagamento inválido!",
+        msg: "Metodo de pagamento invalido!",
         error: "INVALID_PAYMENT_METHOD"
       });
     }
-
-    console.log(`Método: ${selectedPaymentMethod.name} (ID Vendus: ${selectedPaymentMethod.vendus_id})`);
-
+ 
+    console.log(`Metodo: ${selectedPaymentMethod.name}`);
+ 
     const needsBordereau = requiresBordereau(selectedPaymentMethod.name);
     if (needsBordereau && !paymentReference) {
-      console.error("Borderô obrigatório para este método");
       return res.status(400).json({
         success: false,
-        msg: `O método "${selectedPaymentMethod.name}" requer número de borderô/referência.`,
+        msg: `O metodo "${selectedPaymentMethod.name}" requer numero de borderô/referencia.`,
       });
     }
-
-    // ───────────────────────────────────────────────────────────────────────────
-    // [3] BUSCAR DADOS DO ALUNO
-    // ───────────────────────────────────────────────────────────────────────────
-    console.log("\n[3] Buscando aluno...");
-
+ 
+    console.log("TODAS AS VALIDACOES CONCLUIDAS COM SUCESSO");
+    console.log("\n[PROCESSAMENTO] Iniciando processamento...");
+ 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // ✅ CALCULAR TOTAIS (tudo com base nos preços do frontend, já validados > 0)
+    // ═══════════════════════════════════════════════════════════════════════════════
+    let totalInvoiceValue = 0;
+ 
+    for (const srv of enrichedServices) {
+      totalInvoiceValue += srv.lineTotal;
+    }
+ 
+    const matriculaTotal = matriculaEntry?.lineTotal || 0;
+    const matriculaServiceName = matriculaEntry?.title || "Serviço de Matrícula";
+ 
+    const confirmacaoTotal = confirmacaoEntry?.lineTotal || 0;
+    const confirmacaoServiceName = confirmacaoEntry?.title || "Serviço de Confirmação";
+ 
+    const feesTotalValue = feeEntry?.lineTotal || 0;
+    const feeServiceName = feeEntry?.title || "Serviço de Propinas";
+    const feePricePerMonth = feeEntry?.priceVal || 0;
+ 
+    if (has_matricula) {
+      console.log(`[MATRICULA] Serviço: ${matriculaServiceName} | ID: ${matricula_service} | Preço: ${matriculaTotal}`);
+    }
+    if (has_confirmacao) {
+      console.log(`[CONFIRMACAO] Serviço: ${confirmacaoServiceName} | ID: ${confirmacao_service} | Preço: ${confirmacaoTotal}`);
+    }
+    if (alsofeepaymenet && feemonths?.length > 0) {
+      console.log(`[PROPINAS] Serviço: ${feeServiceName} | ID: ${fee_service_code} | Preço/mês: ${feePricePerMonth} | Meses: ${feemonths.length} | Total: ${feesTotalValue}`);
+    }
+ 
+    // ✅ NUNCA REGISTAR PAGAMENTO COM VALOR TOTAL ZERADO
+    if (!totalInvoiceValue || totalInvoiceValue <= 0) {
+      console.error(`❌ VALOR TOTAL DA FATURA ZERADO/INVALIDO: ${totalInvoiceValue}`);
+      return res.status(400).json({
+        success: false,
+        msg: "O valor total do pagamento não pode ser zero.",
+        error: "ZERO_TOTAL_VALUE"
+      });
+    }
+ 
+    console.log(`Total do pagamento: ${Number(totalInvoiceValue.toFixed(2))}`);
+ 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // ✅ BUSCAR ALUNO E VALIDAR
+    // ═══════════════════════════════════════════════════════════════════════════════
+    console.log("[ALUNO] Buscando dados do aluno...");
+ 
     const [student] = await ExecuteQuery(
       null,
       `SELECT
         s.ed_student_id, s.ed_student_code, s.ed_student_name,
         s.ed_student_identityCard, s.ed_student_email, s.ed_student_address,
-        s.ed_student_class, s.ed_student_enrolled, cls.ed_class_title, room.ed_classroom_title,
-        crs.ed_course_title, ay.ed_academic_year_title
+        s.ed_student_class, s.ed_student_enrolled, cls.ed_class_title
        FROM eduall_students s
        LEFT JOIN eduall_class cls ON cls.ed_class_id = s.ed_student_class AND COALESCE(cls.ed_class_deleted,0)=0
-       LEFT JOIN eduall_classrooms room ON room.ed_classroom_id = cls.ed_class_room AND COALESCE(room.ed_classroom_deleted,0)=0
-       LEFT JOIN eduall_courses crs ON crs.ed_course_id = cls.ed_class_course AND COALESCE(crs.ed_course_deleted,0)=0
-       LEFT JOIN eduall_academic_year ay ON ay.ed_academic_year_id = cls.ed_class_year AND COALESCE(ay.ed_academic_year_deleted,0)=0
        WHERE s.ed_student_id = ? AND s.ed_student_institute_code = ? AND COALESCE(s.ed_student_deleted,0)=0
        LIMIT 1`,
       [studentId, sessionInstitute],
       true
     );
-
+ 
     if (!student) {
-      console.error(`Aluno ${studentId} não encontrado`);
+      console.error(`Aluno ${studentId} nao encontrado`);
       return res.status(404).json({
         success: false,
-        msg: "Aluno não encontrado.",
+        msg: "Aluno nao encontrado.",
       });
     }
-
+ 
     console.log(`Aluno encontrado: ${student.ed_student_name} (${student.ed_student_code})`);
-    console.log(`Estado de matrícula: ${student.ed_student_enrolled}`);
-    console.log(`Turma atual: ${student.ed_student_class}`);
-
-    // ─── VALIDAÇÃO DE MATRÍCULA/CONFIRMAÇÃO ────────────────────────────────
+ 
     if (has_matricula && student.ed_student_enrolled >= 1) {
-      console.error(`Aluno ${studentId} já foi matriculado (enrolled: ${student.ed_student_enrolled})`);
       return res.status(409).json({
         success: false,
-        msg: "Este aluno já foi matriculado! Não é possível fazer nova matrícula.",
+        msg: "Este aluno ja foi matriculado! Nao e possivel fazer nova matricula.",
         error: "ALREADY_ENROLLED"
       });
     }
-
+ 
     if (has_confirmacao && (!student.ed_student_enrolled || student.ed_student_enrolled < 1)) {
-      console.error(`Aluno ${studentId} não foi matriculado (enrolled: ${student.ed_student_enrolled})`);
       return res.status(409).json({
         success: false,
-        msg: "Este aluno NÃO foi matriculado ainda! Faça a matrícula primeiro.",
+        msg: "Este aluno NAO foi matriculado ainda! Faca a matricula primeiro.",
         error: "NOT_ENROLLED"
       });
     }
-
-    // ─── VALIDAÇÃO: Confirmação não pode ser na mesma turma ──────────────────
-    if (has_confirmacao && confirmacao_class && student.ed_student_class === confirmacao_class) {
-      console.error(`Tentativa de confirmação na mesma turma ${confirmacao_class}`);
-      return res.status(409).json({
-        success: false,
-        msg: "A confirmação de matrícula deve ser para uma turma DIFERENTE da atual. O aluno já está nesta turma.",
-        error: "CONFIRMATION_SAME_CLASS"
-      });
-    }
-
-    const [institute] = await ExecuteQuery(
-      null,
-      `SELECT ed_institute_name FROM eduall_institutes WHERE ed_institute_code=? LIMIT 1`,
-      [sessionInstitute],
-      true
-    );
-    const instituteName = institute?.ed_institute_name || "";
-
-    // ───────────────────────────────────────────────────────────────────────────
-    // [4] PROCESSAR SERVIÇOS E CALCULAR TOTAIS
-    // ───────────────────────────────────────────────────────────────────────────
-    console.log("\n[4] Processando serviços e calculando totais...");
-
-    let totalInvoiceValue = 0;
-    const processedServices = [];
-
-    // ─── SERVIÇOS REGULARES ────────────────────────────────────────────────────
-    for (const service of services) {
-      const { code, amount = 1, price, discount = discountPct, is_matricula, is_confirmation, isCustomService, service_name, label } = service;
-
-      const amountVal = parseFloat(amount) || 1;
-      const priceVal = parseFloat(price) || 0;
-      const discountVal = parseFloat(discount) || 0;
-
-      if (priceVal < 0) {
-        console.error(`Preço inválido para serviço ${code}`);
+ 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // ✅ CRIAR FATURA VENDUS - COM TITLE E GROSS_PRICE (uma linha por cada serviço,
+    //    incluindo matrícula/confirmação/propina, todos já em enrichedServices)
+    //
+    // 🆕 FIX: passamos TODOS os aliases de nome possíveis para preço e quantidade
+    //    (price, unit_price, gross_price, value, amount_value, qty, quantity),
+    //    porque não sabemos exatamente que chave a função VENDUS_CreateInvoiceCodeAndDoc
+    //    lê internamente. Isto garante que, seja qual for o nome usado lá dentro,
+    //    o valor correto (não undefined) estará disponível.
+    // ═══════════════════════════════════════════════════════════════════════════════
+    console.log("[VENDUS] Preparando linhas de fatura com title e gross_price...");
+ 
+    const invoiceLines = enrichedServices.map((srv) => {
+      let title = srv.title;
+      if (srv.isFeeService) {
+        title = `${srv.title} (${srv.amountVal} meses)`;
+      }
+ 
+      const unitPriceRounded = Number(srv.priceVal.toFixed(2));
+      const qtyVal = srv.amountVal;
+      const lineTotalRounded = Number(srv.lineTotal.toFixed(2));
+ 
+      return {
+        // Identificação
+        code: srv.code,
+        reference: String(srv.code),
+        title,
+        description: title,
+ 
+        // 🆕 FIX: aliases de preço unitário — cobre price / unit_price / gross_price / value
+        price: unitPriceRounded,
+        unit_price: unitPriceRounded,
+        gross_price: unitPriceRounded,
+        value: unitPriceRounded,
+ 
+        // 🆕 FIX: aliases de quantidade — cobre quantity / qty / amount
+        quantity: qtyVal,
+        qty: qtyVal,
+        amount: qtyVal,
+ 
+        // Desconto
+        discount_percent: srv.discountVal,
+        discount: srv.discountVal,
+        discount_amount: Number(srv.discountAmount.toFixed(2)),
+ 
+        // Total da linha
+        line_total: lineTotalRounded,
+        total: lineTotalRounded,
+        gross_amount: lineTotalRounded,
+      };
+    });
+ 
+    invoiceLines.forEach((line, i) => {
+      console.log(`[VENDUS] ✓ ${line.title} | Qty: ${line.quantity} | Price: ${line.unit_price} | Total: ${line.line_total}`);
+    });
+ 
+    // ✅ VALIDAR LINHAS
+    console.log("\n[VENDUS] Validando linhas de fatura...");
+    for (let i = 0; i < invoiceLines.length; i++) {
+      const line = invoiceLines[i];
+ 
+      if (!line.title || line.title.trim() === "") {
+        console.error(`[VENDUS] Linha ${i} sem title`);
         return res.status(400).json({
           success: false,
-          msg: `Preço inválido para o serviço ${code}.`,
+          msg: `Linha de fatura ${i} sem título.`,
         });
       }
-
-      let serviceName = service_name || label || null;
-
-      if (!serviceName && !isCustomService) {
-        try {
-          const [serviceInfo] = await ExecuteQuery(
-            null,
-            `SELECT ed_service_title FROM eduall_services 
-             WHERE ed_service_id = ? AND ed_service_institute_code = ? 
-             AND COALESCE(ed_service_deleted,0)=0 LIMIT 1`,
-            [code, sessionInstitute],
-            true
-          );
-
-          if (serviceInfo) {
-            serviceName = serviceInfo.ed_service_title;
-            console.log(`Nome do serviço buscado da BD: "${serviceName}" (ID: ${code})`);
-          }
-        } catch (err) {
-          console.warn(`Não foi possível buscar nome do serviço ${code} na BD`);
-        }
+ 
+      if (!Number.isFinite(line.gross_price) || line.gross_price <= 0) {
+        console.error(`[VENDUS] Linha ${i} com gross_price inválido: ${line.gross_price}`);
+        return res.status(400).json({
+          success: false,
+          msg: `Linha de fatura ${i} com preço inválido: ${line.gross_price}`,
+        });
       }
-
-      serviceName = serviceName || String(code);
-
-      const discountAmount = discountVal > 0 ? (priceVal * discountVal) / 100 : 0;
-      const baseAfterDiscount = Math.max(0, priceVal - discountAmount);
-      const lineTotal = baseAfterDiscount * amountVal;
-
-      processedServices.push({
-        code,
-        name: serviceName,
-        amount: amountVal,
-        price: priceVal,
-        discount: discountVal,
-        discountAmount,
-        baseAfterDiscount,
-        lineTotal,
-        is_matricula: is_matricula || 0,
-        is_confirmation: is_confirmation || 0,
-        isCustom: isCustomService || false,
-      });
-
-      totalInvoiceValue += lineTotal;
-
-      const badge = isCustomService ? "NEW" : "OK";
-      console.log(`${badge} ${serviceName} | Qtd: ${amountVal} | Preço: ${formatCurrency(priceVal)} | Total: ${formatCurrency(lineTotal)}`);
-    }
-
-    // ─── SERVIÇO DE MATRÍCULA ───────────────────────────────────────────────────
-    let matriculaTotal = 0;
-    if (has_matricula) {
-      const matriculaService = services.find(s => s.isMatriculaService === true);
-      if (matriculaService) {
-        const matriculaPrice = parseFloat(matriculaService.price) || 0;
-        matriculaTotal = matriculaPrice;
-        totalInvoiceValue += matriculaTotal;
-        console.log(`MATRÍCULA: ${formatCurrency(matriculaPrice)}`);
+ 
+      if (!Number.isFinite(line.quantity) || line.quantity <= 0) {
+        console.error(`[VENDUS] Linha ${i} com quantity inválida: ${line.quantity}`);
+        return res.status(400).json({
+          success: false,
+          msg: `Linha de fatura ${i} com quantidade inválida: ${line.quantity}`,
+        });
+      }
+ 
+      if (!Number.isFinite(line.line_total) || line.line_total <= 0) {
+        console.error(`[VENDUS] Linha ${i} com line_total inválido: ${line.line_total}`);
+        return res.status(400).json({
+          success: false,
+          msg: `Linha de fatura ${i} com total inválido: ${line.line_total}`,
+        });
       }
     }
-
-    // ─── SERVIÇO DE CONFIRMAÇÃO ────────────────────────────────────────────────
-    let confirmacaoTotal = 0;
-    if (has_confirmacao) {
-      const confirmacaoService = services.find(s => s.isConfirmacaoService === true);
-      if (confirmacaoService) {
-        const confirmacaoPrice = parseFloat(confirmacaoService.price) || 0;
-        confirmacaoTotal = confirmacaoPrice;
-        totalInvoiceValue += confirmacaoTotal;
-        console.log(`CONFIRMAÇÃO: ${formatCurrency(confirmacaoPrice)}`);
-      }
-    }
-
-    // ─── PROPINAS ──────────────────────────────────────────────────────────────
-    let feesTotalValue = 0;
-    if (alsofeepaymenet && feemonths?.length > 0 && fee_service_code) {
-      const [feeSrv] = await ExecuteQuery(
-        null,
-        `SELECT ed_service_id, ed_service_title, ed_service_price FROM eduall_services
-         WHERE ed_service_id = ? AND ed_service_institute_code = ? AND COALESCE(ed_service_deleted,0)=0 LIMIT 1`,
-        [fee_service_code, sessionInstitute],
-        true
-      );
-
-      if (feeSrv) {
-        const feePrice = parseFloat(feeSrv.ed_service_price) || 0;
-        feesTotalValue = feePrice * feemonths.length;
-        totalInvoiceValue += feesTotalValue;
-        console.log(`Propinas: ${feemonths.length} mês(es) * ${formatCurrency(feePrice)} = ${formatCurrency(feesTotalValue)}`);
-      }
-    }
-
-    console.log(`\nTOTAL: ${formatCurrency(totalInvoiceValue)}`);
-
-    const [operatorUser] = await ExecuteQuery(
-      null,
-      `SELECT ed_user_account_name FROM eduall_user_accounts 
-       WHERE ed_user_account_id = ? AND COALESCE(ed_user_account_deleted,0)=0 LIMIT 1`,
-      [operatorId],
-      true
-    );
-
-    const operatorName = operatorUser?.ed_user_account_name || `Operador ${operatorId}`;
-
-    // ───────────────────────────────────────────────────────────────────────────
-    // [5] CONSTRUIR OBSERVAÇÕES (COMPATÍVEL COM VENDUS)
-    // ───────────────────────────────────────────────────────────────────────────
-    console.log("\n[5] Construindo observações...");
-
-    // ✅ Determinar qual turma vai aparecer nas observações
-    // A turma que aparece será a turma do payload (matricula_class ou confirmacao_class)
-    // Esta será a turma FUTURA do aluno depois da operação
-    const classForObservations = has_matricula ? matricula_class : (has_confirmacao ? confirmacao_class : student.ed_student_class);
-    const classForObservationsLabel = await getClassLabel(classForObservations, sessionInstitute);
-
-    const obsParts = [];
-    obsParts.push(`Nº matrícula: ${student.ed_student_code || "-"}`);
-    obsParts.push(`Turma (futura): ${classForObservationsLabel}`);
-    if (student.ed_classroom_title) obsParts.push(`Sala: ${student.ed_classroom_title}`);
-    if (student.ed_course_title) obsParts.push(`Curso: ${student.ed_course_title}`);
-    if (student.ed_academic_year_title) obsParts.push(`Ano letivo: ${student.ed_academic_year_title}`);
-    if (instituteName) obsParts.push(`Instituição: ${instituteName}`);
-    obsParts.push(`Forma de pagamento: ${selectedPaymentMethod.name}`);
-
-    if (has_matricula) obsParts.push(`[MATRÍCULA]`);
-    if (has_confirmacao) obsParts.push(`[CONFIRMAÇÃO DE MATRÍCULA]`);
-
-     
-    if (observations) obsParts.push(`Observações: ${observations}`);
-    obsParts.push(`Operador: ${operatorName}`);
-
-    const obs = obsParts.join("\n");
-
-    // ───────────────────────────────────────────────────────────────────────────
-    // [6] PREPARAR DADOS PARA FATURA (VENDUS)
-    // ───────────────────────────────────────────────────────────────────────────
+ 
+    console.log(`[VENDUS] ✓ Todas as ${invoiceLines.length} linhas validadas com sucesso`);
+ 
     const customer = {
-      name: student.ed_student_name || "",
-      fiscal_id: student.ed_student_identityCard || "",
-      address: student.ed_student_address || "",
+      code: student.ed_student_code,
+      name: student.ed_student_name,
       email: student.ed_student_email || "",
+      address: student.ed_student_address || "",
+      nif: student.ed_student_identityCard || "",
     };
-
-    const invoiceLines = processedServices.map((srv) => ({
-      itemcode: `EDSERV-${srv.code}`,
-      title: srv.name || `Serviço ${srv.code}`,
-      price: Number(srv.baseAfterDiscount.toFixed(2)),
-      tax: 0,
-      discount: srv.discount,
-      quantity: String(srv.amount),
-    }));
-
-    // Adicionar linha de matrícula se aplicável
-    if (has_matricula && matriculaTotal > 0) {
-      invoiceLines.push({
-        itemcode: `EDMAT-${studentId}`,
-        title: `Matrícula`,
-        price: Number(matriculaTotal.toFixed(2)),
-        tax: 0,
-        discount: 0,
-        quantity: "1",
+ 
+    const obs = observations || `Pagamento do aluno ${student.ed_student_code}`;
+ 
+    // 🆕 FIX: sanity-check final ANTES de chamar a Vendus — recalcula o total
+    // a partir do próprio array invoiceLines e recusa avançar se detectar NaN.
+    // Isto impede que um payload com "gross_price": null chegue à API da Vendus.
+    const recomputedTotal = invoiceLines.reduce((acc, l) => acc + (Number(l.gross_price) * Number(l.quantity)), 0);
+    console.log(`[VENDUS] 🆕 Sanity-check pré-envio | Total recomputado a partir de invoiceLines: ${recomputedTotal}`);
+ 
+    if (!Number.isFinite(recomputedTotal) || recomputedTotal <= 0) {
+      console.error(`[VENDUS] ❌ SANITY-CHECK FALHOU: total recomputado = ${recomputedTotal}`);
+      console.error(`[VENDUS] invoiceLines enviado:`, JSON.stringify(invoiceLines, null, 2));
+      return res.status(500).json({
+        success: false,
+        msg: "Erro interno: as linhas de fatura ficaram com valores inválidos antes do envio à Vendus. Pagamento NAO foi registado.",
+        error: "INVALID_INVOICE_LINES_PRE_VENDUS",
+        debugInvoiceLines: invoiceLines,
       });
     }
-
-    // Adicionar linha de confirmação se aplicável
-    if (has_confirmacao && confirmacaoTotal > 0) {
-      invoiceLines.push({
-        itemcode: `EDCONF-${studentId}`,
-        title: `Confirmação de Matrícula`,
-        price: Number(confirmacaoTotal.toFixed(2)),
-        tax: 0,
-        discount: 0,
-        quantity: "1",
-      });
-    }
-
-    if (feesTotalValue > 0 && alsofeepaymenet && fee_service_code) {
-      const monthsFormatted = formatMonthsList(feemonths);
-
-      invoiceLines.push({
-        itemcode: `EDFEE-${fee_service_code}`,
-        title: `Propinas (${monthsFormatted})`,
-        price: Number((feesTotalValue / feemonths.length).toFixed(2)),
-        tax: 0,
-        discount: 0,
-        quantity: String(feemonths.length),
-      });
-    }
-
-    console.log("\nLinhas de fatura preparadas:");
-    invoiceLines.forEach((line, idx) => {
-      console.log(`[${idx + 1}] ${line.title} | Preço: ${line.price} | Qtd: ${line.quantity}`);
-    });
-
-    // ───────────────────────────────────────────────────────────────────────────
-    // [7] CRIAR FATURA NO VENDUS
-    // ───────────────────────────────────────────────────────────────────────────
-    console.log("\n[7] Criando fatura no Vendus...");
-    const startVendusTime = Date.now();
-
+ 
     let vendus;
     try {
       vendus = await VENDUS_CreateInvoiceCodeAndDoc(
@@ -1238,41 +1291,45 @@ const RegisterServicePayment = async (req, res) => {
       console.error(`[VENDUS] ERRO:`, vendusErr.message || vendusErr);
       return res.status(500).json({
         success: false,
-        msg: "Falha ao criar fatura Vendus. Pagamento NÃO foi registado.",
+        msg: "Falha ao criar fatura Vendus. Pagamento NAO foi registado.",
         vendusError: vendusErr.message || String(vendusErr),
       });
     }
-
+ 
     if (!vendus || !vendus.number || !vendus.id) {
-      console.error(`[VENDUS] Resposta inválida:`, JSON.stringify(vendus));
       return res.status(500).json({
         success: false,
-        msg: "Resposta Vendus inválida. Pagamento NÃO foi registado.",
+        msg: "Resposta Vendus invalida. Pagamento NAO foi registado.",
       });
     }
-
-    const vendusTime = Date.now() - startVendusTime;
-    console.log(`[VENDUS] Fatura criada com sucesso!`);
-    console.log(`Número: ${vendus.number}`);
-    console.log(`ID: ${vendus.id}`);
-    console.log(`Valor: ${formatCurrency(totalInvoiceValue)}`);
-    console.log(`PDF: ${vendus.output}`);
-    console.log(`Tempo: ${vendusTime}ms`);
-
-    // ───────────────────────────────────────────────────────────────────────────
-    // [8] INICIAR TRANSAÇÃO DE BD
-    // ───────────────────────────────────────────────────────────────────────────
-    console.log("\n[8] Iniciando transação de BD...");
-
+ 
+    // 🆕 FIX: se a Vendus devolveu amount_gross/amount_net a "0.00" com um total > 0,
+    // isso é sinal de que o payload ainda seguiu com valores nulos (mesmo depois do
+    // sanity-check acima, poderia ser um bug diferente dentro da função Vendus).
+    // Não bloqueamos o fluxo (a fatura já foi criada do lado da Vendus), mas avisamos.
+    const vendusGross = Number(vendus.amount_gross);
+    if (Number.isFinite(vendusGross) && vendusGross === 0 && totalInvoiceValue > 0) {
+      console.warn(`⚠️ [VENDUS] ALERTA: fatura ${vendus.number} foi criada com amount_gross=0.00 mas o total esperado era ${totalInvoiceValue}. Verificar VENDUS_CreateInvoiceCodeAndDoc.`);
+    }
+ 
+    console.log(`Fatura criada: ${vendus.number}`);
+ 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // ✅ INICIAR TRANSACAO
+    // ═══════════════════════════════════════════════════════════════════════════════
+    console.log("\n[TRANSACAO] Iniciando transacao...");
+ 
     const paymentCode = `SP-${Date.now()}-${studentId}`;
-
+ 
     await ExecuteQuery(null, "START TRANSACTION", [], false);
-
+ 
     try {
-
-      // ───────────────────────────────────────────────────────────────────────
-      // INSERIR PAGAMENTO DE SERVIÇO
-      // ───────────────────────────────────────────────────────────────────────
+ 
+      // ═════════════════════════════════════════════════════════════════════════════
+      // ✅ REGISTAR PAGAMENTO DE SERVICO
+      // ═════════════════════════════════════════════════════════════════════════════
+      console.log("[BD] Registando pagamento de servico...");
+ 
       const insertPaymentQuery = `
         INSERT INTO eduall_service_payments (
           ed_service_payment_code,
@@ -1285,7 +1342,7 @@ const RegisterServicePayment = async (req, res) => {
           ed_service_payment_reference,
           ed_service_payment_receipt_number,
           ed_service_payment_observations,
-          ed_service_payment_value_delivered,
+          ed_service_payment_balance_used,
           ed_service_payment_exchange,
           ed_service_payment_invoiceCode,
           ed_service_payment_file_code,
@@ -1303,13 +1360,13 @@ const RegisterServicePayment = async (req, res) => {
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW()
         )
       `;
-
+ 
       const newClassForPayment = has_matricula ? matricula_class : (has_confirmacao ? confirmacao_class : null);
-
-      const insertPaymentParams = [
+ 
+      await ExecuteQuery(null, insertPaymentQuery, [
         paymentCode,
         studentId,
-        processedServices.length,
+        enrichedServices.length,
         discountPct,
         selectedPaymentMethod.vendus_id,
         bankName || null,
@@ -1317,7 +1374,7 @@ const RegisterServicePayment = async (req, res) => {
         paymentReference || null,
         receiptNumber || null,
         obs,
-        valueDelivered || 0,
+        balance_used || 0,
         0,
         vendus.number,
         vendus.id,
@@ -1329,86 +1386,85 @@ const RegisterServicePayment = async (req, res) => {
         `Operador ${operatorId}`,
         operatorId || null,
         sessionInstitute,
-      ];
-
-      await ExecuteQuery(null, insertPaymentQuery, insertPaymentParams, false, {
+      ], false, {
         db: "eduall_service_payments",
         type: "insert",
         data: req,
       });
-
+ 
       console.log(`Pagamento registado: ${paymentCode}`);
-
-      // ───────────────────────────────────────────────────────────────────────
-      // INSERIR ITENS DE SERVIÇO
-      // ───────────────────────────────────────────────────────────────────────
-      for (const srv of processedServices) {
-        const itemQuery = `
-          INSERT INTO eduall_service_payment_items (
+ 
+      // ═════════════════════════════════════════════════════════════════════════════
+      // ✅ REGISTAR ITENS DE SERVICO (apenas serviços regulares/customizados,
+      //    matrícula/confirmação/propina têm o seu próprio fluxo abaixo)
+      // ═════════════════════════════════════════════════════════════════════════════
+      console.log("[BD] Registando itens de servico...");
+ 
+      for (const srv of regularServices) {
+        console.log(`[BD ITEM] Inserindo: code=${srv.code} | amount=${srv.amountVal} | price=${srv.priceVal} | discount=${srv.discountVal}`);
+ 
+        await ExecuteQuery(null,
+          `INSERT INTO eduall_service_payment_items (
             ed_service_payment_code,
             ed_service_id,
             ed_service_quantity,
             ed_service_unit_price,
             ed_service_discount_percent,
-            ed_service_is_matricula,
-            ed_service_is_confirmation,
             ed_service_institute_code
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-
-        const itemParams = [
-          paymentCode,
-          srv.code,
-          srv.amount,
-          srv.price,
-          srv.discount,
-          srv.is_matricula,
-          srv.is_confirmation,
-          sessionInstitute,
-        ];
-
-        await ExecuteQuery(null, itemQuery, itemParams, false, {
-          db: "eduall_service_payment_items",
-          type: "insert",
-        });
+          ) VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            paymentCode,
+            srv.code,
+            srv.amountVal,
+            srv.priceVal,
+            srv.discountVal,
+            sessionInstitute,
+          ], false,
+          {
+            db: "eduall_service_payment_items",
+            type: "insert",
+          });
+ 
+        console.log(`[BD ITEM] ✓ Inserido com sucesso`);
       }
-
-      console.log(`${processedServices.length} item(ns) de serviço registado(s)`);
-
-      // ═══════════════════════════════════════════════════════════════════════════
-      // ✅ PROCESSAR MATRÍCULA: Atualizar Turma do Aluno
-      // ═══════════════════════════════════════════════════════════════════════════
-      if (has_matricula && matricula_class) {
-        console.log(`\n[MATRÍCULA] Processando matrícula para turma ${matricula_class}...`);
-
+ 
+      console.log(`${regularServices.length} item(ns) regular(es) registado(s)`);
+ 
+      // ═════════════════════════════════════════════════════════════════════════════
+      // ✅ PROCESSAR MATRICULA
+      // ═════════════════════════════════════════════════════════════════════════════
+      if (has_matricula) {
+        console.log("[BD] Registando matricula...");
+ 
+        await ExecuteQuery(
+          null,
+          `INSERT INTO eduall_enrollment(
+            ed_enrollment_student,
+            ed_enrollment_service,
+            ed_enrollment_institute_code
+          ) VALUES (?, ?, ?)`,
+          [studentId, matricula_service, sessionInstitute],
+          false,
+          { db: "eduall_enrollment", type: "insert", data: req }
+        );
+ 
         const currentClass = student.ed_student_class;
         const newClass = matricula_class;
-
-        console.log(`Turma atual: ${currentClass} | Turma nova: ${newClass}`);
-
-        // ✅ Se as turmas são diferentes: registar a turma antiga no histórico
+ 
         if (currentClass && currentClass !== newClass) {
-          console.log(`Turmas diferentes! Registando turma antiga ${currentClass} no histórico...`);
-
           await ExecuteQuery(
             null,
-            `INSERT INTO eduall_student_old_classes(ed_student_old_class_student, ed_student_old_class) 
+            `INSERT INTO eduall_student_old_classes(ed_student_old_class_student, ed_student_old_class)
              VALUES (?, ?)`,
             [studentId, currentClass],
             false
           );
-
-          console.log(`✅ Turma antiga ${currentClass} registada no histórico`);
-        } else if (currentClass === newClass) {
-          console.log(`✅ Turmas são iguais (${newClass}). Aluno permanece na mesma turma. Nenhum histórico registado.`);
-        } else {
-          console.log(`⚠️ Aluno não tem turma anterior (null). Nenhum histórico a registar.`);
+          console.log(`Turma antiga registada no historico`);
         }
-
-        // ✅ Atualizar a turma do aluno
+ 
         await ExecuteQuery(
           null,
-          `UPDATE eduall_students 
+          `UPDATE eduall_students
            SET ed_student_class = ?, ed_student_enrolled = 1
            WHERE ed_student_id = ? AND ed_student_institute_code = ?`,
           [newClass, studentId, sessionInstitute],
@@ -1419,45 +1475,33 @@ const RegisterServicePayment = async (req, res) => {
             data: req,
           }
         );
-
-        console.log(`✅ Aluno movido para turma ${newClass} | Estado: matriculado (enrolled=1)`);
+ 
+        console.log("Aluno actualizado com matricula");
       }
-
-      // ═══════════════════════════════════════════════════════════════════════════
-      // ✅ PROCESSAR CONFIRMAÇÃO: Atualizar Turma do Aluno
-      // ═══════════════════════════════════════════════════════════════════════════
-      if (has_confirmacao && confirmacao_class) {
-        console.log(`\n[CONFIRMAÇÃO] Processando confirmação para turma ${confirmacao_class}...`);
-
+ 
+      // ═════════════════════════════════════════════════════════════════════════════
+      // ✅ PROCESSAR CONFIRMACAO
+      // ═════════════════════════════════════════════════════════════════════════════
+      if (has_confirmacao) {
+        console.log("[BD] Registando confirmacao...");
+ 
         const currentClass = student.ed_student_class;
         const newClass = confirmacao_class;
-
-        console.log(`Turma atual: ${currentClass} | Turma nova: ${newClass}`);
-
-        // ✅ Validação: A confirmação deve SER para uma turma diferente
-        // (Esta validação já foi feita acima, mas deixamos aqui por segurança)
-        if (currentClass === newClass) {
-          console.error(`❌ Tentativa de confirmação na mesma turma ${newClass}`);
-          throw new Error(`Confirmação não pode ser na mesma turma. Turma atual: ${currentClass}, Turma solicitada: ${newClass}`);
+ 
+        if (currentClass && currentClass !== newClass) {
+          await ExecuteQuery(
+            null,
+            `INSERT INTO eduall_student_old_classes(ed_student_old_class_student, ed_student_old_class)
+             VALUES (?, ?)`,
+            [studentId, currentClass],
+            false
+          );
+          console.log(`Turma anterior registada no historico`);
         }
-
-        // ✅ Registar a turma antiga (que é obrigatório em confirmação)
-        console.log(`Registando turma anterior ${currentClass} no histórico...`);
-
+ 
         await ExecuteQuery(
           null,
-          `INSERT INTO eduall_student_old_classes(ed_student_old_class_student, ed_student_old_class) 
-           VALUES (?, ?)`,
-          [studentId, currentClass],
-          false
-        );
-
-        console.log(`✅ Turma antiga ${currentClass} registada no histórico`);
-
-        // ✅ Atualizar a turma e o estado do aluno
-        await ExecuteQuery(
-          null,
-          `UPDATE eduall_students 
+          `UPDATE eduall_students
            SET ed_student_class = ?, ed_student_enrolled = 2
            WHERE ed_student_id = ? AND ed_student_institute_code = ?`,
           [newClass, studentId, sessionInstitute],
@@ -1468,166 +1512,131 @@ const RegisterServicePayment = async (req, res) => {
             data: req,
           }
         );
-
-        console.log(`✅ Aluno movido para turma ${newClass} | Estado: confirmado (enrolled=2)`);
+ 
+        console.log("Aluno actualizado com confirmacao");
       }
-
-      // ───────────────────────────────────────────────────────────────────────
-      // PROCESSAR PROPINAS: Registar pagamento de propinas
-      // ───────────────────────────────────────────────────────────────────────
-      if (alsofeepaymenet && feemonths?.length > 0 && fee_service_code) {
-        const [feeSrvForPrice] = await ExecuteQuery(
-          null,
-          `SELECT ed_service_price FROM eduall_services
-           WHERE ed_service_id = ? AND ed_service_institute_code = ? AND COALESCE(ed_service_deleted,0)=0 LIMIT 1`,
-          [fee_service_code, sessionInstitute],
-          true
-        );
-
-        const feeHistoricalPrice = feeSrvForPrice?.ed_service_price || 0;
-
+ 
+      // ═════════════════════════════════════════════════════════════════════════════
+      // ✅ PROCESSAR PROPINAS (preço por mês vem do frontend, já validado > 0)
+      // ═════════════════════════════════════════════════════════════════════════════
+      if (alsofeepaymenet && feemonths?.length > 0) {
+        console.log("[BD] Registando propinas...");
+ 
         for (const month of feemonths) {
-          const feeQuery = `
-            INSERT INTO eduall_fees_payments (
+          await ExecuteQuery(
+            null,
+            `INSERT INTO eduall_fees_payments(
               ed_fee_payment_student,
               ed_fee_payment_month,
               ed_fee_payment_service,
-              ed_fee_payment_price,
-              ed_fee_payment_invoiceCode,
-              ed_fee_payment_institute_code,
-              ed_fee_payment_registerDate
-            ) VALUES (?, ?, ?, ?, ?, ?, NOW())
-          `;
-
-          const feeParams = [
-            studentId,
-            month,
-            fee_service_code,
-            feeHistoricalPrice,
-            paymentCode,
-            sessionInstitute,
-          ];
-
-          await ExecuteQuery(null, feeQuery, feeParams, false);
+              ed_fee_payment_amount,
+              ed_fee_payment_payment_code,
+              ed_fee_payment_institute_code
+            ) VALUES (?, ?, ?, ?, ?, ?)`,
+            [studentId, month, fee_service_code, feePricePerMonth, paymentCode, sessionInstitute],
+            false,
+            { db: "eduall_fees_payments", type: "insert", data: req }
+          );
         }
-
-        console.log(`${feemonths.length} propina(s) registada(s) com preço histórico: ${formatCurrency(feeHistoricalPrice)}`);
+ 
+        console.log(`${feemonths.length} propina(s) registada(s)`);
       }
-
+ 
+      // ═════════════════════════════════════════════════════════════════════════════
+      // ✅ CONFIRMAR TRANSACAO
+      // ═════════════════════════════════════════════════════════════════════════════
       await ExecuteQuery(null, "COMMIT", [], false);
-      console.log(`✅ Transação confirmada com sucesso`);
-
+      console.log("Transacao confirmada");
+ 
+      // ═════════════════════════════════════════════════════════════════════════════
+      // ✅ REGISTAR EM AUDITORIA
+      // ═════════════════════════════════════════════════════════════════════════════
+      if (balance_used > 0) {
+        console.log(`[AUDITORIA] Registando consumo de saldo: ${balance_used}`);
+ 
+        await RegisterAuditAction({
+          session: req.session,
+          action: 1,
+          form: "Pagamento de Servicos",
+          description: `Pagamento com consumo de saldo: ${balance_used} Kz. Aluno: ${student.ed_student_code}. Codigo: ${paymentCode}. Obs: ${obs.substring(0, 100)}`,
+        });
+      } else {
+        await RegisterAuditAction({
+          session: req.session,
+          action: 1,
+          form: "Pagamento de Servicos",
+          description: `Registrou pagamento para aluno ${student.ed_student_code}. Codigo: ${paymentCode}. Fatura: ${vendus.number}.`,
+        });
+      }
+ 
+      console.log("\n" + "=".repeat(90));
+      console.log("PAGAMENTO REGISTADO COM SUCESSO");
+      console.timeEnd(timerLabel);
+      console.log("=".repeat(90) + "\n");
+ 
+      return res.status(200).json({
+        success: true,
+        msg: "Pagamento registado com sucesso!",
+        data: {
+          paymentCode,
+          services: enrichedServices.map((s, i) => ({
+            index: i,
+            code: s.code,
+            title: s.title,
+            amount: s.amountVal,
+            price: s.priceVal,
+            discount: s.discountVal,
+            total: s.lineTotal,
+          })),
+          matricula: has_matricula ? {
+            done: true,
+            newClass: matricula_class,
+            amount: matriculaTotal
+          } : null,
+          confirmacao: has_confirmacao ? {
+            done: true,
+            newClass: confirmacao_class,
+            amount: confirmacaoTotal
+          } : null,
+          subtotal: Number((totalInvoiceValue - feesTotalValue).toFixed(2)),
+          fees: feesTotalValue > 0 ? Number(feesTotalValue.toFixed(2)) : 0,
+          total: Number(totalInvoiceValue.toFixed(2)),
+          balanceUsed: balance_used > 0 ? Number(balance_used.toFixed(2)) : 0,
+        },
+        invoiceValue: Number(totalInvoiceValue.toFixed(2)),
+        vendus: {
+          number: vendus.number,
+          id: vendus.id,
+          output: vendus.output,
+          source: vendus.source,
+        },
+        paymentMethod: {
+          id: selectedPaymentMethod.vendus_id,
+          name: selectedPaymentMethod.name,
+        },
+        operator: {
+          id: operatorId,
+        },
+        timestamp: new Date().toISOString(),
+      });
+ 
     } catch (txErr) {
       await ExecuteQuery(null, "ROLLBACK", [], false);
-      console.error(`[TX] Erro:`, txErr.message);
+      console.error(`[TRANSACAO] ERRO:`, txErr.message || txErr);
       throw txErr;
     }
-
-    // ───────────────────────────────────────────────────────────────────────────
-    // [9] REGISTAR AUDITORIA
-    // ───────────────────────────────────────────────────────────────────────────
-    console.log("\n[9] Registando auditoria...");
-
-    let auditDesc = `[ID ${operatorId}] Registou pagamento de serviço(s) para ${student.ed_student_code}. `;
-    auditDesc += `Método: ${selectedPaymentMethod.name}. `;
-    auditDesc += `Fatura: ${vendus.number}. `;
-    auditDesc += `Total: ${formatCurrency(totalInvoiceValue)}.`;
-
-    if (customServices.length > 0) {
-      auditDesc += ` [${customServices.length} SERVIÇO(S) CUSTOMIZADO(S)]`;
-    }
-
-    if (has_matricula) {
-      auditDesc += ` [MATRÍCULA para turma ${matricula_class}]`;
-    }
-    if (has_confirmacao) {
-      auditDesc += ` [CONFIRMAÇÃO para turma ${confirmacao_class}]`;
-    }
-    if (alsofeepaymenet && feemonths?.length > 0) {
-      const monthsFormatted = formatMonthsList(feemonths);
-      auditDesc += ` [PROPINAS: ${monthsFormatted}]`;
-    }
-
-    await RegisterAuditAction({
-      session: req.session,
-      action: 1,
-      form: "Pagamentos de Serviços",
-      description: auditDesc,
-    });
-
-    console.log(`✅ Auditoria registada`);
-
-    console.log("\n" + "═".repeat(90));
-    console.log("PAGAMENTO REGISTADO COM SUCESSO");
-    console.log("═".repeat(90) + "\n");
-
-    try {
-      console.timeEnd(timerLabel);
-    } catch (e) {
-      // Ignore
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Pagamento registado com sucesso!",
-      payment: {
-        code: paymentCode,
-        studentId: student.ed_student_id,
-        studentCode: student.ed_student_code,
-        studentName: student.ed_student_name,
-        services: processedServices.map(s => ({
-          id: s.code,
-          title: s.name,
-          amount: s.amount,
-          price: s.price,
-          discount: s.discount,
-          total: Number(s.lineTotal.toFixed(2)),
-          isCustom: s.isCustom,
-        })),
-        matricula: has_matricula ? {
-          done: true,
-          newClass: matricula_class,
-          amount: matriculaTotal
-        } : null,
-        confirmacao: has_confirmacao ? {
-          done: true,
-          newClass: confirmacao_class,
-          amount: confirmacaoTotal
-        } : null,
-        subtotal: Number((totalInvoiceValue - feesTotalValue).toFixed(2)),
-        fees: feesTotalValue > 0 ? Number(feesTotalValue.toFixed(2)) : 0,
-        total: Number(totalInvoiceValue.toFixed(2)),
-      },
-      invoiceValue: Number(totalInvoiceValue.toFixed(2)),
-      vendus: {
-        number: vendus.number,
-        id: vendus.id,
-        output: vendus.output,
-        source: vendus.source,
-        ownKey: vendus.ownKey,
-        warning: vendus.warning,
-      },
-      paymentMethod: {
-        id: selectedPaymentMethod.vendus_id,
-        name: selectedPaymentMethod.name,
-      },
-      operator: {
-        id: operatorId,
-      },
-      timestamp: new Date().toISOString(),
-    });
-
+ 
   } catch (error) {
-    console.error(`\n[RegisterServicePayment] ERRO GERAL:`, error.message || error);
+    console.error(`\n[ERRO GERAL]:`, error.message || error);
     console.error(`Stack:`, error.stack);
-    console.log("═".repeat(90) + "\n");
-
+    console.log("=".repeat(90) + "\n");
+ 
     try {
       console.timeEnd(timerLabel);
     } catch (e) {
       // Ignore
     }
-
+ 
     return res.status(500).json({
       success: false,
       msg: "Erro ao processar o pagamento.",
@@ -1636,6 +1645,9 @@ const RegisterServicePayment = async (req, res) => {
   }
 };
 
+ 
+ 
+ 
 // ════════════════════════════════════════════════════════════════════════════════
 // ✅ HELPER FUNCTION: Obter Rótulo da Turma
 // ════════════════════════════════════════════════════════════════════════════════

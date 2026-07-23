@@ -8,14 +8,20 @@
  * ✅ Crypto: Secure key management
  * ✅ Multi-país: AO, PT, CV, MZ
  * ✅ Retry: Fallback automático
+ * ✅ PERFORMANCE: VENDUS_GetInvoicesByIds agora busca faturas em PARALELO
+ *    (pool de concorrência configurável) em vez de sequencialmente, com
+ *    reutilização de ligações HTTP (keep-alive) — essencial para volumes
+ *    grandes (1M+ pagamentos).
  * 
- * Version: 3.1 (CORRIGIDO)
+ * Version: 3.2 (OTIMIZADO — CONCORRÊNCIA)
  * Status: ✅ Pronto para Produção com Logging Completo
  */
 
 "use strict";
 
 const axios = require("axios");
+const http = require("http");
+const https = require("https");
 const crypto = require("crypto");
 const fs = require("fs").promises;  // ← MUDANÇA CRÍTICA: .promises para async
 const path = require("path");       // ← ADICIONADO: para caminhos absolutos
@@ -96,6 +102,68 @@ const COUNTRY_LEGACY_URLS = {
   CV: "https://www.vendus.cv/ws/documents/",
   MZ: "https://www.vendus.co.mz/ws/documents/",
 };
+
+// ════════════════════════════════════════════════════════════════════════════════
+// ⚡ PERFORMANCE: AGENTES HTTP COM KEEP-ALIVE (reutilização de ligações TCP/TLS)
+//    Sem isto, cada chamada axios.get abre uma nova ligação (handshake TCP +
+//    TLS) do zero. Com keep-alive, ligações são reaproveitadas entre pedidos
+//    ao mesmo host — reduz latência por pedido de forma significativa quando
+//    há muitas chamadas ao mesmo domínio (como é o caso da Vendus).
+// ════════════════════════════════════════════════════════════════════════════════
+
+const VENDUS_FETCH_CONCURRENCY = Number(process.env.VENDUS_FETCH_CONCURRENCY) || 25;
+
+const keepAliveHttpAgent = new http.Agent({
+  keepAlive: true,
+  maxSockets: VENDUS_FETCH_CONCURRENCY,
+  maxFreeSockets: VENDUS_FETCH_CONCURRENCY,
+});
+const keepAliveHttpsAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: VENDUS_FETCH_CONCURRENCY,
+  maxFreeSockets: VENDUS_FETCH_CONCURRENCY,
+});
+
+const vendusHttpClient = axios.create({
+  httpAgent: keepAliveHttpAgent,
+  httpsAgent: keepAliveHttpsAgent,
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// ⚡ PERFORMANCE: POOL DE CONCORRÊNCIA (worker pool simples, sem dependências)
+//    Substitui o antigo `for...of` sequencial. Em vez de esperar cada pedido
+//    terminar antes de iniciar o seguinte, mantém até `limit` pedidos em voo
+//    simultaneamente. Isto transforma o tempo total de
+//        N pedidos * tempo_por_pedido
+//    para aproximadamente
+//        (N / limit) * tempo_por_pedido
+//    Ex.: 1000 faturas a ~250ms cada, sequencial = ~250s; com concorrência 25
+//    = ~10s (na prática ainda melhor, porque as ligações são reaproveitadas).
+// ════════════════════════════════════════════════════════════════════════════════
+
+async function runWithConcurrencyLimit(items, limit, workerFn) {
+  const results = new Array(items.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < items.length) {
+      const currentIndex = cursor++;
+      try {
+        results[currentIndex] = await workerFn(items[currentIndex], currentIndex);
+      } catch (err) {
+        // workerFn já deve tratar os seus próprios erros e devolver um objeto
+        // de erro; isto é apenas uma rede de segurança extra.
+        results[currentIndex] = { error: true, detalhes: err?.message || "Erro desconhecido" };
+      }
+    }
+  }
+
+  const poolSize = Math.max(1, Math.min(limit, items.length));
+  const workers = Array.from({ length: poolSize }, () => worker());
+  await Promise.all(workers);
+
+  return results;
+}
 
 // ════════════════════════════════════════════════════════════════════════════════
 // CRYPTO - KEY MANAGEMENT
@@ -504,7 +572,7 @@ async function postToApi(url, payload, apiKey) {
     
     logVendusDebug(`POST ${url} com auth (apiKey: ${apiKey.substring(0, 8)}...)`);
     
-    const { data } = await axios.post(url, payload, {
+    const { data } = await vendusHttpClient.post(url, payload, {
       auth: { username: apiKey, password: "" },
       headers: { "Content-Type": "application/json" },
       timeout: 20000,
@@ -1190,6 +1258,11 @@ async function handleCreateInvoice(req, res) {
             testPayload,
             config.apiKey
           );
+
+
+          console.log("sucess = ", data);
+
+
           return res.status(201).json({
             id: data?.id || null,
             number: data?.number || null,
@@ -1285,8 +1358,371 @@ async function handleCreateInvoice(req, res) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// EXPORTS
+// BUSCAR FATURAS POR ID (ARRAY) — DADOS, ITENS, TOTAIS
 // ════════════════════════════════════════════════════════════════════════════════
+
+// ==================== BUSCAR OPERADORES ====================
+ 
+/**
+ * Busca informações de operadores na tabela eduall_user_accounts
+ * Retorna array com { id, name } apenas dos utilizadores encontrados
+ * 
+ * @param {Array<number|string>} operatorIds - Array de IDs de operadores
+ * @returns {Promise<Array>} Array de { id, name }
+ */
+async function getOperatorNames(operatorIds) {
+  if (!operatorIds || operatorIds.length === 0) {
+    return [];
+  }
+ 
+  try {
+    // Remove IDs nulos/vazios
+    const validIds = operatorIds
+      .filter((id) => id && id !== null && id !== undefined && id !== "")
+      .map((id) => (typeof id === "string" ? parseInt(id) : id))
+      .filter((id) => !isNaN(id));
+ 
+    if (validIds.length === 0) {
+      return [];
+    }
+ 
+    // Monta a query com placeholders dinâmicos
+    const placeholders = validIds.map(() => "?").join(",");
+    const query = `
+      SELECT 
+        ed_user_account_id AS id,
+        ed_user_account_name AS name,
+        ed_user_account_username AS username
+      FROM eduall_user_accounts
+      WHERE ed_user_account_id IN (${placeholders})
+      AND ed_user_account_deleted = 0
+      LIMIT ${validIds.length}
+    `;
+ 
+    const results = await ExecuteQuery(query, validIds);
+ 
+    if (!Array.isArray(results)) {
+      return [];
+    }
+ 
+    // Retorna apenas id e name, filtrando nomes vazios
+    return results
+      .map((r) => ({
+        id: r.id,
+        name: r.name || r.username || `User #${r.id}`,
+      }))
+      .filter((r) => r.name);
+  } catch (err) {
+    logVendusError(`Erro ao buscar operadores: ${err.message}`);
+    return [];
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// ⚡ BUSCAR UMA FATURA (função isolada para ser usada pelo pool de concorrência)
+//    Mantém exatamente a mesma forma de retorno da versão original.
+// ════════════════════════════════════════════════════════════════════════════════
+
+async function fetchSingleVendusInvoice(id, { baseUrl, apiKey }) {
+  try {
+    logVendusDebug(`A buscar fatura ${id}...`);
+
+    const { data } = await vendusHttpClient.get(`${baseUrl}/documents/${id}`, {
+      auth: { username: apiKey, password: "" },
+      headers: { "Content-Type": "application/json" },
+      timeout: 15000,
+    });
+
+    // A Vendus normalmente devolve um objeto único (não array) neste endpoint
+    const doc = Array.isArray(data) ? data[0] : data;
+
+    if (!doc) {
+      return { id, error: true, detalhes: "Fatura não encontrada" };
+    }
+
+    // ✅ operatorId pode vir de múltiplas fontes
+    const operatorId = doc.operatorId || doc.operator_id || doc.createdBy || null;
+
+    logVendusSuccess(`Fatura ${id} obtida com sucesso`);
+
+    return {
+      id: doc.id,
+      number: doc.number,
+      type: doc.type,
+      date: doc.date,
+      status: doc.status,
+      operatorId: operatorId, // ID do operador (pode ser null)
+      client: {
+        name: doc.client?.name,
+        fiscal_id: doc.client?.fiscal_id,
+        email: doc.client?.email,
+        address: doc.client?.address,
+      },
+      // Serviços / itens da fatura
+      items: (doc.items || []).map((item) => ({
+        title: item.title,
+        reference: item.reference,
+        qty: item.qty,
+        gross_price: item.gross_price,
+        tax_id: item.tax_id,
+        total: (Number(item.gross_price) || 0) * (Number(item.qty) || 1),
+      })),
+      // Totais
+      totals: {
+        gross_total: doc.gross_total,
+        net_total: doc.net_total,
+        taxes_total:
+          doc.gross_total && doc.net_total
+            ? Number((doc.gross_total - doc.net_total).toFixed(2))
+            : null,
+      },
+      payments: doc.payments || [],
+      output_pdf: doc.output || `${baseUrl}/documents/${doc.id}.pdf`,
+    };
+  } catch (err) {
+    logVendusError(
+      `Erro ao buscar fatura ${id}: ${err.response?.data?.errors?.[0]?.message || err.message}`
+    );
+    return {
+      id,
+      error: true,
+      status: err.response?.status || 500,
+      detalhes: err.response?.data || err.message,
+    };
+  }
+}
+ 
+// ==================== MAIN: VENDUS_GetInvoicesByIds (OTIMIZADO) ====================
+ 
+/**
+ * Busca faturas do Vendus e enriquece com nomes de operadores.
+ *
+ * ⚡ OTIMIZAÇÃO DE PERFORMANCE:
+ * A versão anterior fazia um `for...of` sequencial — um pedido HTTP de
+ * cada vez, esperando a resposta antes de iniciar o próximo. Com
+ * volumes grandes (1M+ pagamentos, lotes de até 100 IDs por chamada),
+ * isto tornava-se o principal gargalo do dashboard/relatórios.
+ *
+ * Agora:
+ *  1. Os IDs são deduplicados antes de qualquer pedido (evita buscar a
+ *     mesma fatura duas vezes no mesmo lote).
+ *  2. As faturas são buscadas em PARALELO através de um pool de
+ *     concorrência (`runWithConcurrencyLimit`), limitado por
+ *     VENDUS_FETCH_CONCURRENCY (default 25, ajustável via variável de
+ *     ambiente sem alterar código).
+ *  3. As ligações HTTP/HTTPS são reaproveitadas (keep-alive) através de
+ *     `vendusHttpClient`, reduzindo overhead de handshake por pedido.
+ *
+ * A forma do retorno (array de objetos, mesma estrutura, mesma ordem de
+ * fases: buscar -> enriquecer com operadores) mantém-se idêntica à
+ * versão anterior, para não quebrar nada que já consome esta função.
+ */
+async function VENDUS_GetInvoicesByIds(req, invoiceIds) {
+  if (!Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+    logVendusWarn("VENDUS_GetInvoicesByIds: array de IDs vazio ou inválido");
+    return [];
+  }
+
+  const config = await getInstituteConfig(req);
+  const apiKey = config?.apiKey || DEFAULT_API_KEY;
+  const baseUrl = config?.baseUrl || COUNTRY_API_URLS.AO;
+
+  // ⚡ Deduplica os IDs — se o mesmo ID aparecer repetido no lote, só é
+  // pedido à Vendus uma única vez; o resultado é depois replicado.
+  const uniqueIds = [...new Set(invoiceIds.map(String))];
+  const skippedDuplicates = invoiceIds.length - uniqueIds.length;
+  if (skippedDuplicates > 0) {
+    logVendus(`${skippedDuplicates} ID(s) duplicado(s) no lote — buscando apenas ${uniqueIds.length} fatura(s) únicas`);
+  }
+
+  const startedAt = Date.now();
+  logVendus(`A buscar ${uniqueIds.length} fatura(s) com concorrência=${VENDUS_FETCH_CONCURRENCY}...`);
+
+  // ==================== FASE 1: Buscar Faturas (EM PARALELO) ====================
+
+  const resultadosUnicos = await runWithConcurrencyLimit(
+    uniqueIds,
+    VENDUS_FETCH_CONCURRENCY,
+    (id) => fetchSingleVendusInvoice(id, { baseUrl, apiKey })
+  );
+
+  const elapsedMs = Date.now() - startedAt;
+  logVendusSuccess(`${resultadosUnicos.length} fatura(s) buscadas em ${elapsedMs}ms`);
+
+  // Reconstrói o array na ordem/quantidade originais (repõe duplicados)
+  const resultadosPorId = new Map(resultadosUnicos.map((r) => [String(r.id), r]));
+  const resultados = invoiceIds.map((originalId) => {
+    const found = resultadosPorId.get(String(originalId));
+    return found || { id: originalId, error: true, detalhes: "Fatura não encontrada" };
+  });
+
+  // ==================== FASE 2: Enriquecer com Operadores ====================
+ 
+  // Coleta todos os IDs de operadores únicos (sem null/duplicados)
+  const operatorIdsToFetch = [
+    ...new Set(
+      resultados
+        .filter((r) => r.operatorId && !r.error)
+        .map((r) => r.operatorId)
+    ),
+  ];
+ 
+  // Se houver operadores, busca seus nomes
+  const operatorsMap = {};
+  if (operatorIdsToFetch.length > 0) {
+    const operatorsList = await getOperatorNames(operatorIdsToFetch);
+ 
+    // Cria map para lookup rápido
+    operatorsList.forEach((op) => {
+      operatorsMap[op.id] = op.name;
+    });
+ 
+    logVendusSuccess(
+      `${operatorsList.length} operadores encontrados na BD (de ${operatorIdsToFetch.length} buscados)`
+    );
+  }
+ 
+  // ==================== FASE 3: Adicionar operatorsInfo ====================
+ 
+  const resultadosEnriquecidos = resultados.map((fatura) => {
+    if (fatura.error) {
+      // Mantém erros como estão
+      return fatura;
+    }
+ 
+    // ✅ operatorsInfo (array de objetos com id e name)
+    const operatorsInfo = fatura.operatorId && operatorsMap[fatura.operatorId]
+      ? [
+          {
+            id: fatura.operatorId,
+            name: operatorsMap[fatura.operatorId],
+          },
+        ]
+      : [];
+ 
+    return {
+      ...fatura,
+      operatorsInfo,
+    };
+  });
+ 
+  logVendusSuccess(
+    `${resultadosEnriquecidos.length} faturas processadas e enriquecidas com operadores (total ${Date.now() - startedAt}ms)`
+  );
+ 
+  return resultadosEnriquecidos;
+}
+ 
+// ==================== CONTROLADOR HTTP ====================
+ 
+/**
+ * Controller que expõe a função VENDUS_GetInvoicesByIds via HTTP
+ */
+async function getVendusInvoicesByIds(req, res) {
+  try {
+    const { ids } = req.query;
+ 
+    if (!ids) {
+      return res.status(400).json({
+        success: false,
+        message: "Query parameter 'ids' é obrigatório",
+      });
+    }
+ 
+    // Parse de CSV para array
+    const invoiceIds = ids.split(",").map((id) => id.trim()).filter(Boolean);
+ 
+    if (invoiceIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Nenhum ID de fatura válido fornecido",
+      });
+    }
+ 
+    const invoices = await VENDUS_GetInvoicesByIds(req, invoiceIds);
+ 
+    return res.json({
+      success: true,
+      data: invoices,
+      count: invoices.length,
+      operators: getUniqueOperators(invoices), // ✅ Lista de operadores únicos
+    });
+  } catch (err) {
+    logVendusError(`Erro no controller: ${err.message}`);
+    return res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+}
+ 
+// ==================== HELPER: Lista Única de Operadores ====================
+ 
+ 
+function getUniqueOperators(invoices) {
+  const operatorsMap = new Map();
+ 
+  invoices.forEach((invoice) => {
+    if (invoice.operatorsInfo && Array.isArray(invoice.operatorsInfo)) {
+      invoice.operatorsInfo.forEach((op) => {
+        // Map evita duplicatas
+        operatorsMap.set(op.id, { id: op.id, name: op.name });
+      });
+    }
+  });
+ 
+  return Array.from(operatorsMap.values());
+}
+ 
+ 
+// ════════════════════════════════════════════════════════════════════════════════
+// ROUTE HANDLER: BUSCAR FATURAS POR IDs (via query param)
+// ════════════════════════════════════════════════════════════════════════════════
+
+async function handleGetInvoicesByIds(req, res) {
+  try {
+    const { ids } = req.query;
+
+    if (!ids) {
+      return res.status(400).json({
+        msg: "É necessário fornecer o parâmetro 'ids' na query (ex: ?ids=123,456).",
+      });
+    }
+
+    // Aceita "123,456" ou "123" e limpa espaços/vazios
+    const idsArray = String(ids)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (idsArray.length === 0) {
+      return res.status(400).json({
+        msg: "Parâmetro 'ids' inválido.",
+      });
+    }
+
+    if (idsArray.length > 100) {
+      return res.status(400).json({
+        msg: "Máximo de 100 IDs por pedido.",
+      });
+    }
+
+    const resultados = await VENDUS_GetInvoicesByIds(req, idsArray);
+
+    const comErro = resultados.filter((r) => r.error).length;
+    const semErro = resultados.length - comErro;
+
+    return res.status(200).json({
+      total: resultados.length,
+      sucesso: semErro,
+      erros: comErro,
+      faturas: resultados,
+    });
+  } catch (e) {
+    logVendusError(`handleGetInvoicesByIds: ${e.message}`);
+    return res.status(500).json({ msg: e.message });
+  }
+}
 
 module.exports = {
   ensureCryptoEnvAsync,  // ← NOVO: Função async para chamar em app.js
@@ -1310,4 +1746,6 @@ module.exports = {
   safeDecrypt,
   encrypt,
   resolvePaymentMethod,
+  VENDUS_GetInvoicesByIds,
+  handleGetInvoicesByIds, 
 };

@@ -117,7 +117,7 @@ const GetSingleEnrolledStudent = async (req, res) => {
       LEFT JOIN eduall_faculty        ON eduall_faculty.ed_faculty_id           = eduall_class.ed_class_faculty
       LEFT JOIN eduall_academic_level ON eduall_academic_level.ed_academic_level_id = eduall_class.ed_class_year
       WHERE ed_enrollment_deleted = 0
-        AND ed_enrollment_id = ?
+        AND ed_enrollment_student = ?
         AND ed_enrollment_institute_code = ?
     `;
     const PARAMS = [ID, instituteCode];
