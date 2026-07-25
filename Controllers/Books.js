@@ -65,14 +65,8 @@ async function uploadBookCoverToCloudinary(file, instituteCode, bookTitle) {
 
 // ─── Fetch base (sem cache) ────────────────────────────────────────────────────
 const FetchBooks = async (req, res, instituteCode) => {
-  const query = `SELECT * FROM eduall_library_books 
-    LEFT JOIN eduall_library_categories ON eduall_library_categories.ed_library_category_id = ed_library_book_category
-    LEFT JOIN eduall_library_publishers ON eduall_library_publishers.ed_library_publisher_id = ed_library_book_publisher
-    LEFT JOIN eduall_library_collections ON eduall_library_collections.ed_library_collection_id =  ed_library_book_colection
-    LEFT JOIN eduall_library_typeofbooks ON eduall_library_typeofbooks.ed_library_typeofbook_id =  ed_library_book_type
-    LEFT JOIN eduall_library_authors ON eduall_library_authors.ed_library_author_id =  ed_library_book_author
-    WHERE ed_library_book_deleted = 0 AND ed_library_book_institute_code = ?   
-    ORDER BY ed_library_book_title ASC`;
+  const query = `SELECT * FROM eduall_library_books  WHERE ed_library_book_deleted = 0 AND ed_library_book_institute_code = ?   
+    ORDER BY ed_library_book_rack ASC, ed_library_book_order ASC, ed_library_book_title ASC`;
 
   return ExecuteQuery(res, query, [instituteCode], true, {
     db: "eduall_library_books",
@@ -206,15 +200,25 @@ const RegisterBook = async (req, res) => {
       }
     }
 
+    // Nova entrada de livro entra sempre no fim da prateleira (maior ordem + 1)
+    let bookOrder = 0;
+    if (book_rack) {
+      const orderQuery = `SELECT COALESCE(MAX(ed_library_book_order), -1) AS maxOrder 
+        FROM eduall_library_books 
+        WHERE ed_library_book_deleted = 0 AND ed_library_book_institute_code = ? AND ed_library_book_rack = ?`;
+      const orderResult = await ExecuteQuery(res, orderQuery, [instituteCode, book_rack], true, { db: "eduall_library_books", type: "select" });
+      bookOrder = (orderResult?.[0]?.maxOrder ?? -1) + 1;
+    }
+
     // Insert no banco de dados com URL do Cloudinary
     const query = `INSERT INTO eduall_library_books(
       ed_library_book_title, ed_library_book_type, ed_library_book_publisher, ed_library_book_colection, 
       ed_library_book_place_of_publication, ed_library_book_classification, ed_library_book_copy, 
       ed_library_book_subtitle, ed_library_book_author, ed_library_book_subject,
       ed_library_book_price, ed_library_book_year, ed_library_book_acquisition_date, ed_library_book_acquisition_type, 
-      ed_library_book_provider, ed_library_book_pages, ed_library_book_rack, ed_library_book_notes, 
+      ed_library_book_provider, ed_library_book_pages, ed_library_book_rack, ed_library_book_order, ed_library_book_notes, 
       ed_library_book_picture, ed_library_book_institute_code
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const PARAMS = [
       book_title,
@@ -234,6 +238,7 @@ const RegisterBook = async (req, res) => {
       book_provider,
       book_pages,
       book_rack,
+      bookOrder,
       book_description,
       pictureUrl, // URL do Cloudinary em vez de path local
       instituteCode,
@@ -511,6 +516,84 @@ const BookUpdate = async (req, res) => {
   }
 };
 
+// ─── PUT mover livro para OUTRA prateleira (drag & drop entre estantes) ───────
+// Body esperado: { rack_id: number|null, order?: number }
+// Se "order" não vier, o livro entra no fim da prateleira de destino.
+// rack_id = null tira o livro de qualquer prateleira ("solto").
+const MoveBook = async (req, res) => {
+  try {
+    const { ID } = req.params;
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
+    const targetRackId = req.body.rack_id ?? null;
+    let targetOrder = req.body.order;
+
+    if (targetOrder === undefined || targetOrder === null) {
+      const orderQuery = `SELECT COALESCE(MAX(ed_library_book_order), -1) AS maxOrder 
+        FROM eduall_library_books 
+        WHERE ed_library_book_deleted = 0 AND ed_library_book_institute_code = ? 
+        AND ed_library_book_rack ${targetRackId === null ? 'IS NULL' : '= ?'}`;
+      const orderParams = targetRackId === null ? [instituteCode] : [instituteCode, targetRackId];
+      const orderResult = await ExecuteQuery(res, orderQuery, orderParams, true, { db: "eduall_library_books", type: "select" });
+      targetOrder = (orderResult?.[0]?.maxOrder ?? -1) + 1;
+    }
+
+    const query = `UPDATE eduall_library_books SET ed_library_book_rack = ?, ed_library_book_order = ? 
+      WHERE ed_library_book_deleted = 0 AND ed_library_book_id = ? AND ed_library_book_institute_code = ?`;
+    const PARAMS = [targetRackId, targetOrder, ID, instituteCode];
+    const rows = await ExecuteQuery(res, query, PARAMS, false, { db: "eduall_library_books", type: "update", data: req });
+
+    await RegisterAuditAction({
+      session: req.session,
+      action: 2, // Ação de atualização
+      form: "Livro",
+      description: `Moveu o livro ID ${ID} para a prateleira ${targetRackId ?? 'nenhuma'}`,
+    }).catch(() => null);
+
+    console.log(`✅ MoveBook: livro ${ID} movido para prateleira ${targetRackId ?? 'nenhuma'}`);
+    await RefreshBookCache(req, res, instituteCode);
+
+    res.status(200).json({ success: true, message: "Livro movido com sucesso!", data: rows });
+  } catch (error) {
+    console.error("[MoveBook]", error.message);
+    res.status(500).json({ success: false, message: "Falha ao mover o livro!", error: error.message });
+  }
+};
+
+// ─── PUT reordenar livros dentro da MESMA prateleira ──────────────────────────
+// Body esperado: { order: [{ id, order }, { id, order }, ...] }
+const ReorderBooks = async (req, res) => {
+  try {
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
+    const { order } = req.body;
+
+    if (!Array.isArray(order) || order.length === 0) {
+      return res.status(400).json({ success: false, message: "Lista de ordenação inválida!" });
+    }
+
+    const query = `UPDATE eduall_library_books SET ed_library_book_order = ? 
+      WHERE ed_library_book_id = ? AND ed_library_book_institute_code = ? AND ed_library_book_deleted = 0`;
+
+    for (const item of order) {
+      await ExecuteQuery(res, query, [item.order, item.id, instituteCode], false, { db: "eduall_library_books", type: "update", data: req });
+    }
+
+    await RegisterAuditAction({
+      session: req.session,
+      action: 2,
+      form: "Livro",
+      description: `Reordenou ${order.length} livro(s)`,
+    }).catch(() => null);
+
+    console.log(`✅ ReorderBooks: ${order.length} livro(s) reordenados`);
+    await RefreshBookCache(req, res, instituteCode);
+
+    res.status(200).json({ success: true, message: "Livros reordenados com sucesso!" });
+  } catch (error) {
+    console.error("[ReorderBooks]", error.message);
+    res.status(500).json({ success: false, message: "Falha ao reordenar os livros!", error: error.message });
+  }
+};
+
 // ─── Multer: Upload de ficheiro em memória (buffer) ─────────────────────────────
 // Sem diskStorage — o ficheiro fica em memória e é enviado direto para Cloudinary
 const uploadBookCover = multer({
@@ -531,6 +614,15 @@ module.exports = {
   RegisterBook,
   BookDelete,
   BookUpdate,
+  MoveBook,
+  ReorderBooks,
   uploadBookCover,
   uploadBookCoverToCloudinary, // Exporta função para uso em outros lugares se necessário
 };
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SUGESTÃO DE ROTAS NOVAS (ajusta ao teu padrão de router):
+
+   PUT /api/edualllibrarybookmove/update/:ID    → MoveBook
+   PUT /api/edualllibrarybooksreorder/update    → ReorderBooks
+───────────────────────────────────────────────────────────────────────── */

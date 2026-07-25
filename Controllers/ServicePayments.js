@@ -631,25 +631,39 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
  
  
 
-
- const RegisterServicePayment = async (req, res) => {
+const RegisterServicePayment = async (req, res) => {
   const timerLabel = `RegisterServicePayment_${Date.now()}`;
   console.time(timerLabel);
- 
+
   try {
     const sessionInstitute = req.session?.user?.eduall_user_session_curentinstitute;
     const operatorId = req.session?.user?.eduall_user_session_ID;
- 
+
     console.log("\n" + "=".repeat(90));
     console.log("REGISTAR PAGAMENTO DE SERVICO");
     console.log("=".repeat(90));
     console.log(`Instituto: ${sessionInstitute}`);
     console.log(`Operador: ID ${operatorId}`);
- 
+
     if (!sessionInstitute) {
       return res.status(401).json({ success: false, msg: "Sessao invalida." });
     }
- 
+
+    // ✅ FIX: nome do operador buscado UMA ÚNICA VEZ aqui, em escopo de função,
+    // para não ficar preso dentro do bloco do serviço customizado (era isso que
+    // causava "ReferenceError: nome is not defined" mais abaixo, no INSERT do
+    // pagamento, sempre que não havia nenhum serviço customizado no payload).
+    let operatorName = "Desconhecido";
+    try {
+      const operatorData = await getOperatorData(operatorId);
+      if (operatorData && operatorData.name) {
+        operatorName = operatorData.name;
+      }
+    } catch (opErr) {
+      console.warn(`[OPERADOR] Falha ao obter nome do operador (a usar fallback):`, opErr.message || opErr);
+    }
+    console.log(`Operador (nome): ${operatorName}`);
+
     const {
       student_code: studentId,
       service_payment_type: paymentMethodIndex = "0",
@@ -671,23 +685,23 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
       feemonths = [],
       fee_service_code: feeServiceFromBody = null,
     } = req.body || {};
- 
+
     const OTHER_SERVICE_ID = "OTHER_CUSTOM";
- 
+
     // ✅ Helper: número positivo e finito, ou NaN caso contrário
     const toPositiveNumber = (v) => {
       const n = Number(v);
       return Number.isFinite(n) ? n : NaN;
     };
- 
+
     console.log("\n[VALIDACOES] Iniciando validacoes...");
- 
+
     // ═══════════════════════════════════════════════════════════════════════════════
     // ✅ VALIDAR CONSUMO DE SALDO
     // ═══════════════════════════════════════════════════════════════════════════════
     if (balance_used > 0) {
       console.log(`[SALDO] Balance Used: ${balance_used}`);
- 
+
       if (!observations || !observations.includes("[SALDO CONSUMIDO")) {
         console.error("Consumo de saldo sem nota de descrição");
         return res.status(400).json({
@@ -696,10 +710,10 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
           error: "MISSING_BALANCE_CONSUMED_NOTE"
         });
       }
- 
+
       console.log(`[SALDO] Nota de consumo validada`);
     }
- 
+
     if (!studentId) {
       console.error("studentId ausente");
       return res.status(400).json({
@@ -707,7 +721,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         msg: "ID do aluno e obrigatorio.",
       });
     }
- 
+
     if (!Array.isArray(services) || services.length === 0) {
       if (!has_matricula && !has_confirmacao && !alsofeepaymenet) {
         console.error("Nenhum servico selecionado");
@@ -717,9 +731,9 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         });
       }
     }
- 
+
     console.log(`Dados basicos validos | Aluno: ${studentId} | Servicos: ${services.length}`);
- 
+
     if (has_matricula && has_confirmacao) {
       console.error("Matricula E Confirmacao simultaneas - NAO PERMITIDO");
       return res.status(400).json({
@@ -727,15 +741,15 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         msg: "Nao e permitido fazer matricula E confirmacao na mesma operacao.",
       });
     }
- 
+
     // ═══════════════════════════════════════════════════════════════════════════════
     // ✅ PROCESSAR SERVICOS CUSTOMIZADOS COM ON DUPLICATE KEY UPDATE
     // (preço do serviço customizado SEMPRE vem do frontend)
     // ═══════════════════════════════════════════════════════════════════════════════
     console.log("\n[SERVICOS] Processando servicos (incluindo customizados)...");
- 
+
     const processedServices = [];
- 
+
     for (const service of services) {
       const {
         code,
@@ -750,13 +764,13 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         is_enrollment = 0,
         is_confirmation = 0,
       } = service;
- 
+
       // ✅ Preço enviado pelo frontend (unit_price tem prioridade, price é fallback)
       const rawPrice = unit_price ?? price;
- 
+
       if (code === OTHER_SERVICE_ID) {
         console.log(`[CUSTOM] Detectado serviço customizado: "${service_name}" | Preço enviado: ${rawPrice}`);
- 
+
         // ✅ VALIDAR
         if (!service_name || !service_name.trim()) {
           return res.status(400).json({
@@ -764,7 +778,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
             msg: "Serviço customizado requer nome/descrição.",
           });
         }
- 
+
         const customPrice = toPositiveNumber(rawPrice);
         if (!customPrice || customPrice <= 0) {
           console.error(`❌ Serviço customizado com preço zerado/inválido: ${rawPrice}`);
@@ -774,7 +788,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
             error: "ZERO_OR_INVALID_PRICE"
           });
         }
- 
+
         try {
           // ✅ USAR ON DUPLICATE KEY UPDATE
           const upsertQuery = `
@@ -790,9 +804,11 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
               ed_service_price = VALUES(ed_service_price),
               ed_service_provider = VALUES(ed_service_provider)
           `;
- 
+
           console.log(`[CUSTOM] Executando UPSERT...`);
- 
+
+          // ✅ FIX: já não voltamos a chamar getOperatorData aqui — usamos o
+          // "operatorName" já resolvido no topo da função.
           await ExecuteQuery(
             null,
             upsertQuery,
@@ -800,12 +816,12 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
               service_name.trim(),
               "custom",
               customPrice,
-              `Operador ${operatorId}`,
+              `${operatorName}`,
               sessionInstitute,
             ],
             false
           );
- 
+
           // ✅ RECUPERAR ID
           const [serviceResult] = await ExecuteQuery(
             null,
@@ -817,14 +833,14 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
             [service_name.trim(), sessionInstitute],
             true
           );
- 
+
           if (!serviceResult || !serviceResult.ed_service_id) {
             throw new Error(`Falha ao recuperar ID do serviço: ${service_name}`);
           }
- 
+
           const customServiceId = serviceResult.ed_service_id;
           console.log(`[CUSTOM] ✓ Serviço garantido | ID: ${customServiceId}`);
- 
+
           processedServices.push({
             code: customServiceId,
             amount,
@@ -835,7 +851,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
             isConfirmationService: false,
             isFeeService: false,
           });
- 
+
         } catch (err) {
           console.error(`[CUSTOM] Erro:`, err.message);
           return res.status(400).json({
@@ -843,7 +859,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
             msg: err.message || "Erro ao processar serviço customizado.",
           });
         }
- 
+
       } else {
         // ✅ SERVICO NORMAL - preço também vem do frontend
         processedServices.push({
@@ -858,23 +874,23 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         });
       }
     }
- 
+
     console.log(`[SERVICOS] ✓ ${processedServices.length} serviço(s) processado(s)`);
- 
+
     // ═══════════════════════════════════════════════════════════════════════════════
     // ✅ VALIDAR EXISTENCIA DOS SERVICOS NA BD E USAR PRECO ENVIADO PELO FRONTEND
     //    (a BD é usada apenas para confirmar que o serviço existe e pertence ao
     //    instituto, e para obter o título/tipo — NUNCA para sobrepor o preço)
     // ═══════════════════════════════════════════════════════════════════════════════
     console.log("\n[BUSCA DE DADOS] Confirmando existência dos serviços e usando preços do frontend...");
- 
+
     const enrichedServices = [];
- 
+
     for (const service of processedServices) {
       const { code, amount = 1, price, discount = discountPct } = service;
- 
+
       console.log(`[BUSCA] Confirmando serviço ID: ${code}`);
- 
+
       const [serviceData] = await ExecuteQuery(
         null,
         `SELECT 
@@ -889,7 +905,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         [code, sessionInstitute],
         true
       );
- 
+
       if (!serviceData) {
         console.error(`Servico ${code} nao encontrado`);
         return res.status(404).json({
@@ -897,16 +913,16 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
           msg: `Servico ${code} nao encontrado na base de dados.`,
         });
       }
- 
+
       const amountVal = Math.max(1, parseFloat(amount) || 1);
       const serviceName = serviceData.ed_service_title || service.service_name || `Serviço ${code}`;
- 
+
       // ✅ PRECO SEMPRE DO FRONTEND (payload), NUNCA DA BD
       const priceVal = toPositiveNumber(price);
       const discountVal = Math.max(0, parseFloat(discount) || 0);
- 
+
       console.log(`[PRECO] ${serviceName} (ID: ${code}) | Preço frontend: ${priceVal}`);
- 
+
       // ✅ NUNCA REGISTAR SERVICO COM VALOR ZERADO/INVALIDO
       if (!priceVal || priceVal <= 0) {
         console.error(`❌ PRECO INVALIDO/ZERADO: ${serviceName} (${code}) = ${price}`);
@@ -916,7 +932,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
           error: "ZERO_OR_INVALID_PRICE"
         });
       }
- 
+
       if (!Number.isFinite(amountVal) || amountVal <= 0) {
         console.error(`❌ QUANTIDADE INVALIDA: ${serviceName} (${code}) = ${amount}`);
         return res.status(400).json({
@@ -924,11 +940,11 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
           msg: `Serviço ${code} (${serviceName}) tem quantidade inválida: ${amount}`,
         });
       }
- 
+
       const subtotal = priceVal * amountVal;
       const discountAmount = (subtotal * discountVal) / 100;
       const lineTotal = subtotal - discountAmount;
- 
+
       // ✅ NUNCA REGISTAR LINHA COM TOTAL ZERADO (ex.: desconto de 100%)
       if (!lineTotal || lineTotal <= 0) {
         console.error(`❌ TOTAL DA LINHA ZERADO/INVALIDO: ${serviceName} (${code}) = ${lineTotal}`);
@@ -938,7 +954,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
           error: "ZERO_LINE_TOTAL"
         });
       }
- 
+
       enrichedServices.push({
         code,
         title: serviceName,
@@ -953,25 +969,25 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         isConfirmationService: service.isConfirmationService,
         isFeeService: service.isFeeService,
       });
- 
+
       console.log(`  ✓ ${serviceName} (ID: ${code}) | Preço: ${priceVal} | Qtd: ${amountVal} | Total: ${lineTotal}`);
     }
- 
+
     // ═══════════════════════════════════════════════════════════════════════════════
     // ✅ SEPARAR SERVICOS ESPECIAIS (MATRICULA / CONFIRMACAO / PROPINA) DOS REGULARES
     // ═══════════════════════════════════════════════════════════════════════════════
     const matriculaEntry = enrichedServices.find(s => s.isEnrollmentService);
     const confirmacaoEntry = enrichedServices.find(s => s.isConfirmationService);
     const feeEntry = enrichedServices.find(s => s.isFeeService);
- 
+
     const regularServices = enrichedServices.filter(
       s => !s.isEnrollmentService && !s.isConfirmationService && !s.isFeeService
     );
- 
+
     const matricula_service = matriculaServiceFromBody || matriculaEntry?.code || null;
     const confirmacao_service = confirmacaoServiceFromBody || confirmacaoEntry?.code || null;
     const fee_service_code = feeServiceFromBody || feeEntry?.code || null;
- 
+
     if (has_matricula && !matriculaEntry) {
       console.error("has_matricula=true mas nenhum serviço de matrícula foi enviado em services[]");
       return res.status(400).json({
@@ -979,7 +995,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         msg: "Serviço de matrícula não foi enviado corretamente.",
       });
     }
- 
+
     if (has_confirmacao && !confirmacaoEntry) {
       console.error("has_confirmacao=true mas nenhum serviço de confirmação foi enviado em services[]");
       return res.status(400).json({
@@ -987,7 +1003,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         msg: "Serviço de confirmação não foi enviado corretamente.",
       });
     }
- 
+
     if (alsofeepaymenet && feemonths?.length > 0 && !feeEntry) {
       console.error("alsofeepaymenet=true mas nenhum serviço de propina foi enviado em services[]");
       return res.status(400).json({
@@ -995,12 +1011,12 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         msg: "Serviço de propina não foi enviado corretamente.",
       });
     }
- 
+
     // ═══════════════════════════════════════════════════════════════════════════════
     // ✅ VALIDACOES DE TURMAS
     // ═══════════════════════════════════════════════════════════════════════════════
     console.log("\n[VALIDACOES] Validando turmas...");
- 
+
     if (has_matricula) {
       const [classExists] = await ExecuteQuery(
         null,
@@ -1008,7 +1024,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         [matricula_class, sessionInstitute],
         true
       );
- 
+
       if (!classExists) {
         return res.status(400).json({
           success: false,
@@ -1016,7 +1032,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         });
       }
     }
- 
+
     if (has_confirmacao) {
       const [classExists] = await ExecuteQuery(
         null,
@@ -1024,7 +1040,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         [confirmacao_class, sessionInstitute],
         true
       );
- 
+
       if (!classExists) {
         return res.status(400).json({
           success: false,
@@ -1032,12 +1048,12 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         });
       }
     }
- 
+
     // ═══════════════════════════════════════════════════════════════════════════════
     // ✅ VALIDAR METODO DE PAGAMENTO
     // ═══════════════════════════════════════════════════════════════════════════════
     console.log("[VALIDACOES] Validando metodo de pagamento...");
- 
+
     const paymentMethods = await getPaymentMethods(req);
     if (!paymentMethods || paymentMethods.length === 0) {
       return res.status(400).json({
@@ -1046,7 +1062,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         error: "NO_PAYMENT_METHODS"
       });
     }
- 
+
     const selectedPaymentMethod = resolvePaymentMethod(Number(paymentMethodIndex), paymentMethods);
     if (!selectedPaymentMethod) {
       return res.status(400).json({
@@ -1055,9 +1071,9 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         error: "INVALID_PAYMENT_METHOD"
       });
     }
- 
+
     console.log(`Metodo: ${selectedPaymentMethod.name}`);
- 
+
     const needsBordereau = requiresBordereau(selectedPaymentMethod.name);
     if (needsBordereau && !paymentReference) {
       return res.status(400).json({
@@ -1065,29 +1081,29 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         msg: `O metodo "${selectedPaymentMethod.name}" requer numero de borderô/referencia.`,
       });
     }
- 
+
     console.log("TODAS AS VALIDACOES CONCLUIDAS COM SUCESSO");
     console.log("\n[PROCESSAMENTO] Iniciando processamento...");
- 
+
     // ═══════════════════════════════════════════════════════════════════════════════
     // ✅ CALCULAR TOTAIS (tudo com base nos preços do frontend, já validados > 0)
     // ═══════════════════════════════════════════════════════════════════════════════
     let totalInvoiceValue = 0;
- 
+
     for (const srv of enrichedServices) {
       totalInvoiceValue += srv.lineTotal;
     }
- 
+
     const matriculaTotal = matriculaEntry?.lineTotal || 0;
     const matriculaServiceName = matriculaEntry?.title || "Serviço de Matrícula";
- 
+
     const confirmacaoTotal = confirmacaoEntry?.lineTotal || 0;
     const confirmacaoServiceName = confirmacaoEntry?.title || "Serviço de Confirmação";
- 
+
     const feesTotalValue = feeEntry?.lineTotal || 0;
     const feeServiceName = feeEntry?.title || "Serviço de Propinas";
     const feePricePerMonth = feeEntry?.priceVal || 0;
- 
+
     if (has_matricula) {
       console.log(`[MATRICULA] Serviço: ${matriculaServiceName} | ID: ${matricula_service} | Preço: ${matriculaTotal}`);
     }
@@ -1097,7 +1113,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
     if (alsofeepaymenet && feemonths?.length > 0) {
       console.log(`[PROPINAS] Serviço: ${feeServiceName} | ID: ${fee_service_code} | Preço/mês: ${feePricePerMonth} | Meses: ${feemonths.length} | Total: ${feesTotalValue}`);
     }
- 
+
     // ✅ NUNCA REGISTAR PAGAMENTO COM VALOR TOTAL ZERADO
     if (!totalInvoiceValue || totalInvoiceValue <= 0) {
       console.error(`❌ VALOR TOTAL DA FATURA ZERADO/INVALIDO: ${totalInvoiceValue}`);
@@ -1107,14 +1123,14 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         error: "ZERO_TOTAL_VALUE"
       });
     }
- 
+
     console.log(`Total do pagamento: ${Number(totalInvoiceValue.toFixed(2))}`);
- 
+
     // ═══════════════════════════════════════════════════════════════════════════════
     // ✅ BUSCAR ALUNO E VALIDAR
     // ═══════════════════════════════════════════════════════════════════════════════
     console.log("[ALUNO] Buscando dados do aluno...");
- 
+
     const [student] = await ExecuteQuery(
       null,
       `SELECT
@@ -1128,7 +1144,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
       [studentId, sessionInstitute],
       true
     );
- 
+
     if (!student) {
       console.error(`Aluno ${studentId} nao encontrado`);
       return res.status(404).json({
@@ -1136,9 +1152,9 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         msg: "Aluno nao encontrado.",
       });
     }
- 
+
     console.log(`Aluno encontrado: ${student.ed_student_name} (${student.ed_student_code})`);
- 
+
     if (has_matricula && student.ed_student_enrolled >= 1) {
       return res.status(409).json({
         success: false,
@@ -1146,7 +1162,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         error: "ALREADY_ENROLLED"
       });
     }
- 
+
     if (has_confirmacao && (!student.ed_student_enrolled || student.ed_student_enrolled < 1)) {
       return res.status(409).json({
         success: false,
@@ -1154,7 +1170,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         error: "NOT_ENROLLED"
       });
     }
- 
+
     // ═══════════════════════════════════════════════════════════════════════════════
     // ✅ CRIAR FATURA VENDUS - COM TITLE E GROSS_PRICE (uma linha por cada serviço,
     //    incluindo matrícula/confirmação/propina, todos já em enrichedServices)
@@ -1166,56 +1182,56 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
     //    o valor correto (não undefined) estará disponível.
     // ═══════════════════════════════════════════════════════════════════════════════
     console.log("[VENDUS] Preparando linhas de fatura com title e gross_price...");
- 
+
     const invoiceLines = enrichedServices.map((srv) => {
       let title = srv.title;
       if (srv.isFeeService) {
         title = `${srv.title} (${srv.amountVal} meses)`;
       }
- 
+
       const unitPriceRounded = Number(srv.priceVal.toFixed(2));
       const qtyVal = srv.amountVal;
       const lineTotalRounded = Number(srv.lineTotal.toFixed(2));
- 
+
       return {
         // Identificação
         code: srv.code,
         reference: String(srv.code),
         title,
         description: title,
- 
+
         // 🆕 FIX: aliases de preço unitário — cobre price / unit_price / gross_price / value
         price: unitPriceRounded,
         unit_price: unitPriceRounded,
         gross_price: unitPriceRounded,
         value: unitPriceRounded,
- 
+
         // 🆕 FIX: aliases de quantidade — cobre quantity / qty / amount
         quantity: qtyVal,
         qty: qtyVal,
         amount: qtyVal,
- 
+
         // Desconto
         discount_percent: srv.discountVal,
         discount: srv.discountVal,
         discount_amount: Number(srv.discountAmount.toFixed(2)),
- 
+
         // Total da linha
         line_total: lineTotalRounded,
         total: lineTotalRounded,
         gross_amount: lineTotalRounded,
       };
     });
- 
+
     invoiceLines.forEach((line, i) => {
       console.log(`[VENDUS] ✓ ${line.title} | Qty: ${line.quantity} | Price: ${line.unit_price} | Total: ${line.line_total}`);
     });
- 
+
     // ✅ VALIDAR LINHAS
     console.log("\n[VENDUS] Validando linhas de fatura...");
     for (let i = 0; i < invoiceLines.length; i++) {
       const line = invoiceLines[i];
- 
+
       if (!line.title || line.title.trim() === "") {
         console.error(`[VENDUS] Linha ${i} sem title`);
         return res.status(400).json({
@@ -1223,7 +1239,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
           msg: `Linha de fatura ${i} sem título.`,
         });
       }
- 
+
       if (!Number.isFinite(line.gross_price) || line.gross_price <= 0) {
         console.error(`[VENDUS] Linha ${i} com gross_price inválido: ${line.gross_price}`);
         return res.status(400).json({
@@ -1231,7 +1247,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
           msg: `Linha de fatura ${i} com preço inválido: ${line.gross_price}`,
         });
       }
- 
+
       if (!Number.isFinite(line.quantity) || line.quantity <= 0) {
         console.error(`[VENDUS] Linha ${i} com quantity inválida: ${line.quantity}`);
         return res.status(400).json({
@@ -1239,7 +1255,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
           msg: `Linha de fatura ${i} com quantidade inválida: ${line.quantity}`,
         });
       }
- 
+
       if (!Number.isFinite(line.line_total) || line.line_total <= 0) {
         console.error(`[VENDUS] Linha ${i} com line_total inválido: ${line.line_total}`);
         return res.status(400).json({
@@ -1248,9 +1264,9 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         });
       }
     }
- 
+
     console.log(`[VENDUS] ✓ Todas as ${invoiceLines.length} linhas validadas com sucesso`);
- 
+
     const customer = {
       code: student.ed_student_code,
       name: student.ed_student_name,
@@ -1258,15 +1274,15 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
       address: student.ed_student_address || "",
       nif: student.ed_student_identityCard || "",
     };
- 
+
     const obs = observations || `Pagamento do aluno ${student.ed_student_code}`;
- 
+
     // 🆕 FIX: sanity-check final ANTES de chamar a Vendus — recalcula o total
     // a partir do próprio array invoiceLines e recusa avançar se detectar NaN.
     // Isto impede que um payload com "gross_price": null chegue à API da Vendus.
     const recomputedTotal = invoiceLines.reduce((acc, l) => acc + (Number(l.gross_price) * Number(l.quantity)), 0);
     console.log(`[VENDUS] 🆕 Sanity-check pré-envio | Total recomputado a partir de invoiceLines: ${recomputedTotal}`);
- 
+
     if (!Number.isFinite(recomputedTotal) || recomputedTotal <= 0) {
       console.error(`[VENDUS] ❌ SANITY-CHECK FALHOU: total recomputado = ${recomputedTotal}`);
       console.error(`[VENDUS] invoiceLines enviado:`, JSON.stringify(invoiceLines, null, 2));
@@ -1277,7 +1293,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         debugInvoiceLines: invoiceLines,
       });
     }
- 
+
     let vendus;
     try {
       vendus = await VENDUS_CreateInvoiceCodeAndDoc(
@@ -1295,14 +1311,14 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         vendusError: vendusErr.message || String(vendusErr),
       });
     }
- 
+
     if (!vendus || !vendus.number || !vendus.id) {
       return res.status(500).json({
         success: false,
         msg: "Resposta Vendus invalida. Pagamento NAO foi registado.",
       });
     }
- 
+
     // 🆕 FIX: se a Vendus devolveu amount_gross/amount_net a "0.00" com um total > 0,
     // isso é sinal de que o payload ainda seguiu com valores nulos (mesmo depois do
     // sanity-check acima, poderia ser um bug diferente dentro da função Vendus).
@@ -1311,25 +1327,25 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
     if (Number.isFinite(vendusGross) && vendusGross === 0 && totalInvoiceValue > 0) {
       console.warn(`⚠️ [VENDUS] ALERTA: fatura ${vendus.number} foi criada com amount_gross=0.00 mas o total esperado era ${totalInvoiceValue}. Verificar VENDUS_CreateInvoiceCodeAndDoc.`);
     }
- 
+
     console.log(`Fatura criada: ${vendus.number}`);
- 
+
     // ═══════════════════════════════════════════════════════════════════════════════
     // ✅ INICIAR TRANSACAO
     // ═══════════════════════════════════════════════════════════════════════════════
     console.log("\n[TRANSACAO] Iniciando transacao...");
- 
+
     const paymentCode = `SP-${Date.now()}-${studentId}`;
- 
+
     await ExecuteQuery(null, "START TRANSACTION", [], false);
- 
+
     try {
- 
+
       // ═════════════════════════════════════════════════════════════════════════════
       // ✅ REGISTAR PAGAMENTO DE SERVICO
       // ═════════════════════════════════════════════════════════════════════════════
       console.log("[BD] Registando pagamento de servico...");
- 
+
       const insertPaymentQuery = `
         INSERT INTO eduall_service_payments (
           ed_service_payment_code,
@@ -1360,9 +1376,9 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW()
         )
       `;
- 
+
       const newClassForPayment = has_matricula ? matricula_class : (has_confirmacao ? confirmacao_class : null);
- 
+
       await ExecuteQuery(null, insertPaymentQuery, [
         paymentCode,
         studentId,
@@ -1383,7 +1399,8 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         newClassForPayment || null,
         alsofeepaymenet ? 1 : 0,
         feemonths?.length || 0,
-        `Operador ${operatorId}`,
+        // ✅ FIX: usa a variável de escopo de função, já não a `nome` inexistente
+        `${operatorName}`,
         operatorId || null,
         sessionInstitute,
       ], false, {
@@ -1391,18 +1408,18 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         type: "insert",
         data: req,
       });
- 
+
       console.log(`Pagamento registado: ${paymentCode}`);
- 
+
       // ═════════════════════════════════════════════════════════════════════════════
       // ✅ REGISTAR ITENS DE SERVICO (apenas serviços regulares/customizados,
       //    matrícula/confirmação/propina têm o seu próprio fluxo abaixo)
       // ═════════════════════════════════════════════════════════════════════════════
       console.log("[BD] Registando itens de servico...");
- 
+
       for (const srv of regularServices) {
         console.log(`[BD ITEM] Inserindo: code=${srv.code} | amount=${srv.amountVal} | price=${srv.priceVal} | discount=${srv.discountVal}`);
- 
+
         await ExecuteQuery(null,
           `INSERT INTO eduall_service_payment_items (
             ed_service_payment_code,
@@ -1424,18 +1441,18 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
             db: "eduall_service_payment_items",
             type: "insert",
           });
- 
+
         console.log(`[BD ITEM] ✓ Inserido com sucesso`);
       }
- 
+
       console.log(`${regularServices.length} item(ns) regular(es) registado(s)`);
- 
+
       // ═════════════════════════════════════════════════════════════════════════════
       // ✅ PROCESSAR MATRICULA
       // ═════════════════════════════════════════════════════════════════════════════
       if (has_matricula) {
         console.log("[BD] Registando matricula...");
- 
+
         await ExecuteQuery(
           null,
           `INSERT INTO eduall_enrollment(
@@ -1447,10 +1464,10 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
           false,
           { db: "eduall_enrollment", type: "insert", data: req }
         );
- 
+
         const currentClass = student.ed_student_class;
         const newClass = matricula_class;
- 
+
         if (currentClass && currentClass !== newClass) {
           await ExecuteQuery(
             null,
@@ -1461,7 +1478,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
           );
           console.log(`Turma antiga registada no historico`);
         }
- 
+
         await ExecuteQuery(
           null,
           `UPDATE eduall_students
@@ -1475,19 +1492,19 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
             data: req,
           }
         );
- 
+
         console.log("Aluno actualizado com matricula");
       }
- 
+
       // ═════════════════════════════════════════════════════════════════════════════
       // ✅ PROCESSAR CONFIRMACAO
       // ═════════════════════════════════════════════════════════════════════════════
       if (has_confirmacao) {
         console.log("[BD] Registando confirmacao...");
- 
+
         const currentClass = student.ed_student_class;
         const newClass = confirmacao_class;
- 
+
         if (currentClass && currentClass !== newClass) {
           await ExecuteQuery(
             null,
@@ -1498,7 +1515,7 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
           );
           console.log(`Turma anterior registada no historico`);
         }
- 
+
         await ExecuteQuery(
           null,
           `UPDATE eduall_students
@@ -1512,16 +1529,16 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
             data: req,
           }
         );
- 
+
         console.log("Aluno actualizado com confirmacao");
       }
- 
+
       // ═════════════════════════════════════════════════════════════════════════════
       // ✅ PROCESSAR PROPINAS (preço por mês vem do frontend, já validado > 0)
       // ═════════════════════════════════════════════════════════════════════════════
       if (alsofeepaymenet && feemonths?.length > 0) {
         console.log("[BD] Registando propinas...");
- 
+
         for (const month of feemonths) {
           await ExecuteQuery(
             null,
@@ -1538,22 +1555,22 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
             { db: "eduall_fees_payments", type: "insert", data: req }
           );
         }
- 
+
         console.log(`${feemonths.length} propina(s) registada(s)`);
       }
- 
+
       // ═════════════════════════════════════════════════════════════════════════════
       // ✅ CONFIRMAR TRANSACAO
       // ═════════════════════════════════════════════════════════════════════════════
       await ExecuteQuery(null, "COMMIT", [], false);
       console.log("Transacao confirmada");
- 
+
       // ═════════════════════════════════════════════════════════════════════════════
       // ✅ REGISTAR EM AUDITORIA
       // ═════════════════════════════════════════════════════════════════════════════
       if (balance_used > 0) {
         console.log(`[AUDITORIA] Registando consumo de saldo: ${balance_used}`);
- 
+
         await RegisterAuditAction({
           session: req.session,
           action: 1,
@@ -1568,12 +1585,12 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
           description: `Registrou pagamento para aluno ${student.ed_student_code}. Codigo: ${paymentCode}. Fatura: ${vendus.number}.`,
         });
       }
- 
+
       console.log("\n" + "=".repeat(90));
       console.log("PAGAMENTO REGISTADO COM SUCESSO");
       console.timeEnd(timerLabel);
       console.log("=".repeat(90) + "\n");
- 
+
       return res.status(200).json({
         success: true,
         msg: "Pagamento registado com sucesso!",
@@ -1616,27 +1633,28 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
         },
         operator: {
           id: operatorId,
+          name: operatorName,
         },
         timestamp: new Date().toISOString(),
       });
- 
+
     } catch (txErr) {
       await ExecuteQuery(null, "ROLLBACK", [], false);
       console.error(`[TRANSACAO] ERRO:`, txErr.message || txErr);
       throw txErr;
     }
- 
+
   } catch (error) {
     console.error(`\n[ERRO GERAL]:`, error.message || error);
     console.error(`Stack:`, error.stack);
     console.log("=".repeat(90) + "\n");
- 
+
     try {
       console.timeEnd(timerLabel);
     } catch (e) {
       // Ignore
     }
- 
+
     return res.status(500).json({
       success: false,
       msg: "Erro ao processar o pagamento.",
@@ -1644,7 +1662,6 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
     });
   }
 };
-
  
  
  

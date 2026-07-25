@@ -58,8 +58,8 @@ const { AuthorDelete, AuthorUpdate, GetAuthors, GetSingleAuthor, RegisterAuthor 
 const { GetPublishers, RegisterPublisher , GetSinglePublisher, PublisherDelete,  PublisherUpdate} = require("../Controllers/Publishers");
 const { GetSingleTypeofbook, GetTypeofbooks, RegisterTypeofbook, TypeofbookDelete, TypeofbookUpdate } = require("../Controllers/TypeOfBooks");
 const { BookCategoryDelete, BookCategoryUpdate, GetBookCategories, GetSingleBookCategory, RegisterBookCategory } = require("../Controllers/BooksCategory");
-const { GetRacks, GetSingleRack, RackDelete, RackUpdate, RegisterRack } = require("../Controllers/Racks");
-const { BookDelete, BookUpdate, GetBooks, GetSingleBook, Registerbook, uploadBookCover, RegisterBook } = require("../Controllers/Books");
+ 
+const { BookDelete, BookUpdate, GetBooks, GetSingleBook, Registerbook, uploadBookCover, RegisterBook, ReorderBooks, MoveBook } = require("../Controllers/Books");
 const { BorrowedBookDelete, BorrowedBookUpdate, GetBorrowedBooks, GetSingleBorrowedBook, RegisterBorrowedbook, RegisterBorrowedBook } = require("../Controllers/BorrowedBooks");
 const { GetSingleTiming, GetTimings, RegisterTiming, TimingDelete, TimingUpdate, RegisterTeacherTimingBulk } = require("../Controllers/Timing");
 const { GetSchoolsOfProvenance, GetSingleSchoolsOfProvenance, RegisterSchoolsOfProvenance, SchoolsOfProvenanceDelete, SchoolsOfProvenanceUpdate } = require("../Controllers/SchoolsOfProvenance");
@@ -236,14 +236,12 @@ const {
   GetLoans,
   GetLoansKpis,
   GetActiveLoansByUser,
-  GetLoanHistoryByUser,
-  SearchUsersLoans,
-  SearchExemplars,
-  RegisterLoan,
-  QuickLoan,
+  GetLoanHistoryByUser, 
+  RegisterLoan, 
   ReturnLoan,
   RenewLoan,
   DeleteLoan,
+  EditLoan,
 } = require('../Controllers/LibraryLoans');
 
 
@@ -428,11 +426,8 @@ router.get('/eduallinstituteuseraccountsget/get', VerifyToken, GetInstituteUserA
 router.get('/edualllibraryloans/get', VerifyToken, GetLoans);
 router.get('/edualllibraryloans/kpis', VerifyToken, GetLoansKpis);
 router.get('/edualllibraryloans/active/:USER_ID', VerifyToken, GetActiveLoansByUser);
-router.get('/edualllibraryloans/history/:USER_ID', VerifyToken, GetLoanHistoryByUser);
-router.get('/edualllibraryloans/users/search', VerifyToken, SearchUsersLoans);
-router.get('/edualllibraryloans/exemplars/search', VerifyToken, SearchExemplars);
-router.post('/edualllibraryloans/register', VerifyToken, RegisterLoan);
-router.post('/edualllibraryloans/quick', VerifyToken, QuickLoan);
+router.get('/edualllibraryloans/history/:USER_ID', VerifyToken, GetLoanHistoryByUser); 
+router.post('/edualllibraryloans/register', VerifyToken, RegisterLoan); 
 router.put('/edualllibraryloans/return/:ID', VerifyToken, ReturnLoan);
 router.put('/edualllibraryloans/renew/:ID', VerifyToken, RenewLoan);
 router.delete('/edualllibraryloans/delete/:ID', VerifyToken, DeleteLoan);
@@ -450,9 +445,7 @@ router.put( '/filemanager/rename/:ID',           VerifyToken, RenameItem);
 router.delete('/filemanager/delete',             VerifyToken, DeleteItems);
 
 
- 
-
-
+  
 // Rotas POST, PUT, DELETE (sem cache)
 router.post('/eduallusersaccountsignup/post', RegisterUserAccount);
 router.post('/login', Login);
@@ -875,12 +868,9 @@ router.post('/edualllibrarybookregister/post', VerifyToken, uploadBookCover, Reg
 router.get("/eduallsinglelibrarybook/get/:ID", VerifyToken,  GetSingleBook);
 router.put("/edualllibrarybookdelete/delete/:ID", VerifyToken, BookDelete);
 router.put("/edualllibrarybookupdate/update/:ID", VerifyToken, uploadBookCover, BookUpdate);
-
-
-
+router.put("/api/edualllibrarybookmove/update/:ID", VerifyToken, MoveBook);
+router.put("/api/edualllibrarybooksreorder/update", VerifyToken, ReorderBooks);
  
- 
-
  
 
 // --- EXEMPLARES ---
@@ -997,11 +987,15 @@ router.put("/edualllibrarycategorydelete/delete/:ID", VerifyToken, BookCategoryD
 router.put("/edualllibrarycategoryupdate/update/:ID", VerifyToken, BookCategoryUpdate);
 
 // --- ESTANTES ---
-router.get('/edualllibraryracks/get', VerifyToken, GetRacks);
-router.post('/edualllibraryrackregister/post', VerifyToken, RegisterRack);
-router.get("/eduallsinglelibraryrack/get/:ID", VerifyToken,  GetSingleRack);
-router.put("/edualllibraryrackdelete/delete/:ID", VerifyToken, RackDelete);
-router.put("/edualllibraryrackupdate/update/:ID", VerifyToken, RackUpdate);
+router.get('/api/edualllibraryracks/get', VerifyToken, GetRacks);
+router.post('/api/edualllibraryrackregister/post', VerifyToken, RegisterRack);
+router.get('/api/eduallsinglelibraryrack/get/:ID ', VerifyToken, GetSingleRack);
+router.get("/api/edualllibraryrackupdate/update/:ID", VerifyToken,  RackUpdate);
+router.put("/api/edualllibraryrackdelete/delete/:ID", VerifyToken, RackDelete);
+router.put("/api/edualllibraryracksreorder/update", VerifyToken, ReorderRacks);
+router.put("/api/edualllibraryrackmove/update/:ID", VerifyToken, MoveRack);
+
+  
 
 // --- COLEÇÕES DE LIVROS ---
 router.get('/edualllibrarycollectiongetall/get', VerifyToken, GetBookCollections);
@@ -1197,6 +1191,7 @@ const { GetFrequenciaHistorico, GetAllResponsaveisByStudent, SearchResponsavel, 
 const { initFineCron, GetFineRules, CreateFineRule, UpdateFineRule, ToggleFineRule, DeleteFineRule, ConflictCheck, GetExclusions, AddExclusion, RemoveExclusion, GetFineLogs, GetFineLogsByStudent,   CalculateStudentFine, RunFineEngine, SendSMSToResponsibles, GetSMSCredits, GetClassDebtors, GetClassListForFines, CalculateStudentFineByRule } = require("../Controllers/FinesController");
 const { RegisterAppManager, GetLibraryAccess, UpdateLibraryAccountType, GetLibraryUsers, EduallResetLibraryReaderPassword, EduallResetLibraryReaderPasswordByEmail } = require("../Controllers/AppManager");
 const { GetAllBulletinHistory, GetBulletinHistoryById, RegisterBulletinHistory, UpdateBulletinHistory, DeleteBulletinHistory } = require("../Controllers/BulletinHistoryController");
+const { GetRacks, GetSingleRack, RegisterRack, RackUpdate, RackDelete, ReorderRacks, MoveRack } = require("../Controllers/Racks");
 const upload = multer({ storage: multer.memoryStorage() });
 router.post("/edualllessoncontent/files/register", VerifyToken,  upload.array("files"),  RegisterLessonFiles);
 router.put("/edualllessoncontent/update/:ID", VerifyToken,  upload.fields([
@@ -1350,7 +1345,7 @@ router.put("/eduallibraryfineexclusions/delete/:id", VerifyToken, RemoveLibraryF
 router.get("/eduallibraryfines/users/search", VerifyToken, SearchUsersForFines);
 router.get("/eduallibraryfines/loans/search", VerifyToken, SearchLoansForFines);
 router.put("/eduallibraryfines/engine/run", VerifyToken, RunLibraryFineEngine);
-
+router.put('/edualllibraryloans/edit/:ID',VerifyToken, EditLoan);
 
 
 

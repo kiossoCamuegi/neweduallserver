@@ -97,6 +97,8 @@ const GetSingleEnrolledStudent = async (req, res) => {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
     const cacheKey = CacheKeys.single(ID, instituteCode);
     const startTime = Date.now();
+    console.log(`%cID A PROCURAR = ${ID}`, "color: #ff69b4; font-size: 14px; font-weight: bold;");
+    console.log(`%cID DA ESCOLA = ${instituteCode}`, "color: #8a69ff; font-size: 14px; font-weight: bold;");
 
     // ── Check cache ──
     const cached = await Cache.eduallGet(cacheKey);
@@ -180,6 +182,72 @@ const GetSingleEnrolledStudentByCode = async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const RegisterEnrollment = async (req, res) => {
+  // ============================================================
+  // Cores ANSI (sem dependências externas)
+  // ============================================================
+  const C = {
+    reset:   "\x1b[0m",
+    bold:    "\x1b[1m",
+    dim:     "\x1b[2m",
+
+    green:   "\x1b[32m",
+    cyan:    "\x1b[36m",
+    yellow:  "\x1b[33m",
+    red:     "\x1b[31m",
+    magenta: "\x1b[35m",
+    blue:    "\x1b[34m",
+    white:   "\x1b[37m",
+
+    bgGreen: "\x1b[42m\x1b[30m",
+    bgRed:   "\x1b[41m\x1b[37m",
+  };
+
+  // Imprime um "cartão" colorido no console com os dados da matrícula de um aluno
+  function printEnrollmentCard({ student, enrollment, service, newClass, oldClass, docsCount, classChanged }) {
+    const idOk = !!enrollment?.ed_enrollment_id;
+
+    const statusTag = idOk
+      ? `${C.bgGreen} ✔ MATRÍCULA CONFIRMADA ${C.reset}`
+      : `${C.bgRed} ✖ FALHA AO CONFIRMAR ${C.reset}`;
+
+    console.log(`\n${C.cyan}┌───────────────────────────────────────────────────────────┐${C.reset}`);
+    console.log(`${C.cyan}│${C.reset} ${C.bold}${C.white}👤 ${student.ed_student_name}${C.reset}`);
+    console.log(`${C.cyan}│${C.reset} ${C.dim}Código:${C.reset} ${C.yellow}${student.ed_student_id}${C.reset}   ${statusTag}`);
+    console.log(`${C.cyan}├───────────────────────────────────────────────────────────┤${C.reset}`);
+    console.log(
+      `${C.cyan}│${C.reset} ${C.magenta}🏫 Turma:${C.reset} ${
+        classChanged
+          ? `${C.dim}${oldClass ?? "—"}${C.reset} ${C.blue}→${C.reset} ${C.green}${newClass}${C.reset}`
+          : `${C.green}${newClass}${C.reset} ${C.dim}(sem alteração)${C.reset}`
+      }`
+    );
+    console.log(`${C.cyan}│${C.reset} ${C.magenta}📄 Serviço:${C.reset} ${C.white}${service}${C.reset}`);
+    console.log(
+      `${C.cyan}│${C.reset} ${C.magenta}🆔 ID Matrícula:${C.reset} ${
+        idOk ? C.green + enrollment.ed_enrollment_id + C.reset : C.red + "N/D" + C.reset
+      }`
+    );
+    console.log(`${C.cyan}│${C.reset} ${C.magenta}📎 Documentos anexados:${C.reset} ${C.white}${docsCount}${C.reset}`);
+    console.log(`${C.cyan}└───────────────────────────────────────────────────────────┘${C.reset}`);
+  }
+
+  // Imprime o resumo geral no final
+  function printSummaryBanner({ total, confirmed, failed, alreadyEnrolledCount }) {
+    const allOk = failed === 0;
+    console.log(`\n${allOk ? C.green : C.red}${C.bold}═══════════════════════════════════════════════════════════${C.reset}`);
+    console.log(`${C.bold}${allOk ? C.green + "✔ RESUMO DA OPERAÇÃO" : C.red + "⚠ RESUMO DA OPERAÇÃO (COM FALHAS)"}${C.reset}`);
+    console.log(`${C.dim}───────────────────────────────────────────────────────────${C.reset}`);
+    console.log(`  ${C.white}Total processado:${C.reset}      ${total}`);
+    console.log(`  ${C.green}Matrículas confirmadas:${C.reset} ${confirmed}`);
+    if (failed > 0) console.log(`  ${C.red}Falhas na confirmação:${C.reset}   ${failed}`);
+    if (alreadyEnrolledCount > 0)
+      console.log(`  ${C.yellow}Já matriculados (ignorados):${C.reset} ${alreadyEnrolledCount}`);
+    console.log(`${allOk ? C.green : C.red}${C.bold}═══════════════════════════════════════════════════════════${C.reset}\n`);
+  }
+
+  // ============================================================
+  // Lógica principal
+  // ============================================================
   try {
     const students  = req.body.enrollment_students || [req.body.enrollment_student];
     const service   = req.body.enrollment_service;
@@ -219,7 +287,7 @@ const RegisterEnrollment = async (req, res) => {
     );
 
     const alreadyEnrolledIds = new Set(existing.map(e => e.ed_enrollment_student));
-    const toEnroll      = studentRows.filter(s => !alreadyEnrolledIds.has(s.ed_student_id));
+    const toEnroll        = studentRows.filter(s => !alreadyEnrolledIds.has(s.ed_student_id));
     const alreadyEnrolled = studentRows.filter(s =>  alreadyEnrolledIds.has(s.ed_student_id));
 
     if (toEnroll.length === 0)
@@ -250,6 +318,7 @@ const RegisterEnrollment = async (req, res) => {
     );
 
     // Buscar IDs das matrículas recém-criadas para associar documentos
+    // *** Esta consulta é também a nossa GARANTIA de que a matrícula foi realmente gravada ***
     const insertedEnrollments = await ExecuteQuery(
       res,
       `SELECT ed_enrollment_id, ed_enrollment_student FROM eduall_enrollment
@@ -262,11 +331,32 @@ const RegisterEnrollment = async (req, res) => {
       { db: "eduall_enrollment", type: "select", data: req }
     );
 
+    // ------------------------------------------------------------
+    // VERIFICAÇÃO DE INTEGRIDADE: cada aluno de toEnroll TEM de ter
+    // uma matrícula correspondente em insertedEnrollments.
+    // ------------------------------------------------------------
+    const missingEnrollments = toEnroll.filter(
+      s => !insertedEnrollments.some(e => e.ed_enrollment_student == s.ed_student_id)
+    );
+
+    if (missingEnrollments.length > 0) {
+      console.log(
+        `${C.bgRed} ⚠ ATENÇÃO ${C.reset} ${C.red}${missingEnrollments.length} aluno(s) NÃO tiveram a matrícula confirmada na base de dados:${C.reset}`
+      );
+      missingEnrollments.forEach(s =>
+        console.log(`   ${C.red}✖ ${s.ed_student_name} (cod: ${s.ed_student_id})${C.reset}`)
+      );
+    }
+
     // Processar turmas dos estudantes
+    const cardData = [];
+
     for (const student of toEnroll) {
       const oldClass = student.ed_student_class;
+      let classChanged = false;
 
       if (oldClass && oldClass != newClass) {
+        classChanged = true;
         const oldClassYear = await ExecuteQuery(
           res,
           `SELECT ed_class_year FROM eduall_class WHERE ed_class_id = ?`,
@@ -291,30 +381,53 @@ const RegisterEnrollment = async (req, res) => {
         [newClass, student.ed_student_id]
       );
 
+      const enrollment = insertedEnrollments.find(
+        e => e.ed_enrollment_student == student.ed_student_id
+      );
+
       // Inserir documentos para cada matrícula criada (se existirem no payload)
-      if (docsPayload.length > 0) {
-        const enrollment = insertedEnrollments.find(e => e.ed_enrollment_student == student.ed_student_id);
-        if (enrollment) {
-          for (const doc of docsPayload) {
-            await ExecuteQuery(
-              res,
-              `INSERT INTO eduall_enrollment_docs
-               (ed_enroll_doc_enrollment, ed_enroll_doc_name, ed_enroll_doc_status,
-                ed_enroll_doc_file, ed_enroll_doc_file_name, ed_enroll_doc_institute)
-               VALUES (?, ?, ?, ?, ?, ?)`,
-              [
-                enrollment.ed_enrollment_id,
-                doc.name   || "Documento",
-                doc.status ?? 0,
-                doc.file   || null,
-                doc.fileName || null,
-                institute,
-              ]
-            );
-          }
+      if (docsPayload.length > 0 && enrollment) {
+        for (const doc of docsPayload) {
+          await ExecuteQuery(
+            res,
+            `INSERT INTO eduall_enrollment_docs
+             (ed_enroll_doc_enrollment, ed_enroll_doc_name, ed_enroll_doc_status,
+              ed_enroll_doc_file, ed_enroll_doc_file_name, ed_enroll_doc_institute)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [
+              enrollment.ed_enrollment_id,
+              doc.name   || "Documento",
+              doc.status ?? 0,
+              doc.file   || null,
+              doc.fileName || null,
+              institute,
+            ]
+          );
         }
       }
+
+      cardData.push({
+        student,
+        enrollment,
+        service,
+        newClass,
+        oldClass,
+        docsCount: enrollment ? docsPayload.length : 0,
+        classChanged,
+      });
     }
+
+    // ------------------------------------------------------------
+    // Console colorido, um cartão por aluno
+    // ------------------------------------------------------------
+    cardData.forEach(printEnrollmentCard);
+
+    printSummaryBanner({
+      total: toEnroll.length,
+      confirmed: toEnroll.length - missingEnrollments.length,
+      failed: missingEnrollments.length,
+      alreadyEnrolledCount: alreadyEnrolled.length,
+    });
 
     // Auditoria
     Promise.all(
@@ -328,21 +441,35 @@ const RegisterEnrollment = async (req, res) => {
       )
     ).catch(err => console.error("Erro ao registar auditoria:", err));
 
+    await RefreshEnrollmentCache(req, res, institute);
+
+    // Se houve falhas de confirmação, devolvemos isso na resposta também
+    if (missingEnrollments.length > 0) {
+      return res.status(207).json({
+        success: true,
+        msg: `Matrícula processada, mas ${missingEnrollments.length} aluno(s) não foram confirmados na base de dados. Verifique os logs.`,
+        failedStudents: missingEnrollments.map(s => ({
+          id: s.ed_student_id,
+          code: s.ed_student_code,
+          name: s.ed_student_name,
+        })),
+      });
+    }
+
     const message =
       alreadyEnrolled.length > 0
         ? `Matrícula efetuada para ${toEnroll.length} estudante(s). ${alreadyEnrolled.length} já estavam matriculados e foram ignorados.`
         : `Matrícula efetuada com sucesso para ${toEnroll.length} estudante(s)!`;
 
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> RegisterEnrollment: ${toEnroll.length} registo(s) inserido(s)`);
-    await RefreshEnrollmentCache(req, res, institute);
-
     return res.status(200).json({ success: true, msg: message });
 
   } catch (error) {
-    console.error("Erro ao registar matrículas:", error);
+    console.error(`\x1b[41m\x1b[37m ✖ ERRO \x1b[0m \x1b[31mErro ao registar matrículas: ${error.message}\x1b[0m`);
     res.status(500).json({ success: false, msg: "Erro ao efetuar matrícula!", error: error.message });
   }
 };
+
+module.exports = { RegisterEnrollment };
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── DELETE ENROLLED STUDENT
