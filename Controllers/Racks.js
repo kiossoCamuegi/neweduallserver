@@ -6,7 +6,75 @@ const { RegisterAuditAction } = require("./Auditory");
    dentro dela e uma capacidade máxima de livros.
 ───────────────────────────────────────────────────────────────────────── */
 
+/* ─────────────────────────────────────────────────────────────────────────
+   ASSOCIAÇÃO PRATELEIRA → LIVROS (books embutidos na listagem)
+   ─────────────────────────────────────────────────────────────────────────
+   A ligação entre um livro e a prateleira onde está guardado JÁ EXISTE na
+   tabela `eduall_library_books`:
+     - ed_library_book_rack  → guarda o ID da prateleira (indexado)
+     - ed_library_book_order → guarda a posição do livro dentro dela
+   O RegisterBook / BookUpdate / MoveBook (controller de livros) já
+   escrevem estas duas colunas sempre que um livro é criado, editado ou
+   movido — ou seja, a gravação já acontecia. O que faltava era o
+   endpoint de listagem de prateleiras devolver essa informação de volta.
+
+   Esta função vai buscar, numa ÚNICA query extra, todos os livros de
+   TODAS as prateleiras devolvidas e agrupa-os por ed_library_book_rack,
+   já ordenados por ed_library_book_order. Cada prateleira passa a vir
+   com:
+     rack.books        → array de livros (ordenados) dessa prateleira
+     rack.books_count   → total de livros dessa prateleira
+
+   Assim, ao chamar GET /api/edualllibraryracks/get já sabemos, para cada
+   prateleira, exatamente que livros tem e em que ordem — sem precisar de
+   um pedido extra por prateleira nem de cruzar manualmente no frontend.
+───────────────────────────────────────────────────────────────────────── */
+const AttachBooksToRacks = async (res, racks, instituteCode) => {
+    if (!Array.isArray(racks) || racks.length === 0) return racks || [];
+
+    const rackIds = racks.map(r => r.ed_library_rack_id);
+    const placeholders = rackIds.map(() => '?').join(', ');
+
+    const booksQuery = `SELECT 
+        ed_library_book_id,
+        ed_library_book_title,
+        ed_library_book_subtitle,
+        ed_library_book_author,
+        ed_library_book_category,
+        ed_library_book_picture,
+        ed_library_book_rack,
+        ed_library_book_order
+      FROM eduall_library_books
+      WHERE ed_library_book_deleted = 0
+      AND ed_library_book_institute_code = ?
+      AND ed_library_book_rack IN (${placeholders})
+      ORDER BY ed_library_book_rack ASC, ed_library_book_order ASC, ed_library_book_title ASC`;
+
+    const booksParams = [instituteCode, ...rackIds];
+    const books = await ExecuteQuery(res, booksQuery, booksParams, true, { db: "eduall_library_books", type: "select" });
+
+    // Agrupa os livros por prateleira (comparação por string porque
+    // ed_library_book_rack é varchar, enquanto ed_library_rack_id é int).
+    const booksByRack = {};
+    (books || []).forEach(b => {
+        const key = String(b.ed_library_book_rack);
+        if (!booksByRack[key]) booksByRack[key] = [];
+        booksByRack[key].push(b);
+    });
+
+    return racks.map(r => {
+        const rackBooks = booksByRack[String(r.ed_library_rack_id)] || [];
+        return {
+            ...r,
+            books: rackBooks,
+            books_count: rackBooks.length,
+        };
+    });
+};
+
 // ─── GET todas as prateleiras (opcionalmente filtradas por ?bookcase_id=) ──
+// Agora já devolve, para cada prateleira, os livros associados (rack.books)
+// e a respetiva ordem (ed_library_book_order dentro de cada item de books).
 const GetRacks = async (req, res) => {
     try {
         const { bookcase_id } = req.query;
@@ -25,20 +93,23 @@ const GetRacks = async (req, res) => {
 
         query += ` ORDER BY ed_library_rack_bookcase_id ASC, ed_library_rack_order ASC, ed_library_rack_name ASC`;
 
-        const result = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_library_racks", type: "select" });
-        res.status(200).json(result);
+        const racks = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_library_racks", type: "select" });
+        const racksWithBooks = await AttachBooksToRacks(res, racks, req.session.user.eduall_user_session_curentinstitute);
+        res.status(200).json(racksWithBooks);
     } catch (error) {
         res.status(500).json({ msg: "Falha ao obter a prateleira !", success: false, error: error.message });
     }
 };
 
+// ─── GET uma única prateleira (também com os livros já associados) ────────
 const GetSingleRack = async (req, res) => {
     try {
         const { ID } = req.params;
         const query = 'SELECT * FROM eduall_library_racks WHERE ed_library_rack_deleted = 0 AND ed_library_rack_id = ? AND ed_library_rack_institute_code = ?';
         const PARAMS = [ID, req.session.user.eduall_user_session_curentinstitute];
         const result = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_library_racks", type: "select" });
-        res.status(200).json(result);
+        const resultWithBooks = await AttachBooksToRacks(res, result, req.session.user.eduall_user_session_curentinstitute);
+        res.status(200).json(resultWithBooks);
     } catch (error) {
         res.status(500).json({ msg: "Falha ao obter a prateleira!", success: false, error: error.message });
     }
@@ -223,8 +294,8 @@ module.exports = {
 /* ─────────────────────────────────────────────────────────────────────────
    SUGESTÃO DE ROTAS (ajusta ao teu padrão de router / nomes de ficheiro):
 
-   GET    /api/edualllibraryracks/get?bookcase_id=1   → GetRacks
-   GET    /api/eduallsinglelibraryrack/get/:ID        → GetSingleRack
+   GET    /api/edualllibraryracks/get?bookcase_id=1   → GetRacks (agora com rack.books e rack.books_count)
+   GET    /api/eduallsinglelibraryrack/get/:ID        → GetSingleRack (idem)
    POST   /api/edualllibraryrackregister/post         → RegisterRack
    PUT    /api/edualllibraryrackupdate/update/:ID     → RackUpdate
    DELETE /api/edualllibraryrackdelete/delete/:ID     → RackDelete

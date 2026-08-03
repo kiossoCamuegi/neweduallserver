@@ -1,0 +1,1876 @@
+══════════════════════════════════════════════════════════════════════════════════
+  EDUALL — RELATÓRIO DE PROFESSORES, DISCIPLINAS E HORÁRIOS
+  Instituto          : complexoescolar673c37
+  Data de geração    : 12/06/2026   15:10:09
+  Total de professores: 61
+══════════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #1    ACÁCIO AUGUSTO                                    ID: 213       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : acael.8.nov@gmail.com                                              │
+│  Telefone  :                       NIF: 000000000000000  Género: male        │
+│  Nasc.     : 1785-12-12       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (6)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   FILOSOFIA              11ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    2   FILOSOFIA              11ªB-EJ      2025-2026      Ciências Económi 11ª Class│
+│    3   SOCIOLOGIA             11ªB-EJ      2025-2026      Ciências Económi 11ª Class│
+│    4   FILOSOFIA              12ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    5   FILOSOFIA              12ªB-EJ      2025-2026      Ciências Económi 12ª CEJ  │
+│    6   SOCIOLOGIA             12ªB-EJ      2025-2026      Ciências Económi 12ª CEJ  │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (12)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Qua   14:30    15:15    FILOSOFIA              11ªA-FB       101           │
+│    2   Qua   15:30    16:15    FILOSOFIA              11ªA-FB       103           │
+│    3   Qua   13:00    13:45    FILOSOFIA              11ªB-EJ       100           │
+│    4   Qua   13:45    14:30    FILOSOFIA              11ªB-EJ       80            │
+│    5   Qua   16:15    17:00    SOCIOLOGIA             11ªB-EJ       104           │
+│    6   Qua   17:00    17:45    SOCIOLOGIA             11ªB-EJ       105           │
+│    7   Sex   13:00    13:45    FILOSOFIA              12ªA-FB       100           │
+│    8   Sex   13:45    14:30    FILOSOFIA              12ªA-FB       80            │
+│    9   Seg   13:00    13:45    FILOSOFIA              12ªB-EJ       100           │
+│    10  Seg   13:45    14:30    FILOSOFIA              12ªB-EJ       80            │
+│    11  Sex   14:30    15:15    SOCIOLOGIA             12ªB-EJ       101           │
+│    12  Sex   15:30    16:15    SOCIOLOGIA             12ªB-EJ       103           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #2    ADILSON KASSANGA                                  ID: 207       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : adilsonkassanga8@gmail.com                                         │
+│  Telefone  :                       NIF: 000000000000000  Género: male        │
+│  Nasc.     : 1785-12-12       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (11)                                                                │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   EMPREENDEDORISMO       7ªA          2025-2026      Não Atribuido    7ª Classe│
+│    2   EMPREENDEDORISMO       7ªB          2025-2026      Não Atribuido    7ª Classe│
+│    3   EMPREENDEDORISMO       8ªA-CL       2025-2026      Não Atribuido    8ª Classe│
+│    4   EMPREENDEDORISMO       9ªA          2025-2026      Não Atribuido    9ª Classe│
+│    5   EMPREENDEDORISMO       9ªB          2025-2026      Não Atribuido    9ª Classe│
+│    6   EMPREENDEDORISMO       10ªA-FB      2025-2026      Ciências Físicas 10ª Class│
+│    7   EMPREENDEDORISMO       10ªB-EJ      2025-2026      Ciências Económi 10ª Class│
+│    8   EMPREENDEDORISMO       11ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    9   EMPREENDEDORISMO       11ªB-EJ      2025-2026      Ciências Económi 11ª Class│
+│    10  EMPREENDEDORISMO       12ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    11  EMPREENDEDORISMO       12ªB-EJ      2025-2026      Ciências Económi 12ª CEJ  │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (10)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Qui   14:30    15:15    EMPREENDEDORISMO       7ªA           101           │
+│    2   Ter   14:30    15:15    EMPREENDEDORISMO       7ªB           101           │
+│    3   Qui   16:15    17:00    EMPREENDEDORISMO       8ªA-CL        104           │
+│    4   Qui   15:30    16:15    EMPREENDEDORISMO       9ªA           103           │
+│    5   Ter   17:00    17:45    EMPREENDEDORISMO       9ªB           105           │
+│    6   Ter   13:00    13:45    EMPREENDEDORISMO       10ªB-EJ       100           │
+│    7   Qui   13:45    14:30    EMPREENDEDORISMO       11ªA-FB       80            │
+│    8   Ter   15:30    16:15    EMPREENDEDORISMO       11ªB-EJ       103           │
+│    9   Ter   13:45    14:30    EMPREENDEDORISMO       12ªA-FB       80            │
+│    10  Ter   16:15    17:00    EMPREENDEDORISMO       12ªB-EJ       104           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #3    ADILSON TEIXEIRA                                  ID: 210       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : adilsonteixeira400@gmail.com                                       │
+│  Telefone  :                       NIF: 000000000000000  Género: male        │
+│  Nasc.     : 1785-12-12       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (3)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   FÍSICA                 10ªA-FB      2025-2026      Ciências Físicas 10ª Class│
+│    2   FÍSICA                 11ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    3   FÍSICA                 12ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (12)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Ter   16:15    17:00    FÍSICA                 10ªA-FB       104           │
+│    2   Ter   17:00    17:45    FÍSICA                 10ªA-FB       105           │
+│    3   Qui   14:30    15:15    FÍSICA                 10ªA-FB       101           │
+│    4   Qui   15:30    16:15    FÍSICA                 10ªA-FB       103           │
+│    5   Ter   13:00    13:45    FÍSICA                 11ªA-FB       100           │
+│    6   Ter   13:45    14:30    FÍSICA                 11ªA-FB       80            │
+│    7   Qui   16:15    17:00    FÍSICA                 11ªA-FB       104           │
+│    8   Qui   17:00    17:45    FÍSICA                 11ªA-FB       105           │
+│    9   Ter   14:30    15:15    FÍSICA                 12ªA-FB       101           │
+│    10  Ter   15:30    16:15    FÍSICA                 12ªA-FB       103           │
+│    11  Qui   13:00    13:45    FÍSICA                 12ªA-FB       100           │
+│    12  Qui   13:45    14:30    FÍSICA                 12ªA-FB       80            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #4    Adriano Lussangue Nunda                           ID: 274       ATIVO    │
+│  Cargo     : 18                                                                 │
+│  Email     : adrianonunda664@gmail.com                                          │
+│  Telefone  :                       NIF: 1111111111LA011  Género: male        │
+│  Nasc.     : 1997-10-10       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #5    AGOSTINHO FRANCISCO                               ID: 177       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : franciscoagostinho344@gmail.com                                    │
+│  Telefone  :                       NIF: 009322152KS044   Género: male        │
+│  Nasc.     : 2002-10-07       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (5)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   EMP                    2ªA          2025-2026      Não Atribuido    2ª Classe│
+│    2   ED. FÍSICA             2ªA          2025-2026      Não Atribuido    2ª Classe│
+│    3   ESTUDO DO MEIO         2ªA          2025-2026      Não Atribuido    2ª Classe│
+│    4   MATEMÁTICA             2ªA          2025-2026      Não Atribuido    2ª Classe│
+│    5   L. PORTUGUESA          2ªA          2025-2026      Não Atribuido    2ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (20)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Sex   09:40    10:25    ED. FÍSICA             2ªA           87            │
+│    2   Sex   10:45    11:30    EMP                    2ªA           89            │
+│    3   Sex   11:35    12:20    EMP                    2ªA           90            │
+│    4   Seg   11:35    12:20    ESTUDO DO MEIO         2ªA           90            │
+│    5   Qua   11:35    12:20    ESTUDO DO MEIO         2ªA           90            │
+│    6   Qui   11:35    12:20    ESTUDO DO MEIO         2ªA           90            │
+│    7   Seg   08:00    08:45    L. PORTUGUESA          2ªA           77            │
+│    8   Seg   08:50    09:35    L. PORTUGUESA          2ªA           78            │
+│    9   Ter   08:00    08:45    L. PORTUGUESA          2ªA           77            │
+│    10  Qua   08:00    08:45    L. PORTUGUESA          2ªA           77            │
+│    11  Qua   08:50    09:35    L. PORTUGUESA          2ªA           78            │
+│    12  Qui   08:00    08:45    L. PORTUGUESA          2ªA           77            │
+│    13  Sex   08:00    08:45    L. PORTUGUESA          2ªA           77            │
+│    14  Sex   08:50    09:35    L. PORTUGUESA          2ªA           78            │
+│    15  Seg   10:45    11:30    MATEMÁTICA             2ªA           89            │
+│    16  Ter   08:50    09:35    MATEMÁTICA             2ªA           78            │
+│    17  Qua   09:40    10:25    MATEMÁTICA             2ªA           87            │
+│    18  Qua   10:45    11:30    MATEMÁTICA             2ªA           89            │
+│    19  Qui   08:50    09:35    MATEMÁTICA             2ªA           78            │
+│    20  Qui   09:40    10:25    MATEMÁTICA             2ªA           87            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #6    AGUNALDO SOARES                                   ID: 204       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : guzef86@gmail.com                                                  │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (6)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   L. PORTUGUESA          10ªA-FB      2025-2026      Ciências Físicas 10ª Class│
+│    2   L. PORTUGUESA          10ªB-EJ      2025-2026      Ciências Económi 10ª Class│
+│    3   L. PORTUGUESA          11ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    4   L. PORTUGUESA          11ªB-EJ      2025-2026      Ciências Económi 11ª Class│
+│    5   L. PORTUGUESA          12ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    6   L. PORTUGUESA          12ªB-EJ      2025-2026      Ciências Económi 12ª CEJ  │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (18)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Qua   16:15    17:00    L. PORTUGUESA          10ªA-FB       104           │
+│    2   Sex   16:15    17:00    L. PORTUGUESA          10ªA-FB       104           │
+│    3   Sex   17:00    17:45    L. PORTUGUESA          10ªA-FB       105           │
+│    4   Qua   16:15    17:00    L. PORTUGUESA          10ªB-EJ       104           │
+│    5   Sex   16:15    17:00    L. PORTUGUESA          10ªB-EJ       104           │
+│    6   Sex   17:00    17:45    L. PORTUGUESA          10ªB-EJ       105           │
+│    7   Seg   16:15    17:00    L. PORTUGUESA          11ªA-FB       104           │
+│    8   Seg   17:00    17:45    L. PORTUGUESA          11ªA-FB       105           │
+│    9   Qua   13:45    14:30    L. PORTUGUESA          11ªA-FB       80            │
+│    10  Seg   13:00    13:45    L. PORTUGUESA          11ªB-EJ       100           │
+│    11  Seg   13:45    14:30    L. PORTUGUESA          11ªB-EJ       80            │
+│    12  Qui   13:00    13:45    L. PORTUGUESA          11ªB-EJ       100           │
+│    13  Qua   14:30    15:15    L. PORTUGUESA          12ªA-FB       101           │
+│    14  Qui   14:30    15:15    L. PORTUGUESA          12ªA-FB       101           │
+│    15  Qui   15:30    16:15    L. PORTUGUESA          12ªA-FB       103           │
+│    16  Seg   14:30    15:15    L. PORTUGUESA          12ªB-EJ       101           │
+│    17  Seg   15:30    16:15    L. PORTUGUESA          12ªB-EJ       103           │
+│    18  Qua   13:00    13:45    L. PORTUGUESA          12ªB-EJ       100           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #7    ANTÓNIA DE SOUSA                                  ID: 167       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : asousamanuel@gmail.com                                             │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #8    ANTÓNIO CANOMBO                                   ID: 208       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     :                                                                    │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (3)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   QUÍMICA                10ªA-FB      2025-2026      Ciências Físicas 10ª Class│
+│    2   QUÍMICA                11ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    3   QUÍMICA                12ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (10)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Seg   16:15    17:00    QUÍMICA                10ªA-FB       104           │
+│    2   Seg   17:00    17:45    QUÍMICA                10ªA-FB       105           │
+│    3   Qui   16:15    17:00    QUÍMICA                10ªA-FB       104           │
+│    4   Qui   17:00    17:45    QUÍMICA                10ªA-FB       105           │
+│    5   Ter   16:15    17:00    QUÍMICA                11ªA-FB       104           │
+│    6   Ter   17:00    17:45    QUÍMICA                11ªA-FB       105           │
+│    7   Sex   16:15    17:00    QUÍMICA                11ªA-FB       104           │
+│    8   Qua   16:15    17:00    QUÍMICA                12ªA-FB       104           │
+│    9   Qua   17:00    17:45    QUÍMICA                12ªA-FB       105           │
+│    10  Sex   17:00    17:45    QUÍMICA                12ªA-FB       105           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #9    ANTÓNIO FRANCISCO                                 ID: 272       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : antoniojoafran@gmail.com                                           │
+│  Telefone  :                       NIF: 007958424LA040   Género: male        │
+│  Nasc.     : 2000-06-11       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (5)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   GEOGRAFIA              7ªA          2025-2026      Não Atribuido    7ª Classe│
+│    2   GEOGRAFIA              7ªB          2025-2026      Não Atribuido    7ª Classe│
+│    3   GEOGRAFIA              8ªA-CL       2025-2026      Não Atribuido    8ª Classe│
+│    4   GEOGRAFIA              9ªA          2025-2026      Não Atribuido    9ª Classe│
+│    5   GEOGRAFIA              9ªB          2025-2026      Não Atribuido    9ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (9)                                                                    │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Seg   16:15    17:00    GEOGRAFIA              7ªA           104           │
+│    2   Seg   17:00    17:45    GEOGRAFIA              7ªA           105           │
+│    3   Seg   13:45    14:30    GEOGRAFIA              7ªB           80            │
+│    4   Seg   14:30    15:15    GEOGRAFIA              7ªB           101           │
+│    5   Sex   13:00    13:45    GEOGRAFIA              8ªA-CL        100           │
+│    6   Sex   13:45    14:30    GEOGRAFIA              8ªA-CL        80            │
+│    7   Sex   15:30    16:15    GEOGRAFIA              9ªA           103           │
+│    8   Sex   16:15    17:00    GEOGRAFIA              9ªA           104           │
+│    9   Ter   13:00    13:45    GEOGRAFIA              9ªB           100           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #10   Benedito Siloca                                   ID: 189       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : beneditoabelsilocasiloca@gmail.com                                 │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (14)                                                                │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   CALIGRAFIA             3ªA          2025-2026      Não Atribuido    3ª Classe│
+│    2   UMBUNDU                3ªA          2025-2026      Não Atribuido    3ª Classe│
+│    3   CALIGRAFIA             4ªA          2025-2026      Não Atribuido    4ª Classe│
+│    4   UMBUNDU                4ªA          2025-2026      Não Atribuido    4ª Classe│
+│    5   CALIGRAFIA             4ªB          2025-2026      Não Atribuido    4ª Classe│
+│    6   UMBUNDU                4ªB          2025-2026      Não Atribuido    4ª Classe│
+│    7   CALIGRAFIA             5ªA-CL       2025-2026      Não Atribuido    5ª Classe│
+│    8   UMBUNDU                5ªA-CL       2025-2026      Não Atribuido    5ª Classe│
+│    9   CALIGRAFIA             6ªA          2025-2026      Não Atribuido    6ª Classe│
+│    10  UMBUNDU                6ªA          2025-2026      Não Atribuido    6ª Classe│
+│    11  CALIGRAFIA             6ªB          2025-2026      Não Atribuido    6ª Classe│
+│    12  UMBUNDU                6ªB          2025-2026      Não Atribuido    6ª Classe│
+│    13  CALIGRAFIA             3ªB          2025-2026      Não Atribuido    3ª Classe│
+│    14  UMBUNDU                3ªB          2025-2026      Não Atribuido    3ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (14)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Qui   09:40    10:25    CALIGRAFIA             3ªA           87            │
+│    2   Qua   11:35    12:20    UMBUNDU                3ªA           90            │
+│    3   Qui   08:00    08:45    CALIGRAFIA             4ªA           77            │
+│    4   Ter   09:40    10:25    UMBUNDU                4ªA           87            │
+│    5   Qui   10:45    11:30    CALIGRAFIA             4ªB           89            │
+│    6   Sex   08:00    08:45    UMBUNDU                4ªB           77            │
+│    7   Sex   11:50    12:35    CALIGRAFIA             5ªA-CL        86            │
+│    8   Sex   11:00    11:45    UMBUNDU                5ªA-CL        85            │
+│    9   Qua   07:30    08:15    CALIGRAFIA             6ªA           79            │
+│    10  Qui   10:10    10:55    UMBUNDU                6ªA           84            │
+│    11  Qui   08:20    09:05    CALIGRAFIA             6ªB           81            │
+│    12  Qua   10:10    10:55    UMBUNDU                6ªB           84            │
+│    13  Qua   08:50    09:35    CALIGRAFIA             3ªB           78            │
+│    14  Ter   08:00    08:45    UMBUNDU                3ªB           77            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #11   BRUNO CAPAU                                       ID: 168       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     :                                                                    │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #12   CARLITO DOS SANTOS                                ID: 190       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     :                                                                    │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (13)                                                                │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   EXPREÇÃO MUSICAL       INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+│    2   EXPREÇÃO MUSICAL       INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+│    3   ED. MUSICAL            1ªA          2025-2026      Não Atribuido    1ª Classe│
+│    4   ED. MUSICAL            1ªB          2025-2026      Não Atribuido    1ª Classe│
+│    5   ED. MUSICAL            2ªA          2025-2026      Não Atribuido    2ª Classe│
+│    6   ED. MUSICAL            2ªB          2025-2026      Não Atribuido    2ª Classe│
+│    7   ED. MUSICAL            3ªA          2025-2026      Não Atribuido    3ª Classe│
+│    8   ED. MUSICAL            3ªB          2025-2026      Não Atribuido    3ª Classe│
+│    9   ED. MUSICAL            4ªA          2025-2026      Não Atribuido    4ª Classe│
+│    10  ED. MUSICAL            4ªB          2025-2026      Não Atribuido    4ª Classe│
+│    11  ED. MUSICAL            5ªA-CL       2025-2026      Não Atribuido    5ª Classe│
+│    12  ED. MUSICAL            6ªA          2025-2026      Não Atribuido    6ª Classe│
+│    13  ED. MUSICAL            6ªB          2025-2026      Não Atribuido    6ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (21)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Sex   11:25    11:45    EXPREÇÃO MUSICAL       INICIAÇÃO-A   98            │
+│    2   Qui   09:40    10:10    EXPREÇÃO MUSICAL       INICIAÇÃO-A   95            │
+│    3   Qui   10:50    11:20    EXPREÇÃO MUSICAL       INICIAÇÃO-B   97            │
+│    4   Sex   09:40    10:10    EXPREÇÃO MUSICAL       INICIAÇÃO-B   95            │
+│    5   Ter   08:00    08:45    ED. MUSICAL            1ªA           77            │
+│    6   Ter   10:45    11:30    ED. MUSICAL            1ªB           89            │
+│    7   Ter   11:35    12:20    ED. MUSICAL            2ªA           90            │
+│    8   Qua   10:45    11:30    ED. MUSICAL            2ªB           89            │
+│    9   Qui   08:00    08:45    ED. MUSICAL            3ªA           77            │
+│    10  Qui   08:50    09:35    ED. MUSICAL            3ªA           78            │
+│    11  Sex   08:00    08:45    ED. MUSICAL            3ªB           77            │
+│    12  Qua   08:00    08:45    ED. MUSICAL            4ªA           77            │
+│    13  Qua   08:50    09:35    ED. MUSICAL            4ªA           78            │
+│    14  Sex   08:50    09:35    ED. MUSICAL            4ªB           78            │
+│    15  Sex   09:40    10:25    ED. MUSICAL            4ªB           87            │
+│    16  Qui   11:00    11:45    ED. MUSICAL            5ªA-CL        85            │
+│    17  Qui   11:50    12:35    ED. MUSICAL            5ªA-CL        86            │
+│    18  Sex   10:10    10:55    ED. MUSICAL            6ªA           84            │
+│    19  Sex   11:00    11:45    ED. MUSICAL            6ªA           85            │
+│    20  Ter   08:20    09:05    ED. MUSICAL            6ªB           81            │
+│    21  Ter   09:10    09:55    ED. MUSICAL            6ªB           82            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #13   CARLOS LATINO                                     ID: 198       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : carloslatino71@gmail.com                                           │
+│  Telefone  :                       NIF: 000000000000000  Género: male        │
+│  Nasc.     : 1785-12-12       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (5)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   MATEMÁTICA             7ªA          2025-2026      Não Atribuido    7ª Classe│
+│    2   MATEMÁTICA             7ªB          2025-2026      Não Atribuido    7ª Classe│
+│    3   MATEMÁTICA             8ªA-CL       2025-2026      Não Atribuido    8ª Classe│
+│    4   MATEMÁTICA             9ªA          2025-2026      Não Atribuido    9ª Classe│
+│    5   MATEMÁTICA             9ªB          2025-2026      Não Atribuido    9ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (15)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Seg   14:30    15:15    MATEMÁTICA             7ªA           101           │
+│    2   Seg   15:30    16:15    MATEMÁTICA             7ªA           103           │
+│    3   Qui   17:00    17:45    MATEMÁTICA             7ªA           105           │
+│    4   Seg   17:00    17:45    MATEMÁTICA             7ªB           105           │
+│    5   Ter   16:15    17:00    MATEMÁTICA             7ªB           104           │
+│    6   Ter   17:00    17:45    MATEMÁTICA             7ªB           105           │
+│    7   Ter   14:30    15:15    MATEMÁTICA             8ªA-CL        101           │
+│    8   Qui   14:30    15:15    MATEMÁTICA             8ªA-CL        101           │
+│    9   Qui   15:30    16:15    MATEMÁTICA             8ªA-CL        103           │
+│    10  Ter   15:30    16:15    MATEMÁTICA             9ªA           103           │
+│    11  Qua   13:00    13:45    MATEMÁTICA             9ªA           100           │
+│    12  Qua   13:45    14:30    MATEMÁTICA             9ªA           80            │
+│    13  Seg   13:00    13:45    MATEMÁTICA             9ªB           100           │
+│    14  Seg   13:45    14:30    MATEMÁTICA             9ªB           80            │
+│    15  Qua   14:30    15:15    MATEMÁTICA             9ªB           101           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #14   CILIANA LUAMBA                                    ID: 179       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     :                                                                    │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (5)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   ED. FÍSICA             3ªA          2025-2026      Não Atribuido    3ª Classe│
+│    2   EMP                    3ªA          2025-2026      Não Atribuido    3ª Classe│
+│    3   ESTUDO DO MEIO         3ªA          2025-2026      Não Atribuido    3ª Classe│
+│    4   MATEMÁTICA             3ªA          2025-2026      Não Atribuido    3ª Classe│
+│    5   L. PORTUGUESA          3ªA          2025-2026      Não Atribuido    3ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (19)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Sex   09:40    10:25    ED. FÍSICA             3ªA           87            │
+│    2   Sex   10:45    11:30    EMP                    3ªA           89            │
+│    3   Sex   11:35    12:20    EMP                    3ªA           90            │
+│    4   Ter   11:35    12:20    ESTUDO DO MEIO         3ªA           90            │
+│    5   Qui   11:35    12:20    ESTUDO DO MEIO         3ªA           90            │
+│    6   Sex   08:00    08:45    ESTUDO DO MEIO         3ªA           77            │
+│    7   Seg   08:00    08:45    L. PORTUGUESA          3ªA           77            │
+│    8   Seg   08:50    09:35    L. PORTUGUESA          3ªA           78            │
+│    9   Ter   08:00    08:45    L. PORTUGUESA          3ªA           77            │
+│    10  Ter   08:50    09:35    L. PORTUGUESA          3ªA           78            │
+│    11  Qua   08:00    08:45    L. PORTUGUESA          3ªA           77            │
+│    12  Qua   08:50    09:35    L. PORTUGUESA          3ªA           78            │
+│    13  Qui   10:45    11:30    L. PORTUGUESA          3ªA           89            │
+│    14  Seg   10:45    11:30    MATEMÁTICA             3ªA           89            │
+│    15  Seg   11:35    12:20    MATEMÁTICA             3ªA           90            │
+│    16  Ter   09:40    10:25    MATEMÁTICA             3ªA           87            │
+│    17  Ter   10:45    11:30    MATEMÁTICA             3ªA           89            │
+│    18  Qua   10:45    11:30    MATEMÁTICA             3ªA           89            │
+│    19  Sex   08:50    09:35    MATEMÁTICA             3ªA           78            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #15   Ciliana Luamba                                    ID: 231       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : cili.lua@gmail.com                                                 │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #16   Complexo Escolar Privado Monte Sol                ID: 166       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : colegiomontesol2012@hotmail.com                                    │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #17   Complexo Escolar Privado Monte Sol                ID: 223       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : colegiomontesol2012@hotmail.com                                    │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #18   CONSTÂNCIA VIVALDA                                ID: 209       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : constanciantonio2020@gmail.com                                     │
+│  Telefone  :                       NIF: 00300502LA033    Género: female      │
+│  Nasc.     : 1990-02-11       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (3)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   INT. DIREITO           10ªB-EJ      2025-2026      Ciências Económi 10ª Class│
+│    2   INT. DIREITO           11ªB-EJ      2025-2026      Ciências Económi 11ª Class│
+│    3   INT. DIREITO           12ªB-EJ      2025-2026      Ciências Económi 12ª CEJ  │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (8)                                                                    │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Ter   16:15    17:00    INT. DIREITO           10ªB-EJ       104           │
+│    2   Ter   17:00    17:45    INT. DIREITO           10ªB-EJ       105           │
+│    3   Sex   14:30    15:15    INT. DIREITO           10ªB-EJ       101           │
+│    4   Ter   14:30    15:15    INT. DIREITO           11ªB-EJ       101           │
+│    5   Sex   13:00    13:45    INT. DIREITO           11ªB-EJ       100           │
+│    6   Sex   13:45    14:30    INT. DIREITO           11ªB-EJ       80            │
+│    7   Sex   16:15    17:00    INT. DIREITO           12ªB-EJ       104           │
+│    8   Sex   17:00    17:45    INT. DIREITO           12ªB-EJ       105           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #19   CUSTÓDIO DE LIMA                                  ID: 185       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : custodiodelima@gmail.com                                           │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (6)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   CIÊNCIAS DA NATUREZA   6ªA          2025-2026      Não Atribuido    6ª Classe│
+│    2   EMC                    6ªA          2025-2026      Não Atribuido    6ª Classe│
+│    3   GEOGRAFIA              6ªA          2025-2026      Não Atribuido    6ª Classe│
+│    4   EMP                    6ªA          2025-2026      Não Atribuido    6ª Classe│
+│    5   HISTÓRIA               6ªA          2025-2026      Não Atribuido    6ª Classe│
+│    6   L. PORTUGUESA          6ªA          2025-2026      Não Atribuido    6ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (17)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Seg   11:00    11:45    CIÊNCIAS DA NATUREZA   6ªA           85            │
+│    2   Ter   11:00    11:45    CIÊNCIAS DA NATUREZA   6ªA           85            │
+│    3   Ter   11:50    12:35    CIÊNCIAS DA NATUREZA   6ªA           86            │
+│    4   Qua   10:10    10:55    CIÊNCIAS DA NATUREZA   6ªA           84            │
+│    5   Ter   07:30    08:15    EMC                    6ªA           79            │
+│    6   Ter   08:20    09:05    EMC                    6ªA           81            │
+│    7   Sex   11:50    12:35    EMP                    6ªA           86            │
+│    8   Seg   09:10    09:55    GEOGRAFIA              6ªA           82            │
+│    9   Qui   11:50    12:35    GEOGRAFIA              6ªA           86            │
+│    10  Seg   10:10    10:55    HISTÓRIA               6ªA           84            │
+│    11  Sex   09:10    09:55    HISTÓRIA               6ªA           82            │
+│    12  Seg   07:30    08:15    L. PORTUGUESA          6ªA           79            │
+│    13  Seg   08:20    09:05    L. PORTUGUESA          6ªA           81            │
+│    14  Ter   10:10    10:55    L. PORTUGUESA          6ªA           84            │
+│    15  Qua   08:20    09:05    L. PORTUGUESA          6ªA           81            │
+│    16  Qua   09:10    09:55    L. PORTUGUESA          6ªA           82            │
+│    17  Qui   07:30    08:15    L. PORTUGUESA          6ªA           79            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #20   DELFIM MOTA                                       ID: 187       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : safamukar42@gmail.com                                              │
+│  Telefone  :                       NIF: 00569939LA030    Género: male        │
+│  Nasc.     : 1982-12-09       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (5)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   MATEMÁTICA             4ªA          2025-2026      Não Atribuido    4ª Classe│
+│    2   MATEMÁTICA             4ªB          2025-2026      Não Atribuido    4ª Classe│
+│    3   MATEMÁTICA             5ªA-CL       2025-2026      Não Atribuido    5ª Classe│
+│    4   MATEMÁTICA             6ªA          2025-2026      Não Atribuido    6ª Classe│
+│    5   MATEMÁTICA             6ªB          2025-2026      Não Atribuido    6ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (28)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Seg   09:40    10:25    MATEMÁTICA             4ªA           87            │
+│    2   Seg   10:45    11:30    MATEMÁTICA             4ªA           89            │
+│    3   Qua   09:40    10:25    MATEMÁTICA             4ªA           87            │
+│    4   Qui   10:45    11:30    MATEMÁTICA             4ªA           89            │
+│    5   Qui   11:35    12:20    MATEMÁTICA             4ªA           90            │
+│    6   Sex   10:45    11:30    MATEMÁTICA             4ªA           89            │
+│    7   Ter   11:35    12:20    MATEMÁTICA             4ªB           90            │
+│    8   Qua   08:00    08:45    MATEMÁTICA             4ªB           77            │
+│    9   Qua   08:50    09:35    MATEMÁTICA             4ªB           78            │
+│    10  Qui   08:50    09:35    MATEMÁTICA             4ªB           78            │
+│    11  Qui   09:40    10:25    MATEMÁTICA             4ªB           87            │
+│    12  Sex   11:35    12:20    MATEMÁTICA             4ªB           90            │
+│    13  Seg   08:20    09:05    MATEMÁTICA             5ªA-CL        81            │
+│    14  Ter   07:30    08:15    MATEMÁTICA             5ªA-CL        79            │
+│    15  Ter   08:20    09:05    MATEMÁTICA             5ªA-CL        81            │
+│    16  Qua   10:10    10:55    MATEMÁTICA             5ªA-CL        84            │
+│    17  Qua   11:00    11:45    MATEMÁTICA             5ªA-CL        85            │
+│    18  Qui   07:30    08:15    MATEMÁTICA             5ªA-CL        79            │
+│    19  Seg   11:50    12:35    MATEMÁTICA             6ªA           86            │
+│    20  Ter   09:10    09:55    MATEMÁTICA             6ªA           82            │
+│    21  Qua   11:50    12:35    MATEMÁTICA             6ªA           86            │
+│    22  Sex   07:30    08:15    MATEMÁTICA             6ªA           79            │
+│    23  Sex   08:20    09:05    MATEMÁTICA             6ªA           81            │
+│    24  Seg   07:30    08:15    MATEMÁTICA             6ªB           79            │
+│    25  Ter   11:00    11:45    MATEMÁTICA             6ªB           85            │
+│    26  Ter   11:50    12:35    MATEMÁTICA             6ªB           86            │
+│    27  Qua   09:10    09:55    MATEMÁTICA             6ªB           82            │
+│    28  Sex   09:10    09:55    MATEMÁTICA             6ªB           82            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #21   DILMA FARIA                                       ID: 218       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : dilmafaria2012@hotmail.com                                         │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #22   Dina Maria Tito Eduardo                           ID: 270       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : adelaidetito0@gmail.com                                            │
+│  Telefone  :                       NIF: 007129635HA040   Género: female      │
+│  Nasc.     : 2000-07-03       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (6)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   CIÊNCIAS DA NATUREZA   6ªB          2025-2026      Não Atribuido    6ª Classe│
+│    2   EMC                    6ªB          2025-2026      Não Atribuido    6ª Classe│
+│    3   EMP                    6ªB          2025-2026      Não Atribuido    6ª Classe│
+│    4   GEOGRAFIA              6ªB          2025-2026      Não Atribuido    6ª Classe│
+│    5   HISTÓRIA               6ªB          2025-2026      Não Atribuido    6ª Classe│
+│    6   L. PORTUGUESA          6ªB          2025-2026      Não Atribuido    6ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (17)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Seg   11:00    11:45    CIÊNCIAS DA NATUREZA   6ªB           85            │
+│    2   Seg   11:50    12:35    CIÊNCIAS DA NATUREZA   6ªB           86            │
+│    3   Qua   11:00    11:45    CIÊNCIAS DA NATUREZA   6ªB           85            │
+│    4   Qui   09:10    09:55    CIÊNCIAS DA NATUREZA   6ªB           82            │
+│    5   Sex   07:30    08:15    EMC                    6ªB           79            │
+│    6   Sex   08:20    09:05    EMC                    6ªB           81            │
+│    7   Qua   11:50    12:35    EMP                    6ªB           86            │
+│    8   Ter   07:30    08:15    GEOGRAFIA              6ªB           79            │
+│    9   Sex   11:50    12:35    GEOGRAFIA              6ªB           86            │
+│    10  Seg   10:10    10:55    HISTÓRIA               6ªB           84            │
+│    11  Ter   10:10    10:55    HISTÓRIA               6ªB           84            │
+│    12  Seg   08:20    09:05    L. PORTUGUESA          6ªB           81            │
+│    13  Seg   09:10    09:55    L. PORTUGUESA          6ªB           82            │
+│    14  Qua   07:30    08:15    L. PORTUGUESA          6ªB           79            │
+│    15  Qua   08:20    09:05    L. PORTUGUESA          6ªB           81            │
+│    16  Sex   10:10    10:55    L. PORTUGUESA          6ªB           84            │
+│    17  Sex   11:00    11:45    L. PORTUGUESA          6ªB           85            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #23   Domingos Avelino José                             ID: 273       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : linnojoaquim@gmail.com                                             │
+│  Telefone  :                       NIF: 11111111111LA01  Género: male        │
+│  Nasc.     : 1998-10-10       Estado civil: 2                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (11)                                                                │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   INGLÊS                 7ªA          2025-2026      Não Atribuido    7ª Classe│
+│    2   INGLÊS                 7ªB          2025-2026      Não Atribuido    7ª Classe│
+│    3   INGLÊS                 8ªA-CL       2025-2026      Não Atribuido    8ª Classe│
+│    4   INGLÊS                 9ªA          2025-2026      Não Atribuido    9ª Classe│
+│    5   INGLÊS                 9ªB          2025-2026      Não Atribuido    9ª Classe│
+│    6   INGLÊS                 10ªA-FB      2025-2026      Ciências Físicas 10ª Class│
+│    7   INGLÊS                 10ªB-EJ      2025-2026      Ciências Económi 10ª Class│
+│    8   INGLÊS                 11ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    9   INGLÊS                 11ªB-EJ      2025-2026      Ciências Económi 11ª Class│
+│    10  INGLÊS                 12ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    11  INGLÊS                 12ªB-EJ      2025-2026      Ciências Económi 12ª CEJ  │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (30)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Ter   14:30    15:15    INGLÊS                 7ªA           101           │
+│    2   Qua   14:30    15:15    INGLÊS                 7ªA           101           │
+│    3   Qua   15:30    16:15    INGLÊS                 7ªA           103           │
+│    4   Seg   15:30    16:15    INGLÊS                 7ªB           103           │
+│    5   Qui   14:30    15:15    INGLÊS                 7ªB           101           │
+│    6   Qui   15:30    16:15    INGLÊS                 7ªB           103           │
+│    7   Ter   15:30    16:15    INGLÊS                 8ªA-CL        103           │
+│    8   Qua   16:15    17:00    INGLÊS                 8ªA-CL        104           │
+│    9   Qua   17:00    17:45    INGLÊS                 8ªA-CL        105           │
+│    10  Ter   13:00    13:45    INGLÊS                 9ªA           100           │
+│    11  Ter   13:45    14:30    INGLÊS                 9ªA           80            │
+│    12  Qui   16:15    17:00    INGLÊS                 9ªB           104           │
+│    13  Qui   17:00    17:45    INGLÊS                 9ªB           105           │
+│    14  Seg   14:30    15:15    INGLÊS                 10ªA-FB       101           │
+│    15  Sex   13:00    13:45    INGLÊS                 10ªA-FB       100           │
+│    16  Sex   13:00    13:45    INGLÊS                 10ªB-EJ       100           │
+│    17  Sex   13:45    14:30    INGLÊS                 10ªB-EJ       80            │
+│    18  Seg   14:30    15:15    INGLÊS                 10ªB-EJ       101           │
+│    19  Seg   13:00    13:45    INGLÊS                 11ªA-FB       100           │
+│    20  Seg   13:45    14:30    INGLÊS                 11ªA-FB       80            │
+│    21  Qui   13:00    13:45    INGLÊS                 11ªA-FB       100           │
+│    22  Qui   13:45    14:30    INGLÊS                 11ªB-EJ       80            │
+│    23  Sex   16:15    17:00    INGLÊS                 11ªB-EJ       104           │
+│    24  Sex   17:00    17:45    INGLÊS                 11ªB-EJ       105           │
+│    25  Qui   13:00    13:45    INGLÊS                 12ªA-FB       100           │
+│    26  Sex   14:30    15:15    INGLÊS                 12ªA-FB       101           │
+│    27  Sex   15:15    15:30    INGLÊS                 12ªA-FB       102           │
+│    28  Seg   16:15    17:00    INGLÊS                 12ªB-EJ       104           │
+│    29  Seg   17:00    17:45    INGLÊS                 12ªB-EJ       105           │
+│    30  Ter   17:00    17:45    INGLÊS                 12ªB-EJ       105           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #24   EDUARDO TOMÉ                                      ID: 194       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     :                                                                    │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (5)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   L. PORTUGUESA          7ªA          2025-2026      Não Atribuido    7ª Classe│
+│    2   L. PORTUGUESA          7ªB          2025-2026      Não Atribuido    7ª Classe│
+│    3   L. PORTUGUESA          8ªA-CL       2025-2026      Não Atribuido    8ª Classe│
+│    4   L. PORTUGUESA          9ªA          2025-2026      Não Atribuido    9ª Classe│
+│    5   L. PORTUGUESA          9ªB          2025-2026      Não Atribuido    9ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (17)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Seg   13:00    13:45    L. PORTUGUESA          7ªA           100           │
+│    2   Seg   13:45    14:30    L. PORTUGUESA          7ªA           80            │
+│    3   Ter   13:00    13:45    L. PORTUGUESA          7ªA           100           │
+│    4   Ter   15:30    16:15    L. PORTUGUESA          7ªB           103           │
+│    5   Sex   13:00    13:45    L. PORTUGUESA          7ªB           100           │
+│    6   Sex   13:45    14:30    L. PORTUGUESA          7ªB           80            │
+│    7   Seg   14:30    15:15    L. PORTUGUESA          8ªA-CL        101           │
+│    8   Seg   15:30    16:15    L. PORTUGUESA          8ªA-CL        103           │
+│    9   Ter   13:45    14:30    L. PORTUGUESA          8ªA-CL        80            │
+│    10  Seg   16:15    17:00    L. PORTUGUESA          9ªA           104           │
+│    11  Seg   17:00    17:45    L. PORTUGUESA          9ªA           105           │
+│    12  Ter   16:15    17:00    L. PORTUGUESA          9ªA           104           │
+│    13  Ter   17:00    17:45    L. PORTUGUESA          9ªA           105           │
+│    14  Qui   14:30    15:15    L. PORTUGUESA          9ªB           101           │
+│    15  Qui   15:30    16:15    L. PORTUGUESA          9ªB           103           │
+│    16  Sex   14:30    15:15    L. PORTUGUESA          9ªB           101           │
+│    17  Sex   15:30    16:15    L. PORTUGUESA          9ªB           103           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #25   Efraim Camati                                     ID: 214       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : efraimzeferinocamati@gmail.com                                     │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (5)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   HISTÓRIA               10ªB-EJ      2025-2026      Ciências Económi 10ª Class│
+│    2   HISTÓRIA               11ªB-EJ      2025-2026      Ciências Económi 11ª Class│
+│    3   HISTÓRIA               12ªB-EJ      2025-2026      Ciências Económi 12ª CEJ  │
+│    4   ANTROPOLOGIA           11ªB-EJ      2025-2026      Ciências Económi 11ª Class│
+│    5   ANTROPOLOGIA           12ªB-EJ      2025-2026      Ciências Económi 12ª CEJ  │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (13)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Seg   16:15    17:00    HISTÓRIA               10ªB-EJ       104           │
+│    2   Seg   17:00    17:45    HISTÓRIA               10ªB-EJ       105           │
+│    3   Qui   17:00    17:45    HISTÓRIA               10ªB-EJ       105           │
+│    4   Seg   14:30    15:15    HISTÓRIA               11ªB-EJ       101           │
+│    5   Ter   13:00    13:45    HISTÓRIA               11ªB-EJ       100           │
+│    6   Ter   13:45    14:30    HISTÓRIA               11ªB-EJ       80            │
+│    7   Qua   14:30    15:15    HISTÓRIA               12ªB-EJ       101           │
+│    8   Qua   15:30    16:15    HISTÓRIA               12ªB-EJ       103           │
+│    9   Sex   13:00    13:45    HISTÓRIA               12ªB-EJ       100           │
+│    10  Ter   16:15    17:00    ANTROPOLOGIA           11ªB-EJ       104           │
+│    11  Ter   17:00    17:45    ANTROPOLOGIA           11ªB-EJ       105           │
+│    12  Ter   14:30    15:15    ANTROPOLOGIA           12ªB-EJ       101           │
+│    13  Ter   15:30    16:15    ANTROPOLOGIA           12ªB-EJ       103           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #26   ELIAS PULULU                                      ID: 197       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : eliaspululu@gmail.com                                              │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (4)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   ED. LABORAL            7ªA          2025-2026      Não Atribuido    7ª Classe│
+│    2   ED. LABORAL            7ªB          2025-2026      Não Atribuido    7ª Classe│
+│    3   ED. LABORAL            8ªA-CL       2025-2026      Não Atribuido    8ª Classe│
+│    4   ED. LABORAL            9ªA          2025-2026      Não Atribuido    9ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (8)                                                                    │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Qua   16:15    17:00    ED. LABORAL            7ªA           104           │
+│    2   Qua   17:00    17:45    ED. LABORAL            7ªA           105           │
+│    3   Sex   14:30    15:15    ED. LABORAL            7ªB           101           │
+│    4   Sex   15:30    16:15    ED. LABORAL            7ªB           103           │
+│    5   Qua   14:30    15:15    ED. LABORAL            8ªA-CL        101           │
+│    6   Qua   15:30    16:15    ED. LABORAL            8ªA-CL        103           │
+│    7   Qui   16:15    17:00    ED. LABORAL            9ªA           104           │
+│    8   Qui   17:00    17:45    ED. LABORAL            9ªA           105           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #27   ERNESTO DAVID MOGAS                               ID: 271       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : ernestomogas94@gmail.com                                           │
+│  Telefone  :                       NIF: 000938652LA031   Género: male        │
+│  Nasc.     : 1989-07-04       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #28   FELICIANA DIAS                                    ID: 222       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : diafeliciana439@gmail.com                                          │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #29   FLÁVIO CANHANGA                                   ID: 192       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     :                                                                    │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (20)                                                                │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   KIMBUNDU               INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+│    2   KIMBUNDU               INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+│    3   KIMBUNDU               1ªA          2025-2026      Não Atribuido    1ª Classe│
+│    4   KIMBUNDU               1ªB          2025-2026      Não Atribuido    1ª Classe│
+│    5   KIMBUNDU               2ªA          2025-2026      Não Atribuido    2ª Classe│
+│    6   KIMBUNDU               2ªB          2025-2026      Não Atribuido    2ª Classe│
+│    7   EMC                    7ªA          2025-2026      Não Atribuido    7ª Classe│
+│    8   EMC                    7ªB          2025-2026      Não Atribuido    7ª Classe│
+│    9   EMC                    8ªA-CL       2025-2026      Não Atribuido    8ª Classe│
+│    10  EMC                    9ªA          2025-2026      Não Atribuido    9ª Classe│
+│    11  EMC                    9ªB          2025-2026      Não Atribuido    9ª Classe│
+│    12  MIC                    7ªA          2025-2026      Não Atribuido    7ª Classe│
+│    13  MIC                    7ªB          2025-2026      Não Atribuido    7ª Classe│
+│    14  MIC                    8ªA-CL       2025-2026      Não Atribuido    8ª Classe│
+│    15  MIC                    9ªA          2025-2026      Não Atribuido    9ª Classe│
+│    16  MIC                    9ªB          2025-2026      Não Atribuido    9ª Classe│
+│    17  MIC                    10ªA-FB      2025-2026      Ciências Físicas 10ª Class│
+│    18  MIC                    10ªB-EJ      2025-2026      Ciências Económi 10ª Class│
+│    19  MIC                    12ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    20  MIC                    12ªB-EJ      2025-2026      Ciências Económi 12ª CEJ  │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (25)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Qui   09:05    09:35    KIMBUNDU               INICIAÇÃO-A   94            │
+│    2   Sex   10:50    11:20    KIMBUNDU               INICIAÇÃO-B   97            │
+│    3   Qui   08:00    08:45    KIMBUNDU               1ªA           77            │
+│    4   Qui   09:40    10:25    KIMBUNDU               1ªB           87            │
+│    5   Qui   10:45    11:30    KIMBUNDU               2ªA           89            │
+│    6   Qui   11:35    12:20    KIMBUNDU               2ªB           90            │
+│    7   Qui   13:00    13:45    EMC                    7ªA           100           │
+│    8   Qui   13:45    14:30    EMC                    7ªA           80            │
+│    9   Qua   13:45    14:30    MIC                    7ªA           80            │
+│    10  Qui   16:15    17:00    EMC                    7ªB           104           │
+│    11  Qui   17:00    17:45    EMC                    7ªB           105           │
+│    12  Seg   16:15    17:00    MIC                    7ªB           104           │
+│    13  Sex   16:15    17:00    EMC                    8ªA-CL        104           │
+│    14  Sex   17:00    17:45    EMC                    8ªA-CL        105           │
+│    15  Qua   13:00    13:45    MIC                    8ªA-CL        100           │
+│    16  Seg   14:30    15:15    EMC                    9ªA           101           │
+│    17  Seg   15:30    16:15    EMC                    9ªA           103           │
+│    18  Sex   14:30    15:15    MIC                    9ªA           101           │
+│    19  Qua   16:15    17:00    EMC                    9ªB           104           │
+│    20  Qua   17:00    17:45    EMC                    9ªB           105           │
+│    21  Qua   14:30    15:15    MIC                    9ªB           101           │
+│    22  Seg   13:00    13:45    MIC                    10ªA-FB       100           │
+│    23  Sex   15:30    16:15    MIC                    10ªB-EJ       103           │
+│    24  Seg   13:45    14:30    MIC                    12ªA-FB       80            │
+│    25  Sex   13:45    14:30    MIC                    12ªB-EJ       80            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #30   Flávio Dala Canhanga                              ID: 262       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : flaviodalacanhanga50@gmail.com                                     │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #31   HÉLDER FERNANDES                                  ID: 180       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : helderfernandesfernandes0@gmail.com                                │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (5)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   ED. FÍSICA             3ªB          2025-2026      Não Atribuido    3ª Classe│
+│    2   EMP                    3ªB          2025-2026      Não Atribuido    3ª Classe│
+│    3   ESTUDO DO MEIO         3ªB          2025-2026      Não Atribuido    3ª Classe│
+│    4   MATEMÁTICA             3ªB          2025-2026      Não Atribuido    3ª Classe│
+│    5   L. PORTUGUESA          3ªB          2025-2026      Não Atribuido    3ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (6)                                                                    │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Sex   11:35    12:20    ED. FÍSICA             3ªB           90            │
+│    2   Ter   10:45    11:30    EMP                    3ªB           89            │
+│    3   Ter   11:35    12:20    EMP                    3ªB           90            │
+│    4   Ter   09:40    10:25    ESTUDO DO MEIO         3ªB           87            │
+│    5   Qua   09:40    10:25    ESTUDO DO MEIO         3ªB           87            │
+│    6   Qui   09:40    10:25    ESTUDO DO MEIO         3ªB           87            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #32   Hélio Santana                                     ID: 261       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : recursoshumanoscepmontesol@gmail.com                               │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #33   HILÁRIO SACUENDA                                  ID: 195       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : hilariosacuenda@gmail.com                                          │
+│  Telefone  :                       NIF: 000000           Género: male        │
+│  Nasc.     : 1995-02-02       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (8)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   FÍSICA                 7ªA          2025-2026      Não Atribuido    7ª Classe│
+│    2   FÍSICA                 7ªB          2025-2026      Não Atribuido    7ª Classe│
+│    3   FÍSICA                 8ªA-CL       2025-2026      Não Atribuido    8ª Classe│
+│    4   FÍSICA                 9ªA          2025-2026      Não Atribuido    9ª Classe│
+│    5   FÍSICA                 9ªB          2025-2026      Não Atribuido    9ª Classe│
+│    6   ED. LABORAL            9ªB          2025-2026      Não Atribuido    9ª Classe│
+│    7   GEOLOGIA               11ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    8   GEOLOGIA               12ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (18)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Ter   15:30    16:15    FÍSICA                 7ªA           103           │
+│    2   Qui   15:30    16:15    FÍSICA                 7ªA           103           │
+│    3   Qui   16:15    17:00    FÍSICA                 7ªA           104           │
+│    4   Ter   13:00    13:45    FÍSICA                 7ªB           100           │
+│    5   Ter   13:45    14:30    FÍSICA                 7ªB           80            │
+│    6   Sex   17:00    17:45    FÍSICA                 7ªB           105           │
+│    7   Qui   13:00    13:45    FÍSICA                 8ªA-CL        100           │
+│    8   Qui   13:45    14:30    FÍSICA                 8ªA-CL        80            │
+│    9   Qua   14:30    15:15    FÍSICA                 9ªA           101           │
+│    10  Qua   15:30    16:15    FÍSICA                 9ªA           103           │
+│    11  Qua   13:00    13:45    FÍSICA                 9ªB           100           │
+│    12  Qua   13:45    14:30    FÍSICA                 9ªB           80            │
+│    13  Seg   14:30    15:15    ED. LABORAL            9ªB           101           │
+│    14  Seg   15:30    16:15    ED. LABORAL            9ªB           103           │
+│    15  Sex   13:00    13:45    GEOLOGIA               11ªA-FB       100           │
+│    16  Sex   13:45    14:30    GEOLOGIA               11ªA-FB       80            │
+│    17  Ter   16:15    17:00    GEOLOGIA               12ªA-FB       104           │
+│    18  Ter   17:00    17:45    GEOLOGIA               12ªA-FB       105           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #34   INÁCIO DA SILVA                                   ID: 268       ATIVO    │
+│  Cargo     : 58                                                                 │
+│  Email     : eduall@gmail.com                                                   │
+│  Telefone  :                       NIF: 000000000000000  Género: male        │
+│  Nasc.     : 1785-12-12       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #35   JANETH BENGUI                                     ID: 211       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     :                                                                    │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (4)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   PSICOLOGIA             11ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    2   PSICOLOGIA             11ªB-EJ      2025-2026      Ciências Económi 11ª Class│
+│    3   PSICOLOGIA             12ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    4   PSICOLOGIA             12ªB-EJ      2025-2026      Ciências Económi 12ª CEJ  │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (6)                                                                    │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Qua   13:00    13:45    PSICOLOGIA             11ªA-FB       100           │
+│    2   Qui   14:30    15:15    PSICOLOGIA             11ªB-EJ       101           │
+│    3   Qui   15:30    16:15    PSICOLOGIA             11ªB-EJ       103           │
+│    4   Qua   13:45    14:30    PSICOLOGIA             12ªA-FB       80            │
+│    5   Qui   13:00    13:45    PSICOLOGIA             12ªB-EJ       100           │
+│    6   Qui   13:45    14:30    PSICOLOGIA             12ªB-EJ       80            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #36   João Manuel dos Santos                            ID: 202       ATIVO    │
+│  Cargo     : Selecione uma opção...                                             │
+│  Email     : joaomanueldossantos20@gmail.com                                    │
+│  Telefone  :                       NIF: 006709386LA041   Género: male        │
+│  Nasc.     : 1997-12-09       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (5)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   QUÍMICA                7ªA          2025-2026      Não Atribuido    7ª Classe│
+│    2   QUÍMICA                7ªB          2025-2026      Não Atribuido    7ª Classe│
+│    3   QUÍMICA                8ªA-CL       2025-2026      Não Atribuido    8ª Classe│
+│    4   QUÍMICA                9ªA          2025-2026      Não Atribuido    9ª Classe│
+│    5   QUÍMICA                9ªB          2025-2026      Não Atribuido    9ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (11)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Ter   16:15    17:00    QUÍMICA                7ªA           104           │
+│    2   Ter   17:00    17:45    QUÍMICA                7ªA           105           │
+│    3   Qua   14:30    15:15    QUÍMICA                7ªB           101           │
+│    4   Qua   15:30    16:15    QUÍMICA                7ªB           103           │
+│    5   Ter   13:00    13:45    QUÍMICA                8ªA-CL        100           │
+│    6   Sex   14:30    15:15    QUÍMICA                8ªA-CL        101           │
+│    7   Sex   15:30    16:15    QUÍMICA                8ªA-CL        103           │
+│    8   Sex   13:00    13:45    QUÍMICA                9ªA           100           │
+│    9   Sex   13:45    14:30    QUÍMICA                9ªA           80            │
+│    10  Ter   14:30    15:15    QUÍMICA                9ªB           101           │
+│    11  Ter   15:30    16:15    QUÍMICA                9ªB           103           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #37   JOAQUIM JOÃO                                      ID: 173       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : jjojoobelemita@gmail.com                                           │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #38   JOAQUIM JOÃO                                      ID: 217       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : jjojoobelemita@gmail.com                                           │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #39   JOSSUE BUNGA                                      ID: 199       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : jossuebunga@gmail.com                                              │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (5)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   HISTÓRIA               7ªA          2025-2026      Não Atribuido    7ª Classe│
+│    2   HISTÓRIA               7ªB          2025-2026      Não Atribuido    7ª Classe│
+│    3   HISTÓRIA               8ªA-CL       2025-2026      Não Atribuido    8ª Classe│
+│    4   HISTÓRIA               9ªA          2025-2026      Não Atribuido    9ª Classe│
+│    5   HISTÓRIA               9ªB          2025-2026      Não Atribuido    9ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (13)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Qua   13:00    13:45    HISTÓRIA               7ªA           100           │
+│    2   Sex   14:30    15:15    HISTÓRIA               7ªA           101           │
+│    3   Sex   15:30    16:15    HISTÓRIA               7ªA           103           │
+│    4   Qui   13:00    13:45    HISTÓRIA               7ªB           100           │
+│    5   Qui   13:45    14:30    HISTÓRIA               7ªB           80            │
+│    6   Sex   16:15    17:00    HISTÓRIA               7ªB           104           │
+│    7   Seg   13:00    13:45    HISTÓRIA               8ªA-CL        100           │
+│    8   Seg   13:45    14:30    HISTÓRIA               8ªA-CL        80            │
+│    9   Qua   13:45    14:30    HISTÓRIA               8ªA-CL        80            │
+│    10  Qua   16:15    17:00    HISTÓRIA               9ªA           104           │
+│    11  Qua   17:00    17:45    HISTÓRIA               9ªA           105           │
+│    12  Seg   13:00    13:45    HISTÓRIA               9ªB           100           │
+│    13  Seg   13:45    14:30    HISTÓRIA               9ªB           80            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #40   Jovelino Novidade Miguel                          ID: 183       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : jovelinovidade@gmail.com                                           │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (6)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   EMC                    5ªA-CL       2025-2026      Não Atribuido    5ª Classe│
+│    2   CIÊNCIAS DA NATUREZA   5ªA-CL       2025-2026      Não Atribuido    5ª Classe│
+│    3   GEOGRAFIA              5ªA-CL       2025-2026      Não Atribuido    5ª Classe│
+│    4   HISTÓRIA               5ªA-CL       2025-2026      Não Atribuido    5ª Classe│
+│    5   L. PORTUGUESA          5ªA-CL       2025-2026      Não Atribuido    5ª Classe│
+│    6   EMP                    5ªA-CL       2025-2026      Não Atribuido    5ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (16)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Ter   11:00    11:45    CIÊNCIAS DA NATUREZA   5ªA-CL        85            │
+│    2   Sex   07:30    08:15    CIÊNCIAS DA NATUREZA   5ªA-CL        79            │
+│    3   Sex   08:20    09:05    CIÊNCIAS DA NATUREZA   5ªA-CL        81            │
+│    4   Ter   09:10    09:55    EMC                    5ªA-CL        82            │
+│    5   Qua   11:50    12:35    EMC                    5ªA-CL        86            │
+│    6   Sex   10:10    10:55    EMP                    5ªA-CL        84            │
+│    7   Seg   07:30    08:15    GEOGRAFIA              5ªA-CL        79            │
+│    8   Qua   08:20    09:05    GEOGRAFIA              5ªA-CL        81            │
+│    9   Qua   09:10    09:55    HISTÓRIA               5ªA-CL        82            │
+│    10  Sex   09:10    09:55    HISTÓRIA               5ªA-CL        82            │
+│    11  Seg   09:10    09:55    L. PORTUGUESA          5ªA-CL        82            │
+│    12  Seg   10:10    10:55    L. PORTUGUESA          5ªA-CL        84            │
+│    13  Ter   10:10    10:55    L. PORTUGUESA          5ªA-CL        84            │
+│    14  Qua   07:30    08:15    L. PORTUGUESA          5ªA-CL        79            │
+│    15  Qui   08:20    09:05    L. PORTUGUESA          5ªA-CL        81            │
+│    16  Qui   09:10    09:55    L. PORTUGUESA          5ªA-CL        82            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #41   LOVALDINA KILOLA                                  ID: 175       ATIVO    │
+│  Cargo     : 39                                                                 │
+│  Email     : lovaldinatchiwale7@gmail.com                                       │
+│  Telefone  :                       NIF: 000000           Género: female      │
+│  Nasc.     : 1998-12-07       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (5)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   ED. FÍSICA             1ªA          2025-2026      Não Atribuido    1ª Classe│
+│    2   EMP                    1ªA          2025-2026      Não Atribuido    1ª Classe│
+│    3   ESTUDO DO MEIO         1ªA          2025-2026      Não Atribuido    1ª Classe│
+│    4   L. PORTUGUESA          1ªA          2025-2026      Não Atribuido    1ª Classe│
+│    5   MATEMÁTICA             1ªA          2025-2026      Não Atribuido    1ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (22)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Sex   08:50    09:35    ED. FÍSICA             1ªA           78            │
+│    2   Sex   10:45    11:30    EMP                    1ªA           89            │
+│    3   Sex   11:35    12:20    EMP                    1ªA           90            │
+│    4   Seg   09:40    10:25    ESTUDO DO MEIO         1ªA           87            │
+│    5   Qua   11:35    12:20    ESTUDO DO MEIO         1ªA           90            │
+│    6   Qui   09:40    10:25    ESTUDO DO MEIO         1ªA           87            │
+│    7   Seg   08:00    08:45    L. PORTUGUESA          1ªA           77            │
+│    8   Seg   08:50    09:35    L. PORTUGUESA          1ªA           78            │
+│    9   Ter   08:50    09:35    L. PORTUGUESA          1ªA           78            │
+│    10  Ter   09:40    10:25    L. PORTUGUESA          1ªA           87            │
+│    11  Qua   08:00    08:45    L. PORTUGUESA          1ªA           77            │
+│    12  Qui   10:45    11:30    L. PORTUGUESA          1ªA           89            │
+│    13  Qui   11:35    12:20    L. PORTUGUESA          1ªA           90            │
+│    14  Sex   09:40    10:25    L. PORTUGUESA          1ªA           87            │
+│    15  Seg   10:45    11:30    MATEMÁTICA             1ªA           89            │
+│    16  Seg   11:35    12:20    MATEMÁTICA             1ªA           90            │
+│    17  Ter   10:45    11:30    MATEMÁTICA             1ªA           89            │
+│    18  Ter   11:35    12:20    MATEMÁTICA             1ªA           90            │
+│    19  Qua   09:40    10:25    MATEMÁTICA             1ªA           87            │
+│    20  Qua   10:45    11:30    MATEMÁTICA             1ªA           89            │
+│    21  Qui   08:50    09:35    MATEMÁTICA             1ªA           78            │
+│    22  Seg   09:40    10:25    L. PORTUGUESA          1ªA           87            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #42   LUCIANO KANGANJO                                  ID: 267       ATIVO    │
+│  Cargo     : 18                                                                 │
+│  Email     : kanganjoluciano609@gmail.com                                       │
+│  Telefone  :                       NIF: 000000000000000  Género: male        │
+│  Nasc.     : 1785-12-12       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #43   LUZIA FULA ANTÓNIO                                ID: 172       ATIVO    │
+│  Cargo     : 56                                                                 │
+│  Email     : fulaluzia67@gmail.com                                              │
+│  Telefone  : 940871311             NIF: 002064004LA034   Género: female      │
+│  Nasc.     : 1990-09-10       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #44   MANUEL CHICOMO                                    ID: 191       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     :                                                                    │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (13)                                                                │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   INFORMÁTICA            INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+│    2   INFORMÁTICA            INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+│    3   INFORMÁTICA            1ªA          2025-2026      Não Atribuido    1ª Classe│
+│    4   INFORMÁTICA            1ªB          2025-2026      Não Atribuido    1ª Classe│
+│    5   INFORMÁTICA            2ªA          2025-2026      Não Atribuido    2ª Classe│
+│    6   INFORMÁTICA            2ªB          2025-2026      Não Atribuido    2ª Classe│
+│    7   INFORMÁTICA            3ªA          2025-2026      Não Atribuido    3ª Classe│
+│    8   INFORMÁTICA            3ªB          2025-2026      Não Atribuido    3ª Classe│
+│    9   INFORMÁTICA            4ªA          2025-2026      Não Atribuido    4ª Classe│
+│    10  INFORMÁTICA            4ªB          2025-2026      Não Atribuido    4ª Classe│
+│    11  INFORMÁTICA            5ªA-CL       2025-2026      Não Atribuido    5ª Classe│
+│    12  INFORMÁTICA            6ªA          2025-2026      Não Atribuido    6ª Classe│
+│    13  INFORMÁTICA            6ªB          2025-2026      Não Atribuido    6ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (19)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Sex   10:50    11:20    INFORMÁTICA            INICIAÇÃO-A   97            │
+│    2   Sex   11:25    11:45    INFORMÁTICA            INICIAÇÃO-B   98            │
+│    3   Sex   08:00    08:45    INFORMÁTICA            1ªA           77            │
+│    4   Seg   08:50    09:35    INFORMÁTICA            1ªB           78            │
+│    5   Ter   09:40    10:25    INFORMÁTICA            2ªA           87            │
+│    6   Ter   10:45    11:30    INFORMÁTICA            2ªB           89            │
+│    7   Seg   09:40    10:25    INFORMÁTICA            3ªA           87            │
+│    8   Seg   08:00    08:45    INFORMÁTICA            3ªB           77            │
+│    9   Sex   08:50    09:35    INFORMÁTICA            4ªA           78            │
+│    10  Sex   09:40    10:25    INFORMÁTICA            4ªA           87            │
+│    11  Ter   08:00    08:45    INFORMÁTICA            4ªB           77            │
+│    12  Ter   08:50    09:35    INFORMÁTICA            4ªB           78            │
+│    13  Seg   11:00    11:45    INFORMÁTICA            5ªA-CL        85            │
+│    14  Seg   11:50    12:35    INFORMÁTICA            5ªA-CL        86            │
+│    15  Qui   08:20    09:05    INFORMÁTICA            6ªA           81            │
+│    16  Qui   09:10    09:55    INFORMÁTICA            6ªA           82            │
+│    17  Qui   10:10    10:55    INFORMÁTICA            6ªB           84            │
+│    18  Qui   11:00    11:45    INFORMÁTICA            6ªB           85            │
+│    19  Sex   09:40    10:10    INFORMÁTICA            6ªB           95            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #45   Manuel Chicomo                                    ID: 225       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : manuelcambanda@gmail.com                                           │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #46   MÁRCIO ANTÓNIO                                    ID: 188       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     :                                                                    │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (13)                                                                │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   INGLÊS                 INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+│    2   INGLÊS                 INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+│    3   INGLÊS                 1ªA          2025-2026      Não Atribuido    1ª Classe│
+│    4   INGLÊS                 1ªB          2025-2026      Não Atribuido    1ª Classe│
+│    5   INGLÊS                 2ªA          2025-2026      Não Atribuido    2ª Classe│
+│    6   INGLÊS                 2ªB          2025-2026      Não Atribuido    2ª Classe│
+│    7   INGLÊS                 3ªA          2025-2026      Não Atribuido    3ª Classe│
+│    8   INGLÊS                 3ªB          2025-2026      Não Atribuido    3ª Classe│
+│    9   INGLÊS                 4ªA          2025-2026      Não Atribuido    4ª Classe│
+│    10  INGLÊS                 4ªB          2025-2026      Não Atribuido    4ª Classe│
+│    11  INGLÊS                 5ªA-CL       2025-2026      Não Atribuido    5ª Classe│
+│    12  INGLÊS                 6ªA          2025-2026      Não Atribuido    6ª Classe│
+│    13  INGLÊS                 6ªB          2025-2026      Não Atribuido    6ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (13)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Seg   09:05    09:35    INGLÊS                 INICIAÇÃO-A   94            │
+│    2   Qua   10:50    11:20    INGLÊS                 INICIAÇÃO-B   97            │
+│    3   Qua   08:50    09:35    INGLÊS                 1ªA           78            │
+│    4   Seg   10:45    11:30    INGLÊS                 1ªB           89            │
+│    5   Seg   09:40    10:25    INGLÊS                 2ªA           87            │
+│    6   Qui   08:50    09:35    INGLÊS                 2ªB           78            │
+│    7   Qua   09:40    10:25    INGLÊS                 3ªA           87            │
+│    8   Qua   10:45    11:30    INGLÊS                 3ªB           89            │
+│    9   Seg   11:35    12:20    INGLÊS                 4ªA           90            │
+│    10  Seg   08:50    09:35    INGLÊS                 4ªB           78            │
+│    11  Qui   10:10    10:55    INGLÊS                 5ªA-CL        84            │
+│    12  Qui   11:00    11:45    INGLÊS                 6ªA           85            │
+│    13  Qui   07:30    08:15    INGLÊS                 6ªB           79            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #47   MARIA ERNESTINA                                   ID: 169       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : mariajgernestina23@gmail.com                                       │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (5)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   L. PORTUGUESA          2ªB          2025-2026      Não Atribuido    2ª Classe│
+│    2   MATEMÁTICA             2ªB          2025-2026      Não Atribuido    2ª Classe│
+│    3   EMP                    2ªB          2025-2026      Não Atribuido    2ª Classe│
+│    4   ESTUDO DO MEIO         2ªB          2025-2026      Não Atribuido    2ª Classe│
+│    5   ED. FÍSICA             2ªB          2025-2026      Não Atribuido    2ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (20)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Seg   09:40    10:25    L. PORTUGUESA          2ªB           87            │
+│    2   Seg   10:45    11:30    L. PORTUGUESA          2ªB           89            │
+│    3   Ter   08:00    08:45    L. PORTUGUESA          2ªB           77            │
+│    4   Qua   08:00    08:45    L. PORTUGUESA          2ªB           77            │
+│    5   Qua   08:50    09:35    L. PORTUGUESA          2ªB           78            │
+│    6   Qui   08:00    08:45    L. PORTUGUESA          2ªB           77            │
+│    7   Sex   08:00    08:45    L. PORTUGUESA          2ªB           77            │
+│    8   Sex   08:50    09:35    L. PORTUGUESA          2ªB           78            │
+│    9   Seg   08:00    08:45    MATEMÁTICA             2ªB           77            │
+│    10  Seg   08:50    09:35    MATEMÁTICA             2ªB           78            │
+│    11  Ter   08:50    09:35    MATEMÁTICA             2ªB           78            │
+│    12  Ter   09:40    10:25    MATEMÁTICA             2ªB           87            │
+│    13  Qui   09:40    10:25    MATEMÁTICA             2ªB           87            │
+│    14  Qui   10:45    11:30    MATEMÁTICA             2ªB           89            │
+│    15  Seg   11:35    12:20    ESTUDO DO MEIO         2ªB           90            │
+│    16  Ter   11:35    12:20    ESTUDO DO MEIO         2ªB           90            │
+│    17  Sex   11:35    12:20    ESTUDO DO MEIO         2ªB           90            │
+│    18  Sex   09:40    10:25    EMP                    2ªB           87            │
+│    19  Sex   10:45    11:30    EMP                    2ªB           89            │
+│    20  Qua   11:35    12:20    ED. FÍSICA             2ªB           90            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #48   Maria Vieira                                      ID: 254       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : mariacalunga3@gmail.com                                            │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (8)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   BIOLOGIA               7ªA          2025-2026      Não Atribuido    7ª Classe│
+│    2   BIOLOGIA               7ªB          2025-2026      Não Atribuido    7ª Classe│
+│    3   BIOLOGIA               8ªA-CL       2025-2026      Não Atribuido    8ª Classe│
+│    4   BIOLOGIA               9ªA          2025-2026      Não Atribuido    9ª Classe│
+│    5   BIOLOGIA               9ªB          2025-2026      Não Atribuido    9ª Classe│
+│    6   BIOLOGIA               10ªA-FB      2025-2026      Ciências Físicas 10ª Class│
+│    7   BIOLOGIA               11ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    8   BIOLOGIA               12ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (24)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Sex   13:00    13:45    BIOLOGIA               7ªA           100           │
+│    2   Sex   13:45    14:30    BIOLOGIA               7ªA           80            │
+│    3   Qua   13:00    13:45    BIOLOGIA               7ªB           100           │
+│    4   Qua   13:45    14:30    BIOLOGIA               7ªB           80            │
+│    5   Seg   16:15    17:00    BIOLOGIA               8ªA-CL        104           │
+│    6   Seg   17:00    17:45    BIOLOGIA               8ªA-CL        105           │
+│    7   Seg   13:00    13:45    BIOLOGIA               9ªA           100           │
+│    8   Seg   13:45    14:30    BIOLOGIA               9ªA           80            │
+│    9   Sex   17:00    17:45    BIOLOGIA               9ªA           105           │
+│    10  Qui   13:00    13:45    BIOLOGIA               9ªB           100           │
+│    11  Qui   13:45    14:30    BIOLOGIA               9ªB           80            │
+│    12  Sex   16:15    17:00    BIOLOGIA               9ªB           104           │
+│    13  Qua   14:30    15:15    BIOLOGIA               10ªA-FB       101           │
+│    14  Qua   15:30    16:15    BIOLOGIA               10ªA-FB       103           │
+│    15  Sex   14:30    15:15    BIOLOGIA               10ªA-FB       101           │
+│    16  Sex   15:30    16:15    BIOLOGIA               10ªA-FB       103           │
+│    17  Qua   16:15    17:00    BIOLOGIA               11ªA-FB       104           │
+│    18  Qua   17:00    17:45    BIOLOGIA               11ªA-FB       105           │
+│    19  Qui   14:30    15:15    BIOLOGIA               11ªA-FB       101           │
+│    20  Qui   15:30    16:15    BIOLOGIA               11ªA-FB       103           │
+│    21  Seg   14:30    15:15    BIOLOGIA               12ªA-FB       101           │
+│    22  Seg   15:30    16:15    BIOLOGIA               12ªA-FB       103           │
+│    23  Qui   16:15    17:00    BIOLOGIA               12ªA-FB       104           │
+│    24  Qui   17:00    17:45    BIOLOGIA               12ªA-FB       105           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #49   Mauro Simões                                      ID: 176       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : maurosongue@gmail.com                                              │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (5)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   EMP                    1ªB          2025-2026      Não Atribuido    1ª Classe│
+│    2   ESTUDO DO MEIO         1ªB          2025-2026      Não Atribuido    1ª Classe│
+│    3   MATEMÁTICA             1ªB          2025-2026      Não Atribuido    1ª Classe│
+│    4   L. PORTUGUESA          1ªB          2025-2026      Não Atribuido    1ª Classe│
+│    5   ED. FÍSICA             1ªB          2025-2026      Não Atribuido    1ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (21)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Ter   11:35    12:20    ED. FÍSICA             1ªB           90            │
+│    2   Sex   10:45    11:30    EMP                    1ªB           89            │
+│    3   Sex   11:35    12:20    EMP                    1ªB           90            │
+│    4   Seg   11:35    12:20    ESTUDO DO MEIO         1ªB           90            │
+│    5   Qua   08:00    08:45    ESTUDO DO MEIO         1ªB           77            │
+│    6   Sex   08:00    08:45    ESTUDO DO MEIO         1ªB           77            │
+│    7   Seg   08:00    08:45    L. PORTUGUESA          1ªB           77            │
+│    8   Ter   08:00    08:45    L. PORTUGUESA          1ªB           77            │
+│    9   Qua   08:50    09:35    L. PORTUGUESA          1ªB           78            │
+│    10  Qua   09:40    10:25    L. PORTUGUESA          1ªB           87            │
+│    11  Qui   08:00    08:45    L. PORTUGUESA          1ªB           77            │
+│    12  Qui   08:50    09:35    L. PORTUGUESA          1ªB           78            │
+│    13  Sex   08:50    09:35    L. PORTUGUESA          1ªB           78            │
+│    14  Sex   09:40    10:25    L. PORTUGUESA          1ªB           87            │
+│    15  Seg   09:40    10:25    MATEMÁTICA             1ªB           87            │
+│    16  Ter   08:50    09:35    MATEMÁTICA             1ªB           78            │
+│    17  Ter   09:40    10:25    MATEMÁTICA             1ªB           87            │
+│    18  Qua   10:45    11:30    MATEMÁTICA             1ªB           89            │
+│    19  Qua   11:35    12:20    MATEMÁTICA             1ªB           90            │
+│    20  Qui   10:45    11:30    MATEMÁTICA             1ªB           89            │
+│    21  Qui   11:35    12:20    MATEMÁTICA             1ªB           90            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #50   ORIANA ANAMUR                                     ID: 174       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : orianaanamur4@gmail.com                                            │
+│  Telefone  :                       NIF: ooooooooo        Género: female      │
+│  Nasc.     : 2002-06-08       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (12)                                                                │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   COMUNICAÇÃO LINGUISTIC INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+│    2   ENTREGA DAS CRIANÇAS   INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+│    3   ESTÓRIA E DRAMATIZAÇÃO INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+│    4   EXP. MOTORA/PSICOMOTRI INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+│    5   EXPREÇÃO PLASTICA      INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+│    6   GINASTICA MATINAL      INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+│    7   HIGIENE                INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+│    8   JOGOS                  INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+│    9   MEIO FISICO SOCIAL     INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+│    10  ORGAN. E ARRUMAÇÃO DA  INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+│    11  PSICOMOTRICIDADE       INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+│    12  REPRESENTAÇÃO MATEMÁTI INICIAÇÃO-A  2025-2026      Não Atribuido    JARDIM   │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (25)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Seg   08:30    09:00    COMUNICAÇÃO LINGUISTIC INICIAÇÃO-A   93            │
+│    2   Ter   09:05    09:35    COMUNICAÇÃO LINGUISTIC INICIAÇÃO-A   94            │
+│    3   Qua   08:30    09:00    COMUNICAÇÃO LINGUISTIC INICIAÇÃO-A   93            │
+│    4   Qui   08:30    09:00    COMUNICAÇÃO LINGUISTIC INICIAÇÃO-A   93            │
+│    5   Sex   08:30    09:00    COMUNICAÇÃO LINGUISTIC INICIAÇÃO-A   93            │
+│    6   Seg   11:45    12:00    ENTREGA DAS CRIANÇAS   INICIAÇÃO-A   99            │
+│    7   Ter   11:45    12:00    ENTREGA DAS CRIANÇAS   INICIAÇÃO-A   99            │
+│    8   Qua   11:45    12:00    ENTREGA DAS CRIANÇAS   INICIAÇÃO-A   99            │
+│    9   Qui   11:45    12:00    ENTREGA DAS CRIANÇAS   INICIAÇÃO-A   99            │
+│    10  Sex   11:45    12:00    ENTREGA DAS CRIANÇAS   INICIAÇÃO-A   99            │
+│    11  Qui   11:25    11:45    ESTÓRIA E DRAMATIZAÇÃO INICIAÇÃO-A   98            │
+│    12  Ter   08:30    09:00    EXP. MOTORA/PSICOMOTRI INICIAÇÃO-A   93            │
+│    13  Qua   11:25    11:45    EXP. MOTORA/PSICOMOTRI INICIAÇÃO-A   98            │
+│    14  Sex   09:05    09:35    EXP. MOTORA/PSICOMOTRI INICIAÇÃO-A   94            │
+│    15  Seg   10:50    11:20    EXPREÇÃO PLASTICA      INICIAÇÃO-A   97            │
+│    16  Ter   11:25    11:45    EXPREÇÃO PLASTICA      INICIAÇÃO-A   98            │
+│    17  Qua   10:50    11:20    EXPREÇÃO PLASTICA      INICIAÇÃO-A   97            │
+│    18  Sex   09:40    10:10    EXPREÇÃO PLASTICA      INICIAÇÃO-A   95            │
+│    19  Seg   11:25    11:45    MEIO FISICO SOCIAL     INICIAÇÃO-A   98            │
+│    20  Ter   10:50    11:20    MEIO FISICO SOCIAL     INICIAÇÃO-A   97            │
+│    21  Qua   09:40    10:10    MEIO FISICO SOCIAL     INICIAÇÃO-A   95            │
+│    22  Seg   09:40    10:10    REPRESENTAÇÃO MATEMÁTI INICIAÇÃO-A   95            │
+│    23  Ter   09:40    10:10    REPRESENTAÇÃO MATEMÁTI INICIAÇÃO-A   95            │
+│    24  Qua   09:05    09:35    REPRESENTAÇÃO MATEMÁTI INICIAÇÃO-A   94            │
+│    25  Qui   10:50    11:20    REPRESENTAÇÃO MATEMÁTI INICIAÇÃO-A   97            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #51   ORLANDO DIOGO                                     ID: 181       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : orlandojosediogo35@gmail.com                                       │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (3)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   EMP                    4ªA          2025-2026      Não Atribuido    4ª Classe│
+│    2   ESTUDO DO MEIO         4ªA          2025-2026      Não Atribuido    4ª Classe│
+│    3   L. PORTUGUESA          4ªA          2025-2026      Não Atribuido    4ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (11)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Sex   11:35    12:20    EMP                    4ªA           90            │
+│    2   Ter   11:35    12:20    EMP                    4ªA           90            │
+│    3   Ter   10:45    11:30    ESTUDO DO MEIO         4ªA           89            │
+│    4   Qua   10:45    11:30    ESTUDO DO MEIO         4ªA           89            │
+│    5   Sex   08:00    08:45    ESTUDO DO MEIO         4ªA           77            │
+│    6   Seg   08:00    08:45    L. PORTUGUESA          4ªA           77            │
+│    7   Seg   08:50    09:35    L. PORTUGUESA          4ªA           78            │
+│    8   Ter   08:00    08:45    L. PORTUGUESA          4ªA           77            │
+│    9   Ter   08:50    09:35    L. PORTUGUESA          4ªA           78            │
+│    10  Qui   08:50    09:35    L. PORTUGUESA          4ªA           78            │
+│    11  Qui   09:40    10:25    L. PORTUGUESA          4ªA           87            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #52   PEDRO RAFAEL                                      ID: 184       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     :                                                                    │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #53   ROMÃO BERNARDO                                    ID: 201       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : romaogonga@hotmail.com                                             │
+│  Telefone  :                       NIF: 000782332LA037   Género: male        │
+│  Nasc.     : 1990-01-07       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (7)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   INFORMÁTICA            7ªA          2025-2026      Não Atribuido    7ª Classe│
+│    2   INFORMÁTICA            7ªB          2025-2026      Não Atribuido    7ª Classe│
+│    3   INFORMÁTICA            8ªA-CL       2025-2026      Não Atribuido    8ª Classe│
+│    4   INFORMÁTICA            9ªA          2025-2026      Não Atribuido    9ª Classe│
+│    5   INFORMÁTICA            9ªB          2025-2026      Não Atribuido    9ª Classe│
+│    6   INFORMÁTICA            10ªA-FB      2025-2026      Ciências Físicas 10ª Class│
+│    7   INFORMÁTICA            10ªB-EJ      2025-2026      Ciências Económi 10ª Class│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (13)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Ter   13:45    14:30    INFORMÁTICA            7ªA           80            │
+│    2   Seg   13:00    13:45    INFORMÁTICA            7ªB           100           │
+│    3   Qui   17:00    17:45    INFORMÁTICA            8ªA-CL        105           │
+│    4   Qui   14:30    15:15    INFORMÁTICA            9ªA           101           │
+│    5   Ter   16:15    17:00    INFORMÁTICA            9ªB           104           │
+│    6   Ter   14:30    15:15    INFORMÁTICA            10ªA-FB       101           │
+│    7   Ter   15:30    16:15    INFORMÁTICA            10ªA-FB       103           │
+│    8   Qua   16:15    17:00    INFORMÁTICA            10ªA-FB       104           │
+│    9   Qua   17:00    17:45    INFORMÁTICA            10ªA-FB       105           │
+│    10  Ter   14:30    15:15    INFORMÁTICA            10ªB-EJ       101           │
+│    11  Ter   15:30    16:15    INFORMÁTICA            10ªB-EJ       103           │
+│    12  Qua   13:00    13:45    INFORMÁTICA            10ªB-EJ       100           │
+│    13  Qua   13:45    14:30    INFORMÁTICA            10ªB-EJ       80            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #54   ROSALINA DA SILVA                                 ID: 171       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     :                                                                    │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (12)                                                                │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   COMUNICAÇÃO LINGUISTIC INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+│    2   ENTREGA DAS CRIANÇAS   INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+│    3   ESTÓRIA E DRAMATIZAÇÃO INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+│    4   EXP. MOTORA/PSICOMOTRI INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+│    5   EXPREÇÃO PLASTICA      INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+│    6   GINASTICA MATINAL      INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+│    7   HIGIENE                INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+│    8   JOGOS                  INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+│    9   MEIO FISICO SOCIAL     INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+│    10  ORGAN. E ARRUMAÇÃO DA  INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+│    11  PSICOMOTRICIDADE       INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+│    12  REPRESENTAÇÃO MATEMÁTI INICIAÇÃO-B  2025-2026      Não Atribuido    JARDIM   │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (25)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Seg   08:30    09:00    COMUNICAÇÃO LINGUISTIC INICIAÇÃO-B   93            │
+│    2   Ter   09:05    09:35    COMUNICAÇÃO LINGUISTIC INICIAÇÃO-B   94            │
+│    3   Qua   08:30    09:00    COMUNICAÇÃO LINGUISTIC INICIAÇÃO-B   93            │
+│    4   Qui   08:30    09:00    COMUNICAÇÃO LINGUISTIC INICIAÇÃO-B   93            │
+│    5   Sex   08:30    09:00    COMUNICAÇÃO LINGUISTIC INICIAÇÃO-B   93            │
+│    6   Qui   11:25    11:45    ESTÓRIA E DRAMATIZAÇÃO INICIAÇÃO-B   98            │
+│    7   Seg   11:25    11:45    EXP. MOTORA/PSICOMOTRI INICIAÇÃO-B   98            │
+│    8   Ter   08:30    09:00    EXP. MOTORA/PSICOMOTRI INICIAÇÃO-B   93            │
+│    9   Sex   09:05    09:35    EXP. MOTORA/PSICOMOTRI INICIAÇÃO-B   94            │
+│    10  Seg   09:40    10:10    EXPREÇÃO PLASTICA      INICIAÇÃO-B   95            │
+│    11  Ter   11:25    11:45    EXPREÇÃO PLASTICA      INICIAÇÃO-B   98            │
+│    12  Qua   11:25    11:45    EXPREÇÃO PLASTICA      INICIAÇÃO-B   98            │
+│    13  Qui   09:40    10:10    EXPREÇÃO PLASTICA      INICIAÇÃO-B   95            │
+│    14  Seg   09:05    09:35    REPRESENTAÇÃO MATEMÁTI INICIAÇÃO-B   94            │
+│    15  Ter   09:40    10:10    REPRESENTAÇÃO MATEMÁTI INICIAÇÃO-B   95            │
+│    16  Qua   09:05    09:35    REPRESENTAÇÃO MATEMÁTI INICIAÇÃO-B   94            │
+│    17  Qui   09:05    09:35    REPRESENTAÇÃO MATEMÁTI INICIAÇÃO-B   94            │
+│    18  Seg   11:45    12:00    ENTREGA DAS CRIANÇAS   INICIAÇÃO-B   99            │
+│    19  Ter   11:45    12:00    ENTREGA DAS CRIANÇAS   INICIAÇÃO-B   99            │
+│    20  Qua   11:45    12:00    ENTREGA DAS CRIANÇAS   INICIAÇÃO-B   99            │
+│    21  Qui   11:45    12:00    ENTREGA DAS CRIANÇAS   INICIAÇÃO-B   99            │
+│    22  Sex   11:45    12:00    ENTREGA DAS CRIANÇAS   INICIAÇÃO-B   99            │
+│    23  Seg   10:50    11:20    MEIO FISICO SOCIAL     INICIAÇÃO-B   97            │
+│    24  Ter   10:50    11:20    MEIO FISICO SOCIAL     INICIAÇÃO-B   97            │
+│    25  Qua   09:40    10:10    MEIO FISICO SOCIAL     INICIAÇÃO-B   95            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #55   SANTA GANGA                                       ID: 182       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : santaganga20@gmail.com                                             │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (3)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   EMP                    4ªB          2025-2026      Não Atribuido    4ª Classe│
+│    2   ESTUDO DO MEIO         4ªB          2025-2026      Não Atribuido    4ª Classe│
+│    3   L. PORTUGUESA          4ªB          2025-2026      Não Atribuido    4ª Classe│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (11)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Qui   11:35    12:20    EMP                    4ªB           90            │
+│    2   Seg   08:00    08:45    ESTUDO DO MEIO         4ªB           77            │
+│    3   Ter   09:40    10:25    ESTUDO DO MEIO         4ªB           87            │
+│    4   Qua   11:35    12:20    ESTUDO DO MEIO         4ªB           90            │
+│    5   Seg   10:45    11:30    L. PORTUGUESA          4ªB           89            │
+│    6   Seg   11:35    12:20    L. PORTUGUESA          4ªB           90            │
+│    7   Qua   09:40    10:25    L. PORTUGUESA          4ªB           87            │
+│    8   Qua   10:45    11:30    L. PORTUGUESA          4ªB           89            │
+│    9   Qui   08:00    08:45    L. PORTUGUESA          4ªB           77            │
+│    10  Sex   10:45    11:30    L. PORTUGUESA          4ªB           89            │
+│    11  Seg   09:40    10:25    EMP                    4ªB           87            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #56   Sebastião Bernardo                                ID: 206       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : sebastiaobernardo30@gmail.com                                      │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (5)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   MATEMÁTICA             10ªA-FB      2025-2026      Ciências Físicas 10ª Class│
+│    2   MATEMÁTICA             10ªB-EJ      2025-2026      Ciências Económi 10ª Class│
+│    3   MATEMÁTICA             11ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    4   MATEMÁTICA             11ªB-EJ      2025-2026      Ciências Económi 11ª Class│
+│    5   MATEMÁTICA             12ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (18)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Ter   13:45    14:30    MATEMÁTICA             10ªA-FB       80            │
+│    2   Qua   17:00    17:45    MATEMÁTICA             10ªA-FB       105           │
+│    3   Qui   13:00    13:45    MATEMÁTICA             10ªA-FB       100           │
+│    4   Qui   13:45    14:30    MATEMÁTICA             10ªA-FB       80            │
+│    5   Ter   13:45    14:30    MATEMÁTICA             10ªB-EJ       80            │
+│    6   Qua   17:00    17:45    MATEMÁTICA             10ªB-EJ       105           │
+│    7   Qui   13:00    13:45    MATEMÁTICA             10ªB-EJ       100           │
+│    8   Qui   13:45    14:30    MATEMÁTICA             10ªB-EJ       80            │
+│    9   Seg   14:30    15:15    MATEMÁTICA             11ªA-FB       101           │
+│    10  Seg   15:30    16:15    MATEMÁTICA             11ªA-FB       103           │
+│    11  Ter   14:30    15:15    MATEMÁTICA             11ªA-FB       101           │
+│    12  Qua   14:30    15:15    MATEMÁTICA             11ªB-EJ       101           │
+│    13  Qua   15:30    16:15    MATEMÁTICA             11ªB-EJ       103           │
+│    14  Sex   14:30    15:15    MATEMÁTICA             11ªB-EJ       101           │
+│    15  Sex   15:30    16:15    MATEMÁTICA             11ªB-EJ       103           │
+│    16  Seg   16:15    17:00    MATEMÁTICA             12ªA-FB       104           │
+│    17  Sex   17:00    17:45    MATEMÁTICA             12ªA-FB       105           │
+│    18  Sex   16:15    17:00    MATEMÁTICA             12ªA-FB       104           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #57   Sérgio Mucana                                     ID: 196       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : sergiomukawajunior@gmail.com                                       │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (7)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   E.V.P                  7ªA          2025-2026      Não Atribuido    7ª Classe│
+│    2   E.V.P                  7ªB          2025-2026      Não Atribuido    7ª Classe│
+│    3   E.V.P                  8ªA-CL       2025-2026      Não Atribuido    8ª Classe│
+│    4   E.V.P                  9ªA          2025-2026      Não Atribuido    9ª Classe│
+│    5   E.V.P                  9ªB          2025-2026      Não Atribuido    9ª Classe│
+│    6   G.D                    11ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    7   G.D                    12ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (14)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Sex   16:15    17:00    E.V.P                  7ªA           104           │
+│    2   Sex   17:00    17:45    E.V.P                  7ªA           105           │
+│    3   Qua   16:15    17:00    E.V.P                  7ªB           104           │
+│    4   Qua   17:00    17:45    E.V.P                  7ªB           105           │
+│    5   Ter   16:15    17:00    E.V.P                  8ªA-CL        104           │
+│    6   Ter   17:00    17:45    E.V.P                  8ªA-CL        105           │
+│    7   Qui   13:00    13:45    E.V.P                  9ªA           100           │
+│    8   Qui   13:45    14:30    E.V.P                  9ªA           80            │
+│    9   Sex   13:00    13:45    E.V.P                  9ªB           100           │
+│    10  Sex   13:45    14:30    E.V.P                  9ªB           80            │
+│    11  Sex   14:30    15:15    G.D                    11ªA-FB       101           │
+│    12  Sex   15:30    16:15    G.D                    11ªA-FB       103           │
+│    13  Ter   13:00    13:45    G.D                    12ªA-FB       100           │
+│    14  Qua   15:30    16:15    G.D                    12ªA-FB       103           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #58   SILVA INÁCIO                                      ID: 170       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     :                                                                    │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #59   SIMÃO ZUA                                         ID: 178       ATIVO    │
+│  Cargo     : —                                                                  │
+│  Email     : genyldacassoladi@gmail.com                                         │
+│  Telefone  : —                     NIF: —                Género: Male        │
+│  Nasc.     : —                Estado civil: —                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem disciplinas atribuídas)                                                    │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  (sem horários atribuídos)                                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #60   TIAGO MALANGA                                     ID: 193       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : edajurgeral8@gmail.com                                             │
+│  Telefone  :                       NIF: 000000000000000  Género: male        │
+│  Nasc.     : 1785-12-12       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (16)                                                                │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   ED. FÍSICA             4ªA          2025-2026      Não Atribuido    4ª Classe│
+│    2   ED. FÍSICA             4ªB          2025-2026      Não Atribuido    4ª Classe│
+│    3   ED. FÍSICA             5ªA-CL       2025-2026      Não Atribuido    5ª Classe│
+│    4   ED. FÍSICA             6ªA          2025-2026      Não Atribuido    6ª Classe│
+│    5   ED. FÍSICA             6ªB          2025-2026      Não Atribuido    6ª Classe│
+│    6   ED. FÍSICA             7ªA          2025-2026      Não Atribuido    7ª Classe│
+│    7   ED. FÍSICA             7ªB          2025-2026      Não Atribuido    7ª Classe│
+│    8   ED. FÍSICA             8ªA-CL       2025-2026      Não Atribuido    8ª Classe│
+│    9   ED. FÍSICA             9ªA          2025-2026      Não Atribuido    9ª Classe│
+│    10  ED. FÍSICA             9ªB          2025-2026      Não Atribuido    9ª Classe│
+│    11  ED. FÍSICA             10ªA-FB      2025-2026      Ciências Físicas 10ª Class│
+│    12  ED. FÍSICA             10ªB-EJ      2025-2026      Ciências Económi 10ª Class│
+│    13  ED. FÍSICA             11ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    14  ED. FÍSICA             11ªB-EJ      2025-2026      Ciências Económi 11ª Class│
+│    15  ED. FÍSICA             12ªA-FB      2025-2026      Ciências Físicas 11ª Class│
+│    16  ED. FÍSICA             12ªB-EJ      2025-2026      Ciências Económi 12ª CEJ  │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (27)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Qua   11:35    12:20    ED. FÍSICA             4ªA           90            │
+│    2   Ter   10:45    11:30    ED. FÍSICA             4ªB           89            │
+│    3   Ter   11:50    12:35    ED. FÍSICA             5ªA-CL        86            │
+│    4   Qua   11:00    11:45    ED. FÍSICA             6ªA           85            │
+│    5   Qui   11:50    12:35    ED. FÍSICA             6ªB           86            │
+│    6   Ter   08:00    08:45    ED. FÍSICA             7ªA           77            │
+│    7   Ter   08:50    09:35    ED. FÍSICA             7ªA           78            │
+│    8   Sex   08:00    08:45    ED. FÍSICA             7ªB           77            │
+│    9   Sex   08:50    09:35    ED. FÍSICA             7ªB           78            │
+│    10  Ter   09:40    10:25    ED. FÍSICA             8ªA-CL        87            │
+│    11  Ter   10:45    11:30    ED. FÍSICA             8ªA-CL        89            │
+│    12  Qua   08:00    08:45    ED. FÍSICA             9ªA           77            │
+│    13  Qua   08:50    09:35    ED. FÍSICA             9ªA           78            │
+│    14  Qua   08:00    08:45    ED. FÍSICA             9ªB           77            │
+│    15  Qua   08:50    09:35    ED. FÍSICA             9ªB           78            │
+│    16  Qui   08:00    08:45    ED. FÍSICA             10ªA-FB       77            │
+│    17  Qui   08:50    09:35    ED. FÍSICA             10ªA-FB       78            │
+│    18  Qui   08:00    08:45    ED. FÍSICA             10ªB-EJ       77            │
+│    19  Qui   08:50    09:35    ED. FÍSICA             10ªB-EJ       78            │
+│    20  Qua   09:40    10:25    ED. FÍSICA             11ªB-EJ       87            │
+│    21  Qua   10:45    11:30    ED. FÍSICA             11ªB-EJ       89            │
+│    22  Qua   09:40    10:25    ED. FÍSICA             11ªA-FB       87            │
+│    23  Qua   10:45    11:30    ED. FÍSICA             11ªA-FB       89            │
+│    24  Qui   09:40    10:25    ED. FÍSICA             12ªA-FB       87            │
+│    25  Qui   10:45    11:30    ED. FÍSICA             12ªA-FB       89            │
+│    26  Qui   09:40    10:25    ED. FÍSICA             12ªB-EJ       87            │
+│    27  Qui   10:45    11:30    ED. FÍSICA             12ªB-EJ       89            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  #61   TIMÓTIO PASCOAL                                   ID: 212       ATIVO    │
+│  Cargo     : 1                                                                  │
+│  Email     : timoteo1382@gmail.com                                              │
+│  Telefone  :                       NIF: 000000000000000  Género: male        │
+│  Nasc.     : 1785-12-12       Estado civil: 0                                     │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  DISCIPLINAS (6)                                                                 │
+│  #   Disciplina             Turma        Ano Letivo     Curso            Nível    │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   CONTABILIDADE          10ªA-FB      2025-2026      Ciências Físicas 10ª Class│
+│    2   CONTABILIDADE          10ªB-EJ      2025-2026      Ciências Económi 10ª Class│
+│    3   INT. ECONOMIA          10ªB-EJ      2025-2026      Ciências Económi 10ª Class│
+│    4   INT. ECONOMIA          11ªB-EJ      2025-2026      Ciências Económi 11ª Class│
+│    5   INT. ECONOMIA          12ªB-EJ      2025-2026      Ciências Económi 12ª CEJ  │
+│    6   D.E.S                  12ªB-EJ      2025-2026      Ciências Económi 12ª CEJ  │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│  HORÁRIOS (13)                                                                   │
+│  #   Dia   Início   Fim      Disciplina             Turma         Cód. Timing   │
+│  ──────────────────────────────────────────────────────────────────────────────  │
+│    1   Seg   15:30    16:15    CONTABILIDADE          10ªA-FB       103           │
+│    2   Seg   15:30    16:15    CONTABILIDADE          10ªB-EJ       103           │
+│    3   Qua   14:30    15:15    INT. ECONOMIA          10ªB-EJ       101           │
+│    4   Qua   15:30    16:15    INT. ECONOMIA          10ªB-EJ       103           │
+│    5   Qui   15:30    16:15    INT. ECONOMIA          10ªB-EJ       103           │
+│    6   Seg   16:15    17:00    INT. ECONOMIA          11ªB-EJ       104           │
+│    7   Seg   17:00    17:45    INT. ECONOMIA          11ªB-EJ       105           │
+│    8   Qua   16:15    17:00    INT. ECONOMIA          12ªB-EJ       104           │
+│    9   Qua   17:00    17:45    INT. ECONOMIA          12ªB-EJ       105           │
+│    10  Qui   14:30    15:15    INT. ECONOMIA          12ªB-EJ       101           │
+│    11  Qua   13:45    14:30    D.E.S                  12ªB-EJ       80            │
+│    12  Qui   16:15    17:00    D.E.S                  12ªB-EJ       104           │
+│    13  Qui   17:00    17:45    D.E.S                  12ªB-EJ       105           │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════════════
+  TOTAIS GERAIS
+  Professores listados  : 61
+  Sem disciplinas       : 20
+  Sem horários          : 20
+  Total de disciplinas  : 294
+  Total de horários     : 669
+══════════════════════════════════════════════════════════════════════════════════
+  Gerado em 12/06/2026 às 15:10:09
+══════════════════════════════════════════════════════════════════════════════════

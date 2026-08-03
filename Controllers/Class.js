@@ -84,7 +84,7 @@ const FetchClassesForExams = async (req, res, instituteCode) => {
       eduall_classrooms.ed_classroom_title, 
       eduall_academic_level.ed_academic_level_title,
       eduall_cicles.ed_cicle_title,
-      eduall_faculty.ed_faculty_name,
+      eduall_faculty.ed_faculty_title,
       eduall_academic_year.ed_academic_year_title,
       eduall_courses.ed_course_title,
       emp.ed_employee_name AS ed_class_director_name

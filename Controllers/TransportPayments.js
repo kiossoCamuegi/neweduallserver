@@ -3,8 +3,43 @@ const { FACTPLUS_decodificarMesEAno } = require("../Functions/FACTPLUS_HELPERS")
 const { VENDUS_CreateInvoiceCodeAndDoc } = require("../Functions/VENDUS");
 const { RegisterAuditAction } = require("./Auditory");
 const { getSingleStudentByInstitute } = require("./Students");
+const Cache = require("../Functions/CacheRoutes"); // ✅ FIX: Importação do Cache
 
 const PAYMENT_TYPE_BALANCE = 4;
+const TRANSPORT_CACHE_TTL = 3600; // ✅ FIX: Constante de TTL do cache
+
+// ✅ FIX: Definição de CacheKeys
+const CacheKeys = {
+  list: (instituteCode) => `transport_payments:list:${instituteCode}`,
+  single: (id, instituteCode) => `transport_payments:single:${id}:${instituteCode}`,
+  paidMonth: (month, studentCode, year, instituteCode) => `transport_payments:paidMonth:${month}:${studentCode}:${year}:${instituteCode}`,
+  all: () => "transport_payments:*",
+};
+
+// ✅ FIX: Função de refresh de cache
+const RefreshTransportCache = async (req, res, instituteCode) => {
+  const startTime = Date.now();
+
+  await Cache.eduallClear(CacheKeys.all());
+  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
+
+  const query = `SELECT * FROM eduall_transport_payments 
+                 WHERE ed_transport_payment_deleted = 0 
+                 AND CONVERT(ed_transport_payment_institute_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ?
+                 ORDER BY ed_transport_payment_registerDate DESC`;
+  const rows = await ExecuteQuery(res, query, [instituteCode], true, {
+    db: "eduall_transport_payments",
+    type: "select",
+    data: req,
+  });
+  
+  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, TRANSPORT_CACHE_TTL);
+
+  const duration = Date.now() - startTime;
+  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`);
+
+  return rows;
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper — operador
@@ -36,46 +71,29 @@ async function getOperatorData(res, userId) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Subquery reutilizável — extras por invoice_code
-// COLLATE aplicado para evitar "Illegal mix of collations"
-// ─────────────────────────────────────────────────────────────────────────────
-const EXTRAS_SUBQUERY = (invoiceCodeCol, instituteCol) => `
-  (
-    SELECT JSON_ARRAYAGG(
-      JSON_OBJECT(
-        'id',          tai.ed_transport_additional_id,
-        'description', tai.ed_transport_additional_description,
-        'amount',      tai.ed_transport_additional_amount,
-        'is_fine',     tai.ed_transport_additional_is_fine,
-        'created_at',  tai.ed_transport_additional_registerDate
-      )
-    )
-    FROM eduall_transport_additional_items tai
-    WHERE CONVERT(tai.ed_transport_additional_invoice_code USING utf8mb4) COLLATE utf8mb4_unicode_ci
-        = CONVERT(${invoiceCodeCol} USING utf8mb4) COLLATE utf8mb4_unicode_ci
-      AND CONVERT(tai.ed_transport_additional_institute_code USING utf8mb4) COLLATE utf8mb4_unicode_ci
-        = CONVERT(${instituteCol} USING utf8mb4) COLLATE utf8mb4_unicode_ci
-      AND COALESCE(tai.ed_transport_additional_deleted, 0) = 0
-  ) AS extras
-`;
  
 
 // ════════════════════════════════════════════════════════════════════════════════
-// GET — Listagem geral
+// GET — Listagem geral com cache
 // ════════════════════════════════════════════════════════════════════════════════
-
+ 
 const GetTransportPayments = async (req, res) => {
   try {
     const institute  = req.session.user.eduall_user_session_curentinstitute;
     const operatorId = req.session?.user?.eduall_user_session_ID;
+    const cacheKey   = CacheKeys.list(institute);
+    const startTime  = Date.now();
+ 
+    // ── Check cache ──
+    const cached = await Cache.eduallGet(cacheKey);
+    if (cached !== null) {
+      const duration = Date.now() - startTime;
+      console.log(`📦⚡ CACHE (rápido) -> GetTransportPayments demorou ${duration}ms (${cacheKey})`);
+      return res.status(200).json(cached);
+    }
+ 
     const operator   = await getOperatorData(res, operatorId);
-
-    // FIX: ed_transport_payment_student guarda agora o ed_student_id directamente.
-    // Os registos antigos guardavam o ed_transport_passenger_id.
-    // COALESCE garante que ambos funcionam:
-    //   - Tenta primeiro o JOIN directo aluno → ed_transport_payment_student (novos)
-    //   - Fallback via passageiro → ed_transport_passenger_code (antigos)
+ 
     const query = `
       SELECT
         etp.*,
@@ -111,23 +129,31 @@ const GetTransportPayments = async (req, res) => {
         AND CONVERT(etp.ed_transport_payment_institute_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ?
       ORDER BY etp.ed_transport_payment_registerDate DESC
     `;
-
+ 
     const rows = await ExecuteQuery(res, query, [operatorId, institute], true, {
       db: "eduall_transport_payments", type: "select", data: req,
     });
-
+ 
     const enrichedRows = rows.map(row => ({
       ...row,
       operator:    operator?.name || null,
       operator_id: operator?.id   || null,
     }));
-
+ 
+    // ── Set cache ──
+    await Cache.eduallSet(cacheKey, enrichedRows, TRANSPORT_CACHE_TTL);
+ 
+    const duration = Date.now() - startTime;
+    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetTransportPayments demorou ${duration}ms (${cacheKey})`);
+ 
     res.status(200).json(enrichedRows);
   } catch (err) {
     console.error("GetTransportPayments erro:", err);
     res.status(500).json({ success: false, msg: "Não foi possível carregar os pagamentos." });
   }
 };
+
+
 
 // ════════════════════════════════════════════════════════════════════════════════
 // GET — Por código de fatura (invoice_code)
@@ -184,15 +210,26 @@ const GetTransportPaymentsByInvoiceCode = async (req, res) => {
   }
 };
 
-// ════════════════════════════════════════════════════════════════════════════════
-// GET — Pagamento singular
-// ════════════════════════════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════════════════════════════
+// GET — Métodos adicionais com cache
+// ════════════════════════════════════════════════════════════════════════════════
+ 
 const GetSingleTransportPayment = async (req, res) => {
   try {
     const { ID }    = req.params;
     const institute = req.session.user.eduall_user_session_curentinstitute;
-
+    const cacheKey  = CacheKeys.single(ID, institute);
+    const startTime = Date.now();
+ 
+    // ── Check cache ──
+    const cached = await Cache.eduallGet(cacheKey);
+    if (cached !== null) {
+      const duration = Date.now() - startTime;
+      console.log(`📦⚡ CACHE (rápido) -> GetSingleTransportPayment demorou ${duration}ms`);
+      return res.status(200).json(cached);
+    }
+ 
     const query = `
       SELECT
         etp.*,
@@ -222,17 +259,26 @@ const GetSingleTransportPayment = async (req, res) => {
         AND CONVERT(etp.ed_transport_payment_institute_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ?
       LIMIT 1
     `;
-
+ 
     const rows = await ExecuteQuery(res, query, [ID, institute], true, {
       db: "eduall_transport_payments", type: "select", data: req,
     });
-    res.status(200).json(rows);
+ 
+    const result = rows[0] || {};
+ 
+    // ── Set cache ──
+    await Cache.eduallSet(cacheKey, result, TRANSPORT_CACHE_TTL);
+ 
+    const duration = Date.now() - startTime;
+    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleTransportPayment demorou ${duration}ms`);
+ 
+    res.status(200).json(result);
   } catch (err) {
     console.error("GetSingleTransportPayment erro:", err);
     res.status(500).json({ success: false, msg: "Não foi possível carregar o pagamento." });
   }
 };
-
+ 
 
 // ════════════════════════════════════════════════════════════════════════════════
 // GET — Mês pago (verificação de duplicata)
@@ -241,7 +287,18 @@ const GetSingleTransportPayment = async (req, res) => {
 const GetSingleTransportPaidMonth = async (req, res) => {
   try {
     const { MONTH, STUDENTCODE, YEAR } = req.params;
-
+    const institute = req.session?.user?.eduall_user_session_curentinstitute;
+    const cacheKey  = CacheKeys.paidMonth(MONTH, STUDENTCODE, YEAR, institute);
+    const startTime = Date.now();
+ 
+    // ── Check cache ──
+    const cached = await Cache.eduallGet(cacheKey);
+    if (cached !== null) {
+      const duration = Date.now() - startTime;
+      console.log(`📦⚡ CACHE (rápido) -> GetSingleTransportPaidMonth demorou ${duration}ms`);
+      return res.status(200).json(cached);
+    }
+ 
     const query = `
       SELECT
         etp.*,
@@ -261,15 +318,23 @@ const GetSingleTransportPaidMonth = async (req, res) => {
         AND etp.ed_transport_payment_student = ?
         AND etp.ed_transport_payment_academic_year = ?
     `;
-
+ 
     const rows = await ExecuteQuery(res, query, [MONTH, STUDENTCODE, YEAR], true, {
       db: "eduall_transport_payments", type: "select", data: req,
     });
+ 
+    // ── Set cache ──
+    await Cache.eduallSet(cacheKey, rows, TRANSPORT_CACHE_TTL);
+ 
+    const duration = Date.now() - startTime;
+    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleTransportPaidMonth demorou ${duration}ms`);
+ 
     res.status(200).json(rows);
   } catch (err) {
     res.status(400).json({ status: 300, success: false, msg: err.message });
   }
 };
+ 
 
 // ════════════════════════════════════════════════════════════════════════════════
 // GET — Pagamento singular de um aluno (por ID do pagamento)
@@ -338,7 +403,7 @@ const GetSingleStudentTransportPayments = async (req, res) => {
       LEFT JOIN eduall_services s
         ON s.ed_service_id = etp.ed_transport_payment_service
       LEFT JOIN eduall_coins c
-        ON CONVERT(c.ed_coin_institute_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ?
+        ON c.ed_coin_id = s.ed_service_coin
       WHERE etp.ed_transport_payment_deleted = 0
         AND etp.ed_transport_payment_student = ?
         AND etp.ed_transport_payment_academic_year = ?
@@ -346,7 +411,7 @@ const GetSingleStudentTransportPayments = async (req, res) => {
     `;
 
     const rows = await ExecuteQuery(res, query,
-      [institute, PASSENGERCODE, ACADEMICYEAR, institute], true,
+      [PASSENGERCODE, ACADEMICYEAR, institute], true,
       { db: "eduall_transport_payments", type: "select", data: req }
     );
     res.status(200).json(rows);
@@ -381,7 +446,7 @@ const GetSingleStudentTransportPaymentsByCode = async (req, res) => {
       LEFT JOIN eduall_services s
         ON s.ed_service_id = etp.ed_transport_payment_service
       LEFT JOIN eduall_coins c
-        ON CONVERT(c.ed_coin_institute_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ?
+        ON c.ed_coin_id = s.ed_service_coin
       LEFT JOIN eduall_transport_passengers etp2
         ON etp2.ed_transport_passenger_id = etp.ed_transport_payment_student
       LEFT JOIN eduall_students st
@@ -393,7 +458,7 @@ const GetSingleStudentTransportPaymentsByCode = async (req, res) => {
     `;
 
     const rows = await ExecuteQuery(res, query,
-      [institute, STUDENTCODE, ACADEMICYEAR, institute], true,
+      [STUDENTCODE, ACADEMICYEAR, institute], true,
       { db: "eduall_transport_payments", type: "select", data: req }
     );
 
@@ -475,14 +540,14 @@ const GetSingleStudentTransportPaymentsByRFID = async (req, res) => {
       LEFT JOIN eduall_services s
         ON s.ed_service_id = etp.ed_transport_payment_service
       LEFT JOIN eduall_coins c
-        ON CONVERT(c.ed_coin_institute_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ?
+        ON c.ed_coin_id = s.ed_service_coin
       WHERE etp.ed_transport_payment_deleted = 0
         AND etp.ed_transport_payment_student = ?
         AND etp.ed_transport_payment_academic_year = ?
         AND CONVERT(etp.ed_transport_payment_institute_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ?
     `;
     const rows = await ExecuteQuery(res, paymentsQuery,
-      [institute, passenger.ed_transport_passenger_id, ACADEMICYEAR, institute], true,
+      [passenger.ed_transport_passenger_id, ACADEMICYEAR, institute], true,
       { db: "eduall_transport_payments", type: "select", data: req }
     );
 
@@ -507,27 +572,137 @@ const GetSingleStudentTransportPaymentsByRFID = async (req, res) => {
   }
 };
 
+
+
+
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// v32.2: Utilitários de Observações com Saldo
+// ─────────────────────────────────────────────────────────────────────────────
+ 
+/**
+ * Extrai a nota automática de saldo da string de observações
+ */
+function extractBalanceNote(observationsText) {
+  if (!observationsText) return { balanceNote: "", userObservations: "" };
+ 
+  const regex = /^Saldo utilizado:\s+[\d,]+(?:\.\d{2})?\s+[A-Za-z]+\.(?:\s*\([^)]*\))?\n\n/;
+  const match = observationsText.match(regex);
+ 
+  if (match) {
+    const balanceNote = match[0].replace(/\n\n$/, "");
+    const userObservations = observationsText.replace(regex, "");
+    return { balanceNote, userObservations };
+  }
+ 
+  return { balanceNote: "", userObservations: observationsText };
+}
+ 
+/**
+ * Constrói a string de observações com nota de saldo
+ */
+function buildObservationsWithBalance(balanceUsed, coin, userObservations, monthsCount) {
+  const cleanUserObs = (userObservations || "").trim();
+ 
+  if (!balanceUsed || balanceUsed <= 0) {
+    return cleanUserObs;
+  }
+ 
+  const qtyLabel = monthsCount
+    ? ` (aplicado a ${monthsCount} ${monthsCount === 1 ? "mês" : "meses"} de transporte)`
+    : "";
+  const balanceNote = `Saldo utilizado: ${Number(balanceUsed).toLocaleString("pt-AO", {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  })} ${coin}.${qtyLabel}`;
+ 
+  if (!cleanUserObs) {
+    return balanceNote;
+  }
+ 
+  return `${balanceNote}\n\n${cleanUserObs}`;
+}
+ 
+/**
+ * Extrai observações do utilizador (sem a nota automática de saldo)
+ */
+function extractUserObservations(observationsText) {
+  const { userObservations } = extractBalanceNote(observationsText);
+  return userObservations;
+}
+ 
+/**
+ * Cria um snapshot de saldo com todos os detalhes
+ */
+function createBalanceSnapshot(studentCode, amount, coin, previousBalance) {
+  return {
+    id: `snap_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    studentCode,
+    amount: Number(amount || 0),
+    coin,
+    previousBalance: Number(previousBalance || 0),
+    newBalance: Math.max(0, Number(previousBalance || 0) - Number(amount || 0)),
+    timestamp: new Date().toISOString(),
+    createdAt: new Date(),
+    type: 'balance_consumption',
+  };
+}
+ 
+/**
+ * Valida se um snapshot é válido
+ */
+function isValidSnapshot(snapshot) {
+  return !!(
+    snapshot && 
+    snapshot.id && 
+    snapshot.studentCode && 
+    typeof snapshot.amount === 'number' && 
+    snapshot.timestamp &&
+    typeof snapshot.previousBalance === 'number' &&
+    typeof snapshot.newBalance === 'number'
+  );
+}
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Subquery reutilizável — extras por invoice_code
+// ─────────────────────────────────────────────────────────────────────────────
+const EXTRAS_SUBQUERY = (invoiceCodeCol, instituteCol) => `
+  (
+    SELECT JSON_ARRAYAGG(
+      JSON_OBJECT(
+        'id',          tai.ed_transport_additional_id,
+        'description', tai.ed_transport_additional_description,
+        'amount',      tai.ed_transport_additional_amount,
+        'is_fine',     tai.ed_transport_additional_is_fine,
+        'created_at',  tai.ed_transport_additional_registerDate
+      )
+    )
+    FROM eduall_transport_additional_items tai
+    WHERE CONVERT(tai.ed_transport_additional_invoice_code USING utf8mb4) COLLATE utf8mb4_unicode_ci
+        = CONVERT(${invoiceCodeCol} USING utf8mb4) COLLATE utf8mb4_unicode_ci
+      AND CONVERT(tai.ed_transport_additional_institute_code USING utf8mb4) COLLATE utf8mb4_unicode_ci
+        = CONVERT(${instituteCol} USING utf8mb4) COLLATE utf8mb4_unicode_ci
+      AND COALESCE(tai.ed_transport_additional_deleted, 0) = 0
+  ) AS extras
+`;
+
+
+
+ 
 // ════════════════════════════════════════════════════════════════════════════════
-// REGISTER
+// REGISTER — v32.2 com observações de saldo integrado
 // ════════════════════════════════════════════════════════════════════════════════
+ 
 const RegisterTransportPayments = async (req, res) => {
-
-  // ── DEBUG: log grande e colorido ─────────────────────────────────────────
+ 
   console.log("\x1b[44m\x1b[97m\x1b[1m%s\x1b[0m", "════════════════════════════════════════════════════════");
-  console.log("\x1b[44m\x1b[97m\x1b[1m%s\x1b[0m", "   REGISTER TRANSPORT PAYMENTS — BODY RECEBIDO          ");
-  console.log("\x1b[44m\x1b[97m\x1b[1m%s\x1b[0m", "════════════════════════════════════════════════════════");
-  console.log("\x1b[36m\x1b[1m%s\x1b[0m", "→ transportpayment_student_code :", req.body.transportpayment_student_code);
-  console.log("\x1b[36m\x1b[1m%s\x1b[0m", "→ student_code                  :", req.body.student_code);
-  console.log("\x1b[36m\x1b[1m%s\x1b[0m", "→ transportpayment_servicecode  :", req.body.transportpayment_servicecode);
-  console.log("\x1b[36m\x1b[1m%s\x1b[0m", "→ transportpayment_months       :", req.body.transportpayment_months);
-  console.log("\x1b[36m\x1b[1m%s\x1b[0m", "→ transportpayment_academic_year:", req.body.transportpayment_academic_year);
-  console.log("\x1b[36m\x1b[1m%s\x1b[0m", "→ transportpayment_type         :", req.body.transportpayment_type);
-  console.log("\x1b[36m\x1b[1m%s\x1b[0m", "→ transportpayment_price        :", req.body.transportpayment_price);
-  console.log("\x1b[36m\x1b[1m%s\x1b[0m", "→ balanceUsed                   :", req.body.balanceUsed);
-  console.log("\x1b[36m\x1b[1m%s\x1b[0m", "→ extraServices                 :", JSON.stringify(req.body.extraServices));
+  console.log("\x1b[44m\x1b[97m\x1b[1m%s\x1b[0m", "   REGISTER TRANSPORT PAYMENTS — v32.2 BODY RECEBIDO    ");
   console.log("\x1b[44m\x1b[97m\x1b[1m%s\x1b[0m", "════════════════════════════════════════════════════════");
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  console.log(req.body)
+ 
   function monthLabel(mdotY) {
     const m = String(mdotY).split(".")[0] * 1;
     const y = String(mdotY).split(".")[1] * 1;
@@ -536,7 +711,7 @@ const RegisterTransportPayments = async (req, res) => {
     if (Number.isFinite(m) && Number.isFinite(y)) return `${N[m]} / ${y}`;
     return String(mdotY);
   }
-
+ 
   function sanitizeExtras(extras) {
     if (!Array.isArray(extras)) return [];
     return extras
@@ -547,27 +722,19 @@ const RegisterTransportPayments = async (req, res) => {
       }))
       .filter(e => e.name.length > 0 && Number.isFinite(e.value) && e.value > 0);
   }
-
-  /**
-   * Normaliza transportpayment_months para array de strings.
-   * Aceita:
-   *   "0.2025"              → ["0.2025"]
-   *   ",0.2025,1.2025"      → ["0.2025","1.2025"]   (formato do modal antigo)
-   *   ["0.2025","1.2025"]   → ["0.2025","1.2025"]
-   */
+ 
   function parseMonths(raw) {
     if (!raw) return [];
     if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
     return String(raw).split(",").map(s => s.trim()).filter(Boolean);
   }
-
+ 
   try {
     const sessionInstitute = req.session.user.eduall_user_session_curentinstitute;
     const operatorId       = req.session?.user?.eduall_user_session_ID;
     const operator         = await getOperatorData(res, operatorId);
-
-    const {
-      transportpayment_student_code,
+ 
+    const { 
       student_code,
       transportpayment_servicecode,
       transportpayment_price,
@@ -586,33 +753,30 @@ const RegisterTransportPayments = async (req, res) => {
       transportpayment_invoiceCode,
       balanceUsed: balanceUsedRaw       = 0,
       extraServices                     = [],
+      // ✅ v32.2 FIX: Observações do frontend com nota de saldo integrada
+      paymentObservations               = "",
+      balanceQuantity                   = 0,
     } = req.body;
 
-    // transportpayment_student_code → ed_student_id do aluno
-    // student_code                  → ed_transport_passenger_id
-    const resolvedStudentId = transportpayment_student_code || null;
+
+    console.log(req.body);
+ 
+    const resolvedStudentId = student_code || null;
     const monthsList        = parseMonths(transportpayment_months);
-
-    console.log("\x1b[43m\x1b[30m\x1b[1m%s\x1b[0m", "════════════════════════════════════════════════════════");
-    console.log("\x1b[43m\x1b[30m\x1b[1m%s\x1b[0m", "   IDs E MESES RESOLVIDOS                               ");
-    console.log("\x1b[43m\x1b[30m\x1b[1m%s\x1b[0m", "════════════════════════════════════════════════════════");
-    console.log("\x1b[33m\x1b[1m%s\x1b[0m", "→ resolvedStudentId :", resolvedStudentId);
-    console.log("\x1b[33m\x1b[1m%s\x1b[0m", "→ monthsList        :", monthsList);
-    console.log("\x1b[43m\x1b[30m\x1b[1m%s\x1b[0m", "════════════════════════════════════════════════════════");
-
+ 
     if (!resolvedStudentId) {
       return res.status(400).json({ success: false, msg: "Aluno não identificado. Tente novamente." });
     }
     if (!monthsList.length) {
       return res.status(400).json({ success: false, msg: "Seleccione pelo menos um mês." });
     }
-
+ 
     const balanceUsed  = Math.max(0, parseFloat(balanceUsedRaw) || 0);
     const addons       = sanitizeExtras(extraServices);
     const fineAddon    = addons.find(e => e.isFine) || null;
     const manualAddons = addons.filter(e => !e.isFine);
-
-    // ── Calcular preço por linha ──────────────────────────────────────────────
+ 
+    // ── Calcular preço por linha ──
     const basePrice      = parseFloat(transportpayment_price) || 0;
     const discountPct    = parseFloat(transportpayment_discount || 0);
     const discountAmt    = discountPct > 0 ? (basePrice * discountPct) / 100 : 0;
@@ -620,17 +784,15 @@ const RegisterTransportPayments = async (req, res) => {
     const ivaAmt         = transportpayment_iva * 1 > 0
       ? (priceAfterDisc * (transportpayment_iva * 1)) / 100 : 0;
     const lineTotal      = priceAfterDisc + ivaAmt;
-
+ 
     const resolvedFineValue = fineAddon
       ? Number(fineAddon.value)
       : transportpayment_fineValue * 1;
-
+ 
     const extrasTotal = addons.reduce((s, e) => s + e.value, 0);
-
-    // grandTotal = (linha × nº meses) + multa (1×) + extras (1×)
     const grandTotal = lineTotal * monthsList.length + resolvedFineValue + extrasTotal;
-
-    // ── Verificar duplicatas ──────────────────────────────────────────────────
+ 
+    // ── Verificar duplicatas ──
     const dupPlaceholders = monthsList.map(() => "?").join(",");
     const dupRows = await ExecuteQuery(res, `
       SELECT ed_transport_payment_month AS month
@@ -641,8 +803,8 @@ const RegisterTransportPayments = async (req, res) => {
         AND ed_transport_payment_month IN (${dupPlaceholders})
         AND CONVERT(ed_transport_payment_institute_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ?
       GROUP BY ed_transport_payment_month
-    `, [transportpayment_student_code, transportpayment_academic_year, ...monthsList, sessionInstitute], true);
-
+    `, [resolvedStudentId, transportpayment_academic_year, ...monthsList, sessionInstitute], true);
+ 
     if (dupRows?.length) {
       const labels = dupRows.map(r => monthLabel(r.month));
       return res.status(409).json({
@@ -652,30 +814,23 @@ const RegisterTransportPayments = async (req, res) => {
         monthsPaid: dupRows.map(r => String(r.month)),
       });
     }
-
-    // ── Dados do aluno ────────────────────────────────────────────────────────
-    console.log("\x1b[32m\x1b[1m%s\x1b[0m", "→ A procurar aluno id:", resolvedStudentId, "| instituto:", sessionInstitute);
-
+ 
+    // ── Dados do aluno ──
     const CLIENT_DATA = await getSingleStudentByInstitute(
       sessionInstitute,
       req.session.user.eduall_user_session_curentinstitute_type,
       resolvedStudentId
     );
 
-    console.log("\x1b[32m\x1b[1m%s\x1b[0m", "→ Aluno (length):", CLIENT_DATA.length);
-    if (CLIENT_DATA.length > 0) {
-      console.log("\x1b[32m\x1b[1m%s\x1b[0m", "→ Nome:", CLIENT_DATA[0].ed_student_name);
-    } else {
-      console.log("\x1b[41m\x1b[97m\x1b[1m%s\x1b[0m", "   ERRO: Aluno não encontrado! id=" + resolvedStudentId);
+    console.log("Hello my friend = ", CLIENT_DATA);
+ 
+    if (!CLIENT_DATA.ed_student_name || CLIENT_DATA.ed_student_name  === null) {
+      return res.status(404).json({ success: false, msg: "Aluno não encontrado." });
     }
-
-    if (!CLIENT_DATA.length) {
-      return res.status(404).json({ success: false, msg: "Aluno não encontrado. Verifique os dados e tente novamente." });
-    }
-
-    // ── Dados da turma ────────────────────────────────────────────────────────
+ 
+    // ── Dados da turma ──
     let classInfo = null;
-    if (CLIENT_DATA[0].ed_student_class) {
+    if (CLIENT_DATA.ed_student_class) {
       const classRows = await ExecuteQuery(null, `
         SELECT eduall_class.*,
                eduall_classrooms.ed_classroom_title,
@@ -695,11 +850,34 @@ const RegisterTransportPayments = async (req, res) => {
           AND eduall_courses.ed_course_deleted = 0
           AND eduall_classrooms.ed_classroom_deleted = 0
           AND eduall_institutes.ed_institute_deleted = 0
-      `, [CLIENT_DATA[0].ed_student_class, sessionInstitute], true);
+      `, [CLIENT_DATA.ed_student_class, sessionInstitute], true);
       if (classRows.length > 0) classInfo = classRows[0];
     }
 
-    // ── Itens da fatura — uma linha por mês ───────────────────────────────────
+    // ✅ v32.2 FIX: Extrair passenger_id da base de dados
+    let passanger_id_from_db = null;
+    try {
+      const passengerRows = await ExecuteQuery(res, `
+        SELECT ed_transport_passenger_id
+        FROM eduall_transport_passengers
+        WHERE ed_transport_passenger_code = ? 
+          AND CONVERT(ed_transport_passenger_institute_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ?
+          AND ed_transport_passenger_deleted = 0
+        LIMIT 1
+      `, [resolvedStudentId, sessionInstitute], true);
+
+      if (passengerRows && passengerRows.length > 0) {
+        passanger_id_from_db = passengerRows[0].ed_transport_passenger_id;
+        console.log("✅ Passageiro encontrado:", passanger_id_from_db);
+      } else {
+        console.warn("⚠️ Passageiro não encontrado para aluno:", resolvedStudentId);
+        // Opcional: criar passageiro automaticamente?
+      }
+    } catch (passengerErr) {
+      console.warn("Aviso ao buscar passageiro:", passengerErr?.message || passengerErr);
+    }
+ 
+    // ── Itens da fatura ──
     const Items = monthsList.map((m, i) => ({
       itemcode: `EDTRANS-${transportpayment_servicecode}-${String(i + 1).padStart(2, "0")}`,
       title:    "Pag. transporte - " + FACTPLUS_decodificarMesEAno(m),
@@ -708,7 +886,7 @@ const RegisterTransportPayments = async (req, res) => {
       discount: 0,
       quantity: "1",
     }));
-
+ 
     if (resolvedFineValue > 0) {
       Items.push({
         itemcode: "FINE001",
@@ -717,7 +895,7 @@ const RegisterTransportPayments = async (req, res) => {
         quantity: "1", tax: false, discount: "0",
       });
     }
-
+ 
     manualAddons.forEach((ex, idx) => {
       Items.push({
         itemcode: `EXTRA-${String(idx + 1).padStart(2, "0")}`,
@@ -726,64 +904,38 @@ const RegisterTransportPayments = async (req, res) => {
         quantity: "1", tax: false, discount: "0",
       });
     });
-
-    // ── Observações ───────────────────────────────────────────────────────────
-    const obsParts = [" "];
-    if (classInfo?.ed_class_title)         obsParts.push(`Turma: ${classInfo.ed_class_title}`);
-    if (CLIENT_DATA[0]?.ed_student_code)   obsParts.push(`Nº matrícula: ${CLIENT_DATA[0].ed_student_code}`);
-    if (classInfo?.ed_classroom_title)     obsParts.push(`Sala: ${classInfo.ed_classroom_title}`);
-    if (classInfo?.ed_course_title)        obsParts.push(`Curso: ${classInfo.ed_course_title}`);
-    if (classInfo?.ed_academic_year_title) obsParts.push(`Ano lectivo: ${classInfo.ed_academic_year_title}`);
-    if (classInfo?.ed_institute_name)      obsParts.push(`Nome da instituição: ${classInfo.ed_institute_name}`);
-    if (operator)                          obsParts.push(`Operador: ${operator.name}`);
-    if (monthsList.length > 1)             obsParts.push(`Meses: ${monthsList.map(monthLabel).join(", ")}`);
-
-    if (manualAddons.length > 0) {
-      obsParts.push("---");
-      obsParts.push("Valores adicionais:");
-      manualAddons.forEach(ex => obsParts.push(`  • ${ex.name}: ${ex.value.toFixed(2)}`));
-    }
-    if (fineAddon) {
-      obsParts.push("---");
-      obsParts.push(`Multa aplicada: ${fineAddon.name} — ${fineAddon.value.toFixed(2)}`);
-    }
-    if (Number(transportpayment_type) === PAYMENT_TYPE_BALANCE && balanceUsed > 0) {
-      const remaining = Math.max(0, grandTotal - balanceUsed);
-      obsParts.push("---");
-      obsParts.push("Forma de pagamento: Saldo do aluno");
-      obsParts.push(`Total da fatura: ${grandTotal.toFixed(2)}`);
-      obsParts.push(`Saldo utilizado: ${balanceUsed.toFixed(2)}`);
-      if (remaining > 0) obsParts.push(`Restante (outro método): ${remaining.toFixed(2)}`);
-      else               obsParts.push("Fatura totalmente coberta pelo saldo do aluno.");
-    }
-    const obs = obsParts.join("\n");
-
-    // ── Fatura ────────────────────────────────────────────────────────────────
+ 
+    // ── Observações ──
+    // ✅ v32.2: As observações vêm do frontend já construídas com nota de saldo
+    const obs = String(paymentObservations || "").trim();
+ 
+    // ── Fatura ──
     const invoiceData = await VENDUS_CreateInvoiceCodeAndDoc(req, {
-      name:      CLIENT_DATA[0].ed_student_name,
-      fiscal_id: CLIENT_DATA[0].ed_student_identityCard,
-      address:   CLIENT_DATA[0].ed_student_address,
-      email:     CLIENT_DATA[0].ed_student_email,
+      name:      CLIENT_DATA.ed_student_name,
+      fiscal_id: CLIENT_DATA.ed_student_identityCard,
+      address:   CLIENT_DATA.ed_student_address,
+      email:     CLIENT_DATA.ed_student_email,
     }, Items, transportpayment_type, obs);
-
+ 
     if (!invoiceData.number) {
       return res.status(500).json({ success: false, msg: "Não foi possível emitir a fatura. Tente novamente." });
     }
-
-    // ── Garantir colunas do operador ─────────────────────────────────────────
+ 
+    // ── Garantir colunas ──
     try {
       await ExecuteQuery(null, `
         ALTER TABLE eduall_transport_payments
-          ADD COLUMN IF NOT EXISTS ed_transport_payment_operator    VARCHAR(255) NULL DEFAULT NULL,
-          ADD COLUMN IF NOT EXISTS ed_transport_payment_operator_id INT          NULL DEFAULT NULL
+          ADD COLUMN IF NOT EXISTS ed_transport_payment_operator       VARCHAR(255) NULL DEFAULT NULL,
+          ADD COLUMN IF NOT EXISTS ed_transport_payment_operator_id    INT          NULL DEFAULT NULL,
+          ADD COLUMN IF NOT EXISTS ed_transport_payment_observations  LONGTEXT     NULL DEFAULT NULL
       `, [], false);
     } catch (alterErr) {
-      console.warn("\x1b[33m\x1b[1m%s\x1b[0m", "→ ALTER TABLE ignorado:", alterErr?.message || alterErr);
+      console.warn("ALTER TABLE ignorado:", alterErr?.message || alterErr);
     }
-
-    // ── Transacção ────────────────────────────────────────────────────────────
+ 
+    // ── Transacção ──
     await ExecuteQuery(res, "START TRANSACTION", [], false);
-
+ 
     try {
       // 1) Inserir uma linha por mês — mesmo invoiceCode em todas
       const insertSql = `
@@ -807,14 +959,15 @@ const RegisterTransportPayments = async (req, res) => {
           ed_transport_payment_invoiceFile,
           ed_transport_payment_institute_code,
           ed_transport_payment_operator,
-          ed_transport_payment_operator_id
-        ) VALUES ${monthsList.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(",")}
+          ed_transport_payment_operator_id,
+          ed_transport_payment_observations
+        ) VALUES ${monthsList.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(",")}
       `;
-
+ 
       const insertParams = [];
       monthsList.forEach((m, i) => {
         insertParams.push(
-          transportpayment_student_code,
+          resolvedStudentId,
           transportpayment_servicecode,
           transportpayment_price,
           m,
@@ -828,20 +981,21 @@ const RegisterTransportPayments = async (req, res) => {
           transportpayment_iva,
           transportpayment_code,
           transportpayment_fineType,
-          i === 0 ? Number(resolvedFineValue.toFixed(2)) : 0, // multa só na 1ª linha
-          invoiceData.number,                                  // mesmo invoiceCode
+          i === 0 ? Number(resolvedFineValue.toFixed(2)) : 0,
+          invoiceData.number,
           invoiceData.id,
           sessionInstitute,
           operator?.name || null,
-          operator?.id   || null
+          operator?.id   || null,
+          obs  // ✅ v32.2: Observações com nota de saldo persistidas
         );
       });
-
+ 
       const QueryResult = await ExecuteQuery(res, insertSql, insertParams, false, {
         db: "eduall_transport_payments", type: "insert", data: req,
       });
-
-      // 2) Persistir extras — uma vez por fatura
+ 
+      // 2) Persistir extras
       if (addons.length > 0) {
         try {
           const addSql = `
@@ -863,7 +1017,7 @@ const RegisterTransportPayments = async (req, res) => {
           addons.forEach(a => {
             addParams.push(
               resolvedStudentId,
-              transportpayment_student_code,
+              passanger_id_from_db,  // ✅ v32.2 FIX: Usa o ID extraído da DB
               transportpayment_academic_year,
               a.name,
               Number(Number(a.value).toFixed(2)),
@@ -880,12 +1034,18 @@ const RegisterTransportPayments = async (req, res) => {
           console.warn("Persistência de extras ignorada:", auxErr?.message || auxErr);
         }
       }
-
-      // 3) Debitar saldo
+ 
+      // 3) Debitar saldo do aluno (dentro da transacção)
       if (Number(transportpayment_type) === PAYMENT_TYPE_BALANCE && balanceUsed > 0) {
         try {
-          await ensureBalanceRow(res, resolvedStudentId, sessionInstitute);
-
+          // Garantir linha
+          await ExecuteQuery(res,
+            `INSERT IGNORE INTO eduall_student_balance (sb_student_id, sb_institute_code, sb_balance, sb_currency)
+             VALUES (?, ?, 0, 'AOA')`,
+            [resolvedStudentId, sessionInstitute], false
+          );
+ 
+          // LER com LOCK
           const [current] = await ExecuteQuery(res,
             `SELECT sb_balance, sb_currency FROM eduall_student_balance
              WHERE sb_student_id = ?
@@ -893,10 +1053,10 @@ const RegisterTransportPayments = async (req, res) => {
              FOR UPDATE`,
             [resolvedStudentId, sessionInstitute], true
           );
-
+ 
           const balanceBefore = parseFloat(current?.sb_balance ?? 0);
           const currency      = current?.sb_currency || "AOA";
-
+ 
           if (balanceUsed > balanceBefore) {
             await ExecuteQuery(res, "ROLLBACK", [], false);
             return res.status(422).json({
@@ -905,24 +1065,24 @@ const RegisterTransportPayments = async (req, res) => {
               balance: balanceBefore,
             });
           }
-
+ 
           const balanceAfter = Number((balanceBefore - balanceUsed).toFixed(2));
           const remaining    = Math.max(0, grandTotal - balanceUsed);
-
+ 
           let deductDesc  = `Pagamento de transporte — Fatura ${invoiceData.number}. `;
           deductDesc     += `Créditos usados: ${balanceUsed.toFixed(2)} ${currency}`;
           deductDesc     += ` (total: ${grandTotal.toFixed(2)} ${currency})`;
           deductDesc     += remaining > 0
             ? `. Restante por outro método: ${remaining.toFixed(2)} ${currency}.`
             : `. Totalmente coberta pelo saldo.`;
-
+ 
           await ExecuteQuery(res,
             `UPDATE eduall_student_balance SET sb_balance = ?
              WHERE sb_student_id = ?
                AND CONVERT(sb_institute_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ?`,
             [balanceAfter, resolvedStudentId, sessionInstitute], false
           );
-
+ 
           await ExecuteQuery(res,
             `INSERT INTO eduall_student_balance_logs
                (sb_log_student_id, sb_log_institute, sb_log_type, sb_log_category,
@@ -937,72 +1097,74 @@ const RegisterTransportPayments = async (req, res) => {
           console.error("Erro ao debitar saldo (não crítico):", balanceErr?.message || balanceErr);
         }
       }
-
+ 
       // 4) Auditoria
+      const auditDesc = `[${operator?.name || "Desconhecido"}] Registou ${monthsList.length} linha(s) de transporte para passageiro ${passanger_id_from_db || "desconhecido"} (aluno ${resolvedStudentId}). Fatura ${invoiceData.number}. Total: ${grandTotal.toFixed(2)}.${addons.length > 0 ? ` Extras: ${addons.length} item(ns).` : ""}${balanceUsed > 0 ? ` Saldo usado: ${balanceUsed.toFixed(2)}.` : ""}`;
+ 
       await RegisterAuditAction({
         session:     req.session,
         action:      1,
         form:        "Pagamentos de Transporte",
-        description: [
-          `[${operator?.name || "Desconhecido"}]`,
-          `Registou ${monthsList.length} linha(s) de transporte para passageiro ${transportpayment_student_code}`,
-          `(aluno ${resolvedStudentId}).`,
-          `Fatura ${invoiceData.number}. Total: ${grandTotal.toFixed(2)}.`,
-          addons.length > 0 ? `Extras: ${addons.length} item(ns).` : "",
-          balanceUsed > 0 ? `Saldo usado: ${balanceUsed.toFixed(2)}.` : "",
-        ].filter(Boolean).join(" "),
+        description: auditDesc,
       });
-
+ 
       await ExecuteQuery(res, "COMMIT", [], false);
-
+ 
       console.log("\x1b[42m\x1b[30m\x1b[1m%s\x1b[0m", "════════════════════════════════════════════════════════");
-      console.log("\x1b[42m\x1b[30m\x1b[1m%s\x1b[0m", "   PAGAMENTO DE TRANSPORTE REGISTADO COM SUCESSO        ");
+      console.log("\x1b[42m\x1b[30m\x1b[1m%s\x1b[0m", "   PAGAMENTO DE TRANSPORTE REGISTADO COM SUCESSO v32.2  ");
       console.log("\x1b[42m\x1b[30m\x1b[1m%s\x1b[0m", "════════════════════════════════════════════════════════");
-      console.log("\x1b[32m\x1b[1m%s\x1b[0m", "→ Fatura  :", invoiceData.number);
-      console.log("\x1b[32m\x1b[1m%s\x1b[0m", "→ Meses   :", monthsList.join(", "));
-      console.log("\x1b[32m\x1b[1m%s\x1b[0m", "→ Total   :", grandTotal.toFixed(2));
-      console.log("\x1b[42m\x1b[30m\x1b[1m%s\x1b[0m", "════════════════════════════════════════════════════════");
-
+ 
+      // ── Invalidar cache ──
+      await RefreshTransportCache(req, res, sessionInstitute);
+ 
       return res.status(200).json({
         ...QueryResult,
         invoice:        invoiceData,
         operator:       operator?.name || null,
+        passengerId:    passanger_id_from_db,  // ✅ Retornar passenger_id no response
         inserted:       monthsList.length,
         extrasInserted: addons.length,
         total:          Number(grandTotal.toFixed(2)),
         balanceUsed:    balanceUsed > 0 ? Number(balanceUsed.toFixed(2)) : 0,
         remaining:      Math.max(0, grandTotal - balanceUsed),
       });
-
+ 
     } catch (txErr) {
       await ExecuteQuery(res, "ROLLBACK", [], false);
       throw txErr;
     }
-
+ 
   } catch (error) {
     try { await ExecuteQuery(res, "ROLLBACK", [], false); } catch {}
     console.log("\x1b[41m\x1b[97m\x1b[1m%s\x1b[0m", "════════════════════════════════════════════════════════");
-    console.log("\x1b[41m\x1b[97m\x1b[1m%s\x1b[0m", "   ERRO FATAL — RegisterTransportPayments               ");
+    console.log("\x1b[41m\x1b[97m\x1b[1m%s\x1b[0m", "   ERRO FATAL — RegisterTransportPayments v32.2         ");
     console.log("\x1b[41m\x1b[97m\x1b[1m%s\x1b[0m", "════════════════════════════════════════════════════════");
     console.error("\x1b[31m\x1b[1m%s\x1b[0m", error);
     res.status(500).json({ success: false, msg: "Não foi possível registar o pagamento. Tente novamente." });
   }
 };
-// ════════════════════════════════════════════════════════════════════════════════
-// DELETE — soft delete do pagamento + extras
-// ════════════════════════════════════════════════════════════════════════════════
 
+ 
+
+
+ 
+
+
+// ════════════════════════════════════════════════════════════════════════════════
+// DELETE — v32.2 com cache invalidation
+// ════════════════════════════════════════════════════════════════════════════════
+ 
 const TransportPaymentsDelete = async (req, res) => {
   const { ID }    = req.params;
   const institute = req.session?.user?.eduall_user_session_curentinstitute;
-
+ 
   if (!institute) {
     return res.status(400).json({ success: false, message: "Instituto inválido na sessão." });
   }
-
+ 
   try {
     await ExecuteQuery(res, "START TRANSACTION", [], false);
-
+ 
     // 1) Buscar invoice_code antes de apagar
     const [payment] = await ExecuteQuery(res, `
       SELECT ed_transport_payment_invoiceCode AS invoice_code
@@ -1012,14 +1174,14 @@ const TransportPaymentsDelete = async (req, res) => {
         AND COALESCE(ed_transport_payment_deleted,0)=0
       LIMIT 1
     `, [ID, institute], true, { db: "eduall_transport_payments", type: "select", data: req });
-
+ 
     if (!payment) {
       await ExecuteQuery(res, "ROLLBACK", [], false);
       return res.status(404).json({ success: false, message: "Pagamento não encontrado ou já eliminado." });
     }
-
+ 
     const invoiceCode = payment.invoice_code;
-
+ 
     // 2) Soft delete do pagamento
     await ExecuteQuery(res, `
       UPDATE eduall_transport_payments
@@ -1028,7 +1190,7 @@ const TransportPaymentsDelete = async (req, res) => {
         AND CONVERT(ed_transport_payment_institute_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = ?
         AND COALESCE(ed_transport_payment_deleted,0)=0
     `, [ID, institute], false, { db: "eduall_transport_payments", type: "update", data: req });
-
+ 
     // 3) Soft delete dos extras associados à fatura
     if (invoiceCode) {
       await ExecuteQuery(res, `
@@ -1041,7 +1203,7 @@ const TransportPaymentsDelete = async (req, res) => {
         db: "eduall_transport_additional_items", type: "update", data: req,
       });
     }
-
+ 
     // 4) Auditoria
     await RegisterAuditAction({
       session:     req.session,
@@ -1049,14 +1211,17 @@ const TransportPaymentsDelete = async (req, res) => {
       form:        "Pagamentos de Transporte",
       description: `Eliminou o pagamento de transporte com ID ${ID}${invoiceCode ? ` (fatura ${invoiceCode})` : ""}, incluindo valores adicionais associados.`,
     });
-
+ 
     await ExecuteQuery(res, "COMMIT", [], false);
-
+ 
+    // ── Invalidar cache ──
+    await RefreshTransportCache(req, res, institute);
+ 
     res.status(200).json({
       success: true,
       message: `Pagamento (ID ${ID}) e valores adicionais associados eliminados com sucesso.`,
     });
-
+ 
   } catch (error) {
     try { await ExecuteQuery(res, "ROLLBACK", [], false); } catch {}
     console.error("Erro ao deletar pagamento de transporte:", error);
@@ -1067,6 +1232,7 @@ const TransportPaymentsDelete = async (req, res) => {
     });
   }
 };
+ 
 
 // ════════════════════════════════════════════════════════════════════════════════
 // UPDATE

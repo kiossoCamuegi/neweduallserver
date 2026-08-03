@@ -486,30 +486,148 @@ const SQL_VENDUS = `
 };
  
 // ─── Controller de Login ──────────────────────────────────────────────────────
+ 
+ 
+const extractDomain = (url) => {
+  try {
+    const urlObj = new URL(url);
+    let domain = urlObj.hostname;
+    // Remove www. se existir
+    if (domain.startsWith("www.")) {
+      domain = domain.substring(4);
+    }
+    return domain.toLowerCase();
+  } catch {
+    return null;
+  }
+};
+ 
+ 
+const isOriginBlocked = (req) => {
+  try {
+    // Obter domínios bloqueados da variável de ambiente
+    const notAllowedDomainsEnv = process.env.NOT_ALLOWED_DOMAINS;
+    if (!notAllowedDomainsEnv) {
+      return false; // Nenhuma restrição configurada
+    }
+ 
+    // Parse da variável de ambiente (é um JSON array)
+    let notAllowedDomains = [];
+    try {
+      notAllowedDomains = JSON.parse(notAllowedDomainsEnv);
+    } catch {
+      console.warn("[Domain Blocker] Erro ao fazer parse de NOT_ALLOWED_DOMAINS");
+      return false;
+    }
+ 
+    if (!Array.isArray(notAllowedDomains) || notAllowedDomains.length === 0) {
+      return false;
+    }
+ 
+    // Obter origin da requisição (Referer ou Origin header)
+    const origin = req.headers.origin || req.headers.referer;
+    if (!origin) {
+      return false; // Sem origin, não bloqueia
+    }
+ 
+    // Extrair domínio da origin
+    const requestDomain = extractDomain(origin);
+    if (!requestDomain) {
+      return false;
+    }
+ 
+    // Normalizar domínios bloqueados (remover protocolo e www)
+    const normalizedBlockedDomains = notAllowedDomains.map(domain => {
+      let normalized = domain
+        .replace(/^https?:\/\//i, "") // Remove protocolo
+        .replace(/^www\./i, "")        // Remove www
+        .toLowerCase();
+      return normalized;
+    });
+ 
+    // Verificar se o domínio de origem está na lista de bloqueados
+    const isBlocked = normalizedBlockedDomains.some(blockedDomain => {
+      return requestDomain === blockedDomain || requestDomain.endsWith(`.${blockedDomain}`);
+    });
+ 
+    if (isBlocked) {
+      console.warn(`[Domain Blocker] Tentativa de login via email de domínio bloqueado: ${requestDomain}`);
+    }
+ 
+    return isBlocked;
+  } catch (err) {
+    console.error("[Domain Blocker] Erro ao validar domínio:", err.message);
+    return false;
+  }
+};
+ 
+// ─── 2. CONTROLLER DE LOGIN COMPLETO ──────────────────────────────────────────
+ 
+ 
 const Login = async (req, res) => {
   try {
+    // ──────────────────────────────────────────────────────────────────────────
+    // STEP 1: Validar campos obrigatórios
+    // ──────────────────────────────────────────────────────────────────────────
+    
     const identifier = (req.body?.ed_user_account_email ?? req.body?.identifier ?? "").trim();
     const password   =  req.body?.ed_user_account_password ?? req.body?.password;
-
-    if (!identifier || !password)
-      return res.status(400).json({ msg: "Preencha correctamente os campos!", errorCode: "FIELDS_MISSING" });
-
-    // ── 1. Login por e-mail ───────────────────────────────────────────────────
-    if (/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(identifier)) {
-      const rows = await ExecuteQuery(res, SQL_EMAIL, [identifier], true,
-        { db: "eduall_user_accounts", type: "select", data: req }
-      );
-
+ 
+    if (!identifier || !password) {
+      return res.status(400).json({ 
+        msg: "Preencha correctamente os campos!", 
+        errorCode: "FIELDS_MISSING" 
+      });
+    }
+ 
+    // ──────────────────────────────────────────────────────────────────────────
+    // STEP 2: Detectar tipo de login (email ou username)
+    // ──────────────────────────────────────────────────────────────────────────
+    
+    const isEmailLogin = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(identifier);
+ 
+    // ──────────────────────────────────────────────────────────────────────────
+    // STEP 3: LOGIN VIA EMAIL
+    // ──────────────────────────────────────────────────────────────────────────
+    
+    if (isEmailLogin) {
+      
+      // ✅ VALIDAÇÃO: Verificar se o domínio de origem está bloqueado
+      if (isOriginBlocked(req)) {
+        return res.status(403).json({
+          msg: "Acesso não autorizado!",
+          errorCode: "INVALID_CREDENTIALS"
+        });
+      }
+ 
+      // Buscar utilizador por email
+      const rows = await ExecuteQuery(res, SQL_EMAIL, [identifier], true, {
+        db: "eduall_user_accounts",
+        type: "select",
+        data: req
+      });
+ 
       const user = rows?.[0];
-      if (!user)
-        return res.status(400).json({ msg: "Conta nao encontrada!", errorCode: "USER_NOT_FOUND" });
-
+      if (!user) {
+        return res.status(400).json({ 
+          msg: "Conta nao encontrada!", 
+          errorCode: "USER_NOT_FOUND" 
+        });
+      }
+ 
+      // Validar password
       const passwordMatch = user.ed_user_account_password
         ? await bcrypt.compare(password, user.ed_user_account_password)
         : false;
-      if (!passwordMatch)
-        return res.status(400).json({ msg: "Credenciais invalidas!", errorCode: "INVALID_CREDENTIALS" });
-
+      
+      if (!passwordMatch) {
+        return res.status(400).json({ 
+          msg: "Credenciais invalidas!", 
+          errorCode: "INVALID_CREDENTIALS" 
+        });
+      }
+ 
+      // Criar payload do token
       const payload = {
         cr_usercode:       user.ed_user_account_id,
         cr_user_largecode: user.ed_user_account_code,
@@ -517,49 +635,80 @@ const Login = async (req, res) => {
         cr_useremail:      user.ed_user_account_email,
         cr_usertype:       1,
       };
-
+ 
+      // Gerar tokens
       const { accessToken, refreshToken } = issueTokens(payload);
-      if (!refreshToken)
-        return res.status(500).json({ msg: "Erro ao gerar refresh token!", errorCode: "TOKEN_GENERATION_ERROR" });
-
+      if (!refreshToken) {
+        return res.status(500).json({ 
+          msg: "Erro ao gerar refresh token!", 
+          errorCode: "TOKEN_GENERATION_ERROR" 
+        });
+      }
+ 
+      // Persistir refresh token
       const persisted = await persistRefreshToken(payload.cr_usercode, refreshToken);
-      if (!persisted)
-        return res.status(400).json({ msg: "Erro ao actualizar o token.", errorCode: "TOKEN_UPDATE_ERROR" });
-
+      if (!persisted) {
+        return res.status(400).json({ 
+          msg: "Erro ao actualizar o token.", 
+          errorCode: "TOKEN_UPDATE_ERROR" 
+        });
+      }
+ 
+      // Log de login
       await logLogin(payload.cr_usercode, "email");
+ 
+      // Definir sessão
       setSession(req, {
         eduall_user_session_refreshToken: refreshToken,
         eduall_user_session_ID:           payload.cr_usercode,
         accessToken,
       });
-
+ 
       // Login por email → sempre portal (type 1), sem dashboard nem apps
-      return res.status(200).json({ accessToken, redirectTo: null });
+      return res.status(200).json({ 
+        accessToken, 
+        redirectTo: null 
+      });
     }
-
-    // ── 2. Login por username ─────────────────────────────────────────────────
+ 
+    // ──────────────────────────────────────────────────────────────────────────
+    // STEP 4: LOGIN VIA USERNAME
+    // ──────────────────────────────────────────────────────────────────────────
+    
     const username = identifier.toLowerCase();
-
-    const rows = await ExecuteQuery(res, SQL_USERNAME, [username], true,
-      { db: "eduall_user_accounts", type: "select", data: req }
-    );
-
+ 
+    const rows = await ExecuteQuery(res, SQL_USERNAME, [username], true, {
+      db: "eduall_user_accounts",
+      type: "select",
+      data: req
+    });
+ 
     const u = rows?.[0];
-    if (!u)
-      return res.status(400).json({ msg: "Credenciais invalidas!", errorCode: "INVALID_CREDENTIALS" });
-
-    // ── Log Vendus ────────────────────────────────────────────────────────────
+    if (!u) {
+      return res.status(400).json({ 
+        msg: "Credenciais invalidas!", 
+        errorCode: "INVALID_CREDENTIALS" 
+      });
+    }
+ 
+    // ──────────────────────────────────────────────────────────────────────────
+    // STEP 5: LOG VENDUS (Opcional)
+    // ──────────────────────────────────────────────────────────────────────────
+    
     try {
       const vendusRows = await ExecuteQuery(null, SQL_VENDUS,
         [u.ed_system_account_institute_code], true,
         { db: "eduall_institutes", type: "select", data: {} }
       );
+ 
       if (vendusRows?.length) {
         const { api_key_encrypted, country, register_id } = vendusRows[0];
+        
         if (!api_key_encrypted) {
           console.log("[Vendus] Instituto sem chave configurada.");
         } else {
           const apiKey = safeDecrypt(api_key_encrypted);
+          
           if (!apiKey) {
             console.warn(`[Vendus] Chave ilegivel para instituto: ${u.ed_system_account_institute_code} — use POST /vendus/reencrypt`);
           } else {
@@ -582,34 +731,62 @@ const Login = async (req, res) => {
     } catch (vendusErr) {
       console.warn("\x1b[33m[Vendus]\x1b[0m Nao foi possivel ler config no login:", vendusErr.message);
     }
-
-    // ── Validações ────────────────────────────────────────────────────────────
-    if (!u.ed_user_account_password)
-      return res.status(400).json({ msg: "Esta conta nao tem senha associada!", errorCode: "NO_PASSWORD" });
-
+ 
+    // ──────────────────────────────────────────────────────────────────────────
+    // STEP 6: VALIDAÇÕES DE USERNAME
+    // ──────────────────────────────────────────────────────────────────────────
+    
+    if (!u.ed_user_account_password) {
+      return res.status(400).json({ 
+        msg: "Esta conta nao tem senha associada!", 
+        errorCode: "NO_PASSWORD" 
+      });
+    }
+ 
+    // Validar password
     const passwordMatch = await bcrypt.compare(password, u.ed_user_account_password);
-    if (!passwordMatch)
-      return res.status(400).json({ msg: "Credenciais invalidas!", errorCode: "INVALID_CREDENTIALS" });
-
-    if (u.ed_system_account_status === 1)
-      return res.status(403).json({ msg: "Conta desactivada por um administrador!", errorCode: "ACCOUNT_DEACTIVATED" });
-
+    if (!passwordMatch) {
+      return res.status(400).json({ 
+        msg: "Credenciais invalidas!", 
+        errorCode: "INVALID_CREDENTIALS" 
+      });
+    }
+ 
+    // Validar se conta está desactivada
+    if (u.ed_system_account_status === 1) {
+      return res.status(403).json({ 
+        msg: "Conta desactivada por um administrador!", 
+        errorCode: "ACCOUNT_DEACTIVATED" 
+      });
+    }
+ 
+    // Validar se licença expirou
     const remainingDays = Math.floor(
       (new Date(u.ed_institute_licence_endDate) - new Date(u.ed_institute_licence_startDate)) / 86_400_000
     );
-    if (remainingDays <= 0)
-      return res.status(403).json({ msg: "Acesso bloqueado, renove a sua licenca!", errorCode: "LICENSE_EXPIRED" });
-
-    // ── Acessos + apps + redirectTo ───────────────────────────────────────────
+    if (remainingDays <= 0) {
+      return res.status(403).json({ 
+        msg: "Acesso bloqueado, renove a sua licenca!", 
+        errorCode: "LICENSE_EXPIRED" 
+      });
+    }
+ 
+    // ──────────────────────────────────────────────────────────────────────────
+    // STEP 7: BUSCAR ACESSOS + APPS + REDIRECTTO
+    // ──────────────────────────────────────────────────────────────────────────
+    
     const { accessRow, apps, appTypes, redirectTo } = await fetchUserAccessAndApps(
       u.ed_system_account_id,
       u.ed_system_account_employee,
       u.ed_system_account_institute_code
     );
-
-    // ── Tokens + sessão ───────────────────────────────────────────────────────
+ 
+    // ──────────────────────────────────────────────────────────────────────────
+    // STEP 8: GERAR TOKENS + SESSÃO
+    // ──────────────────────────────────────────────────────────────────────────
+    
     const instituteCode = getValidTenant(u.ed_system_account_institute_code);
-
+ 
     const payload = {
       cr_usercode:       u.ed_user_account_id,
       cr_user_largecode: u.ed_user_account_code,
@@ -618,16 +795,27 @@ const Login = async (req, res) => {
       cr_institutecode:  instituteCode,
       cr_usertype:       0,
     };
-
+ 
     const { accessToken, refreshToken } = issueTokens(payload);
-    if (!refreshToken)
-      return res.status(500).json({ msg: "Erro ao gerar refresh token!", errorCode: "TOKEN_GENERATION_ERROR" });
-
+    if (!refreshToken) {
+      return res.status(500).json({ 
+        msg: "Erro ao gerar refresh token!", 
+        errorCode: "TOKEN_GENERATION_ERROR" 
+      });
+    }
+ 
     const persisted = await persistRefreshToken(payload.cr_usercode, refreshToken);
-    if (!persisted)
-      return res.status(400).json({ msg: "Erro ao actualizar o token.", errorCode: "TOKEN_UPDATE_ERROR" });
-
+    if (!persisted) {
+      return res.status(400).json({ 
+        msg: "Erro ao actualizar o token.", 
+        errorCode: "TOKEN_UPDATE_ERROR" 
+      });
+    }
+ 
+    // Log de login
     await logLogin(payload.cr_usercode, "username");
+ 
+    // Definir sessão
     setSession(req, {
       eduall_user_session_refreshToken:         refreshToken,
       eduall_user_session_username:             u.ed_system_account_name,
@@ -636,26 +824,35 @@ const Login = async (req, res) => {
       eduall_user_session_ID:                   payload.cr_usercode,
       accessToken,
     });
-
-    // ── Sem nenhum acesso (nem dashboard nem apps) → bloquear login ──────────
+ 
+    // ──────────────────────────────────────────────────────────────────────────
+    // STEP 9: VALIDAÇÃO FINAL - SEM NENHUM ACESSO
+    // ──────────────────────────────────────────────────────────────────────────
+    
     if (redirectTo === null) {
       return res.status(403).json({
         msg: "A sua conta não possui acesso a nenhum módulo ou aplicativo. Contacte o administrador.",
         errorCode: "NO_ACCESS",
       });
     }
-
-    // ── Resposta com redirectTo e apps ────────────────────────────────────────
+ 
+    // ──────────────────────────────────────────────────────────────────────────
+    // STEP 10: SUCESSO - RETORNAR RESPOSTA
+    // ──────────────────────────────────────────────────────────────────────────
+    
     return res.status(200).json({
       accessToken,
       sessions:    req.session,
       redirectTo,
       apps,
     });
-
+ 
   } catch (err) {
     console.error("[Login]", err.message || err);
-    return res.status(500).json({ msg: "Erro interno no servidor!", errorCode: "SERVER_ERROR" });
+    return res.status(500).json({ 
+      msg: "Erro interno no servidor!", 
+      errorCode: "SERVER_ERROR" 
+    });
   }
 };
  
@@ -1180,7 +1377,8 @@ const CheckExistentEmail = async (req, res) => {
   try {
     const rows = await ExecuteQuery(
       res,
-      `SELECT ed_user_account_id FROM eduall_user_accounts WHERE ed_user_account_deleted = 0 AND ed_user_account_email = ? LIMIT 1`,
+      `SELECT ed_user_account_id, ed_user_account_name, ed_user_account_email , ed_user_account_picture 
+      FROM eduall_user_accounts WHERE ed_user_account_deleted = 0 AND ed_user_account_email = ? LIMIT 1`,
       [req.params.EMAIL],
       true,
       { db: "eduall_user_accounts", type: "select", data: req }

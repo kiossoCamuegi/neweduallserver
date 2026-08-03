@@ -310,7 +310,7 @@ const RegisterTransportPassenger = async (req, res) => {
       ) VALUES(?,?,?,?)
     `;
     const PARAMS = [
-      req.body.passenger_code,
+      req.body.passenger_code, /// id do aluno
       req.body.passenger_month_of_membership,
       req.body.passenger_stop,
       req.session.user.eduall_user_session_curentinstitute,

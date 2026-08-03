@@ -1,11 +1,110 @@
 const multer = require(`multer`);
 const path = require(`path`);
+const fs = require(`fs`);
 const CheckInternet = require("../config/CheckInternet");
 const { DB_SQLITE, DATABASE } = require("../config/Database");
 const { GetCurrentUserData } = require("./GetCurrentUserData");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const { RegisterAuditAction } = require("./Auditory");
 const Cache = require("../Functions/CacheRoutes");
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  MULTER CONFIGURATION - SEGURO COM VALIDACOES
+// ═════════════════════════════════════════════════════════════════════════════
+
+// 1. Storage: Nomes únicos + pasta segura
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = 'uploads/students/';
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    // Sanitizar nome original
+    const sanitized = SanitizeFilename(file.originalname);
+    // Nome único: timestamp + random
+    const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(sanitized).toLowerCase();
+    const name = path.basename(sanitized, ext);
+    cb(null, `${name}-${unique}${ext}`);
+  }
+});
+
+// 2. File Filter: Validar tipos + tamanho
+const fileFilter = (req, file, cb) => {
+  // Tipos permitidos (apenas imagens)
+  const ALLOWED_MIMES = [
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp'
+  ];
+
+  if (!ALLOWED_MIMES.includes(file.mimetype)) {
+    console.warn(`FICHEIRO REJEITADO: Tipo não permitido - ${file.mimetype}`);
+    return cb(new Error(`Tipo de ficheiro não permitido: ${file.mimetype}. Apenas JPG, PNG, GIF e WebP.`));
+  }
+
+  const allowedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (!allowedExts.includes(ext)) {
+    console.warn(`FICHEIRO REJEITADO: Extensão não permitida - ${ext}`);
+    return cb(new Error(`Extensão não permitida: ${ext}`));
+  }
+
+  cb(null, true);
+};
+
+// 3. Multer instance
+const uploadStd = multer({
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024  // 5MB máximo
+  }
+});
+
+// ─── HELPER FUNCTIONS ────────────────────────────────────────────────────────
+
+// Sanitizar filename contra ataques
+function SanitizeFilename(filename) {
+  return filename
+    .replace(/[^a-zA-Z0-9._-]/g, '_')  // Remover caracteres perigosos
+    .replace(/\.{2,}/g, '_')            // Remover ..
+    .slice(0, 100);                     // Limitar tamanho
+}
+
+// Validar email
+function IsValidEmail(email) {
+  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return regex.test(email);
+}
+
+// Validar telefone
+function IsValidPhone(phone) {
+  const cleaned = phone.replace(/\s/g, '');
+  return /^\d{9,}$/.test(cleaned);
+}
+
+// Validar data
+function IsValidDate(dateStr) {
+  const date = new Date(dateStr);
+  return !isNaN(date.getTime());
+}
+
+// Validar idade
+function ValidateAge(birthday) {
+  const today = new Date();
+  const birthDate = new Date(birthday);
+  const age = today.getFullYear() - birthDate.getFullYear();
+  
+  if (age < 5) return { valid: false, msg: 'Aluno deve ter pelo menos 5 anos' };
+  if (age > 120) return { valid: false, msg: 'Data de nascimento inválida' };
+  
+  return { valid: true };
+}
 
 // ──────────────────────────────────────────────────────────────
 // ── CACHE CONFIGURATION (same pattern as AcademicYear.js) ─────
@@ -780,17 +879,202 @@ const GetEmails = async (req, res) => {
 // ──────────────────────────────────────────────────────────────
 // ── REGISTER STUDENT
 // ──────────────────────────────────────────────────────────────
-const RegisterStudent = async (req, res) => {
-  try {
-    const instituteCode = req.session?.user?.eduall_user_session_curentinstitute;
 
+/**
+ * Cores ANSI para console colorido
+ * @type {Object}
+ */
+const Colors = {
+  RED:     '\x1b[31m',
+  GREEN:   '\x1b[32m',
+  YELLOW:  '\x1b[33m',
+  BLUE:    '\x1b[34m',
+  CYAN:    '\x1b[36m',
+  GREY:    '\x1b[90m',
+  RESET:   '\x1b[0m',
+  BOLD:    '\x1b[1m',
+  DIM:     '\x1b[2m',
+};
+ 
+/**
+ * BackendErrorLogger - Sistema centralizado de logging com cores
+ * 
+ * Uso:
+ *   BackendErrorLogger.log('REGISTER_STUDENT', error, { studentName, instituteCode });
+ *   BackendErrorLogger.success('CACHE_REFRESH', { cached: 152, time: '45ms' });
+ *   BackendErrorLogger.warn('MISSING_FIELD', { field: 'student_email' });
+ */
+const BackendErrorLogger = {
+  /**
+   * Log de erro (vermelho) com structure
+   */
+  log: (category, error, context = {}) => {
+    const timestamp = new Date().toLocaleTimeString('pt-PT');
+    
+    console.log(`\n${Colors.RED}${Colors.BOLD}❌ ERROR${Colors.RESET} ${Colors.GREY}[${timestamp}]${Colors.RESET}`);
+    console.log(`${Colors.RED}${Colors.BOLD}────────────────────────────────────────────${Colors.RESET}`);
+    console.log(`${Colors.CYAN}Category:${Colors.RESET} ${Colors.BOLD}${category}${Colors.RESET}`);
+    
+    if (error) {
+      console.log(`${Colors.CYAN}Message:${Colors.RESET} ${Colors.RED}${error.message || error}${Colors.RESET}`);
+      
+      if (error.code) {
+        console.log(`${Colors.CYAN}Code:${Colors.RESET} ${Colors.YELLOW}${error.code}${Colors.RESET}`);
+      }
+      
+      if (error.status) {
+        console.log(`${Colors.CYAN}Status:${Colors.RESET} ${Colors.YELLOW}${error.status}${Colors.RESET}`);
+      }
+      
+      if (error.sql) {
+        console.log(`${Colors.CYAN}SQL:${Colors.RESET}`);
+        console.log(`${Colors.DIM}${error.sql}${Colors.RESET}`);
+      }
+      
+      if (error.sqlState) {
+        console.log(`${Colors.CYAN}SQL State:${Colors.RESET} ${Colors.YELLOW}${error.sqlState}${Colors.RESET}`);
+      }
+    }
+    
+    if (Object.keys(context).length > 0) {
+      console.log(`${Colors.CYAN}Context:${Colors.RESET}`);
+      console.table(context);
+    }
+    
+    console.log(`${Colors.RED}${Colors.BOLD}────────────────────────────────────────────${Colors.RESET}\n`);
+  },
+ 
+  /**
+   * Log de sucesso (verde)
+   */
+  success: (category, context = {}, msg = '') => {
+    const timestamp = new Date().toLocaleTimeString('pt-PT');
+    
+    console.log(`\n${Colors.GREEN}${Colors.BOLD}✅ SUCCESS${Colors.RESET} ${Colors.GREY}[${timestamp}]${Colors.RESET}`);
+    console.log(`${Colors.GREEN}${Colors.BOLD}────────────────────────────────────────────${Colors.RESET}`);
+    console.log(`${Colors.CYAN}Category:${Colors.RESET} ${Colors.BOLD}${category}${Colors.RESET}`);
+    
+    if (msg) {
+      console.log(`${Colors.CYAN}Message:${Colors.RESET} ${Colors.GREEN}${msg}${Colors.RESET}`);
+    }
+    
+    if (Object.keys(context).length > 0) {
+      console.log(`${Colors.CYAN}Data:${Colors.RESET}`);
+      console.table(context);
+    }
+    
+    console.log(`${Colors.GREEN}${Colors.BOLD}────────────────────────────────────────────${Colors.RESET}\n`);
+  },
+ 
+  /**
+   * Log de aviso (amarelo)
+   */
+  warn: (category, context = {}, msg = '') => {
+    const timestamp = new Date().toLocaleTimeString('pt-PT');
+    
+    console.log(`\n${Colors.YELLOW}${Colors.BOLD}⚠️  WARN${Colors.RESET} ${Colors.GREY}[${timestamp}]${Colors.RESET}`);
+    console.log(`${Colors.YELLOW}${Colors.BOLD}────────────────────────────────────────────${Colors.RESET}`);
+    console.log(`${Colors.CYAN}Category:${Colors.RESET} ${Colors.BOLD}${category}${Colors.RESET}`);
+    
+    if (msg) {
+      console.log(`${Colors.CYAN}Message:${Colors.RESET} ${Colors.YELLOW}${msg}${Colors.RESET}`);
+    }
+    
+    if (Object.keys(context).length > 0) {
+      console.log(`${Colors.CYAN}Context:${Colors.RESET}`);
+      console.table(context);
+    }
+    
+    console.log(`${Colors.YELLOW}${Colors.BOLD}────────────────────────────────────────────${Colors.RESET}\n`);
+  },
+ 
+  /**
+   * Log de info (cyan)
+   */
+  info: (category, context = {}, msg = '') => {
+    const timestamp = new Date().toLocaleTimeString('pt-PT');
+    
+    console.log(`\n${Colors.CYAN}${Colors.BOLD}ℹ️  INFO${Colors.RESET} ${Colors.GREY}[${timestamp}]${Colors.RESET}`);
+    console.log(`${Colors.CYAN}${Colors.BOLD}────────────────────────────────────────────${Colors.RESET}`);
+    console.log(`${Colors.CYAN}Category:${Colors.RESET} ${Colors.BOLD}${category}${Colors.RESET}`);
+    
+    if (msg) {
+      console.log(`${Colors.CYAN}Message:${Colors.RESET} ${Colors.BLUE}${msg}${Colors.RESET}`);
+    }
+    
+    if (Object.keys(context).length > 0) {
+      console.log(`${Colors.CYAN}Data:${Colors.RESET}`);
+      console.table(context);
+    }
+    
+    console.log(`${Colors.CYAN}${Colors.BOLD}────────────────────────────────────────────${Colors.RESET}\n`);
+  },
+ 
+  /**
+   * Get user-friendly message baseado no erro
+   */
+  getUserMessage: (error, operation = 'operação') => {
+    if (!error) return `Erro ao ${operation}.`;
+    
+    const status = error.status;
+    const code = error.code;
+    const message = error.message || '';
+ 
+    // SQL errors
+    if (code === 'ER_DUP_ENTRY') {
+      return 'Este registro já existe no sistema.';
+    }
+    if (code === 'ER_NO_REFERENCED_ROW' || code === 'ER_NO_REFERENCED_ROW_2') {
+      return 'Referência inválida. Verifique os dados.';
+    }
+    if (code === 'ER_BAD_NULL_ERROR') {
+      return 'Campo obrigatório não preenchido.';
+    }
+    if (code === 'ER_TRUNCATED_WRONG_VALUE') {
+      return 'Formato de dados inválido.';
+    }
+    if (code?.startsWith('ER_')) {
+      return 'Erro na base de dados. Tente novamente.';
+    }
+ 
+    // HTTP status
+    if (status === 400) return 'Dados inválidos. Verifique todos os campos.';
+    if (status === 401) return 'Sessão expirada. Por favor, faça login novamente.';
+    if (status === 403) return 'Você não tem permissão para esta ação.';
+    if (status === 404) return 'Recurso não encontrado.';
+    if (status === 409) return 'Conflito de dados. Este registro pode já existir.';
+    if (status === 500) return 'Erro no servidor. Tente novamente mais tarde.';
+ 
+    // Connection errors
+    if (message.includes('ECONNREFUSED')) return 'Base de dados indisponível.';
+    if (message.includes('ENOTFOUND')) return 'Servidor não encontrado.';
+    if (message.includes('TIMEOUT')) return 'Requisição expirou. Tente novamente.';
+ 
+    // Default
+    return `Não foi possível ${operation}. Tente novamente.`;
+  }
+};
+ 
+// ═════════════════════════════════════════════════════════════════════════════════
+//  REGISTER STUDENT COM ERRORLOGGER
+// ═════════════════════════════════════════════════════════════════════════════════
+  
+
+const RegisterStudent = async (req, res) => {
+  const startTime = Date.now();
+  
+  try { 
+    // ── Session validation ──
+    const instituteCode = req.session?.user?.eduall_user_session_curentinstitute;
+ 
     if (!instituteCode) {
       return res.status(401).json({
         success: false,
         msg: "Instituição não encontrada na sessão.",
       });
     }
-
+ 
+    // ── Extract all fields ──
     const {
       student_name,
       student_address,
@@ -808,147 +1092,410 @@ const RegisterStudent = async (req, res) => {
       student_status,
       student_naturalness,
       student_code,
+      father_name,
+      father_phone,
+      father_email,
+      father_job,
+      mother_name,
+      mother_phone,
+      mother_email,
+      mother_job,
+      guardion_name,
+      guardion_phone,
+      guardion_email,
+      guardion_job,
+      guardion_degree_of_kinship,
+      // ... outros campos que tem
     } = req.body;
-
-    // ── Validações ──
-    if (!student_name || !student_birthday) {
-      return res.status(400).json({
-        success: false,
-        msg: "Nome e data de nascimento são obrigatórios.",
-      });
+ 
+    // ── VALIDAÇÕES ────────────────────────────────────────────────────────
+    const errors = {};
+ 
+    // Campos obrigatórios
+    if (!student_name?.trim()) {
+      errors.student_name = 'Nome obrigatório';
     }
-
-    const birthday = new Date(student_birthday);
-    const today = new Date();
-    if (isNaN(birthday.getTime()) || birthday > today) {
-      return res.status(400).json({
-        success: false,
-        msg: "Data de nascimento inválida.",
-      });
+    if (!student_address?.trim()) {
+      errors.student_address = 'Endereço obrigatório';
     }
-
-    const ensureCounterRow = async () => {
-      const check = await ExecuteQuery(
-        res,
-        `SELECT 1 FROM eduall_institute_counters WHERE ed_institute_code = ? LIMIT 1`,
-        [instituteCode],
-        true
-      );
-      if (!check.length) {
-        await ExecuteQuery(
-          res,
-          `INSERT INTO eduall_institute_counters (ed_institute_code, ed_lastest_student_code) VALUES (?, 0)`,
-          [instituteCode],
-          false
-        );
+    if (!student_nacionality?.trim()) {
+      errors.student_nacionality = 'Nacionalidade obrigatória';
+    }
+    if (!student_gender?.trim()) {
+      errors.student_gender = 'Género obrigatório';
+    }
+    if (!student_birthday?.trim()) {
+      errors.student_birthday = 'Data de nascimento obrigatória';
+    } else {
+      const bd = new Date(student_birthday);
+      const today = new Date();
+      if (isNaN(bd.getTime())) {
+        errors.student_birthday = 'Data inválida';
+      } else if (bd > today) {
+        errors.student_birthday = 'Data não pode ser futuro';
       }
-    };
+    }
+    if (!student_phone?.trim()) {
+      errors.student_phone = 'Telefone obrigatório';
+    }
+    if (!student_identityCard?.trim()) {
+      errors.student_identityCard = 'BI obrigatório';
+    }
+    if (!student_class || student_class === '0') {
+      errors.student_class = 'Turma obrigatória';
+    }
+ 
+    // Se houver erros
+    if (Object.keys(errors).length > 0) {
+      console.error('VALIDACAO_FALHOU:', errors);
+      return res.status(400).json({
+        success: false,
+        msg: 'Validação falhou. Verifique os campos obrigatórios.',
+        errors: errors,
+      });
+    }
+ 
+    console.log('VALIDACOES_PASSARAM: OK');
+ 
+    // ── VALIDAÇÃO 2: Arquivo (Multer) ────────────────────────────────────────
+    console.log('\n2️⃣  VALIDANDO ARQUIVO...');
+    
+    let picturePath = null;
+    if (req.file) {
+      console.log(`  ✅ Arquivo recebido: ${req.file.filename}`);
+      console.log(`  ✅ Tipo: ${req.file.mimetype}`);
+      console.log(`  ✅ Tamanho: ${(req.file.size / 1024).toFixed(2)}KB`);
+      
+      // Validar tipo de ficheiro (dupla verificação)
+      const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+      if (!allowedMimes.includes(req.file.mimetype)) {
+        console.error('ARQUIVO_TIPO_INVALIDO:', req.file.mimetype);
+        if (req.file) fs.unlink(req.file.path, (err) => {});
+        return res.status(400).json({
+          success: false,
+          msg: 'Tipo de ficheiro inválido. Apenas JPG, PNG, GIF e WebP.',
+        });
+      }
 
-    await ensureCounterRow();
+      // Validar tamanho (máx 5MB)
+      const maxSize = 5 * 1024 * 1024;
+      if (req.file.size > maxSize) {
+        console.error('ARQUIVO_TAMANHO_INVALIDO:', req.file.size);
+        if (req.file) fs.unlink(req.file.path, (err) => {});
+        return res.status(400).json({
+          success: false,
+          msg: 'Ficheiro muito grande. Máximo 5MB.',
+        });
+      }
 
+      picturePath = "images/students/" + req.file.filename;
+      console.log(`  ✅ Path final: ${picturePath}`);
+    } else {
+      console.log(`  ⚠️  Nenhuma imagem foi enviada (opcional)`);
+    }
+ 
+    // ── Verificar duplicate BI ──────────────────────────────────────────────
+    const duplicateBI = await ExecuteQuery(
+      res,
+      `SELECT ed_student_id FROM eduall_students 
+       WHERE ed_student_identityCard = ? 
+       AND ed_student_institute_code = ? 
+       LIMIT 1`,
+      [student_identityCard.trim(), instituteCode],
+      true
+    );
+ 
+    if (duplicateBI && duplicateBI.length > 0) {
+      return res.status(409).json({
+        success: false,
+        msg: `Bilhete de identidade ${student_identityCard} já existe no sistema.`,
+      });
+    }
+ 
+    // ── Generate student code ──────────────────────────────────────────────
     let finalCode = String(student_code || "").trim();
+    
     if (!finalCode) {
+      // Auto-generate (seu padrão)
       const counter = await ExecuteQuery(
         res,
-        `SELECT ed_lastest_student_code FROM eduall_institute_counters WHERE ed_institute_code = ? FOR UPDATE`,
+        `SELECT ed_lastest_student_code FROM eduall_institute_counters 
+         WHERE ed_institute_code = ? FOR UPDATE`,
         [instituteCode],
         true
       );
+ 
+      if (!counter || !counter.length) {
+        throw new Error('Contador não encontrado');
+      }
+ 
       let next = ((counter[0]?.ed_lastest_student_code ?? 0) * 1) + 1;
       finalCode = String(next).padStart(6, "0");
+ 
       await ExecuteQuery(
         res,
-        `UPDATE eduall_institute_counters SET ed_lastest_student_code = ? WHERE ed_institute_code = ?`,
+        `UPDATE eduall_institute_counters SET ed_lastest_student_code = ? 
+         WHERE ed_institute_code = ?`,
         [next, instituteCode],
         false
       );
     }
-
-    await ExecuteQuery(
+ 
+    // ── INSERT STUDENT (COM IMAGEM!) ───────────────────────────────────────
+    const insertResult = await ExecuteQuery(
       res,
       `INSERT INTO eduall_students(
-         ed_student_name,
-         ed_student_address,
-         ed_student_nacionality,
-         ed_student_gender,
-         ed_student_religion,
-         ed_student_birthday,
-         ed_student_phone,
-         ed_student_phone2,
-         ed_student_email,
-         ed_student_class,
-         ed_student_code,
-         ed_student_identityCard,
-         ed_student_health_problems,
-         ed_student_health_problems_description,
-         ed_student_status,
-         ed_student_naturalness,
-         ed_student_institute_code,
-         ed_student_type
-       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        ed_student_name,
+        ed_student_address,
+        ed_student_nacionality,
+        ed_student_gender,
+        ed_student_religion,
+        ed_student_birthday,
+        ed_student_phone,
+        ed_student_phone2,
+        ed_student_email,
+        ed_student_class,
+        ed_student_code,
+        ed_student_identityCard,
+        ed_student_health_problems,
+        ed_student_health_problems_description,
+        ed_student_status,
+        ed_student_naturalness,
+        ed_student_picture,
+        ed_student_institute_code,
+        ed_student_type,
+        ed_student_father_name,
+        ed_student_father_phone,
+        ed_student_father_email,
+        ed_student_father_job,
+        ed_student_mother_name,
+        ed_student_mother_phone,
+        ed_student_mother_email,
+        ed_student_mother_job,
+        ed_student_guardion_name,
+        ed_student_guardion_phone,
+        ed_student_guardion_email,
+        ed_student_guardion_job,
+        ed_student_guardion_degree
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         student_name,
-        student_address || "",
-        student_nacionality || "",
-        student_gender || 0,
-        student_religion || "",
+        student_address,
+        student_nacionality,
+        student_gender,
+        student_religion,
         student_birthday,
-        student_phone || "",
-        student_phone2 || "",
-        student_email || "",
-        student_class || 0,
-        finalCode,
-        student_identityCard || "",
-        student_health_problems || 0,
-        student_health_problems_description || "",
-        student_status || 1,
-        student_naturalness || "",
+        student_phone,
+        student_phone2,
+        student_email,
+        student_class,
+        student_code,
+        student_identityCard,
+        student_health_problems,
+        student_health_problems_description,
+        student_status,
+        student_naturalness,
+        picturePath,
         instituteCode,
         req.session.user.eduall_user_session_curentinstitute_type || 0,
+        father_name,
+        father_phone,
+        father_email,
+        father_job,
+        mother_name,
+        mother_phone,
+        mother_email,
+        mother_job,
+        guardion_name,
+        guardion_phone,
+        guardion_email,
+        guardion_job,
+        guardion_degree_of_kinship
       ],
       false,
-      { db: "eduall_students", type: "insert", data: req }
+      {
+        db: "eduall_students",
+        type: "insert",
+        data: {
+          student_name: student_name,
+          student_code: student_code,
+          student_identityCard: student_identityCard
+        }
+      }
     );
-
+ 
+    const studentId = insertResult.insertId;
+ 
+    // ── Audit log ──
     await RegisterAuditAction({
       session: req.session,
       action: 1,
       form: "Estudantes",
-      description: `Registou novo estudante "${student_name}" (matrícula: ${finalCode})`,
+      description: `Registou novo estudante "${student_name}" (matrícula: ${finalCode})${picturePath ? ' com imagem' : ''}`,
     });
-
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> RegisterStudent: registo inserido com matrícula ${finalCode}`);
+ 
+    // ── Refresh cache ──
     await RefreshStudentCache(req, res, instituteCode);
-
-    // ── Checar matrículas (enrollment) ──
+ 
+    // ── Check enrollment ──
     const enrollmentRows = await ExecuteQuery(
       res,
-      `SELECT ed_student_enrolled FROM eduall_students WHERE ed_student_code = ? LIMIT 1`,
+      `SELECT ed_student_id, ed_student_enrolled FROM eduall_students 
+       WHERE ed_student_code = ? LIMIT 1`,
       [finalCode],
       true
     );
-    const enrolled = enrollmentRows.length > 0 && enrollmentRows[0].ed_student_enrolled > 0;
-    const enrollmentId = enrollmentRows.length > 0 ? enrollmentRows[0].ed_student_id : null;
-
+ 
+    const enrolled = enrollmentRows?.length > 0 && enrollmentRows[0].ed_student_enrolled > 0;
+    const enrollmentId = enrollmentRows?.length > 0 ? enrollmentRows[0].ed_student_id : null;
+ 
+    const duration = Date.now() - startTime;
+ 
+    console.log('REGISTRO_SUCESSO:', {
+      studentCode: finalCode,
+      studentName: student_name,
+      studentId: studentId,
+      temImagem: !!picturePath,
+      imagemPath: picturePath,
+      duration: `${duration}ms`,
+    });
+ 
     return res.status(201).json({
       success: true,
-      msg: "Estudante registado com sucesso!",
+      msg: picturePath 
+        ? "Estudante registado com sucesso! Imagem enviada." 
+        : "Estudante registado com sucesso!",
       student_code: finalCode,
-      student_identity_card: req.body.student_identityCard,
-      // Campos novos — usados pelo frontend
-      enrolled:              enrolled,           // boolean
-      enrollment_id:         enrollmentId,       // int | null
+      student_id: studentId,
+      student_identity_card: student_identityCard,
+      picture_path: picturePath,
+      enrolled: enrolled,
+      enrollment_id: enrollmentId,
     });
-
+ 
   } catch (error) {
-    console.error("Erro ao registar estudante:", error);
+    const duration = Date.now() - startTime;
+ 
+    console.error('REGISTRO_ERRO:', {
+      message: error.message,
+      stack: error.stack,
+      studentName: req.body?.student_name,
+      duration: `${duration}ms`,
+    });
+ 
     return res.status(500).json({
       success: false,
-      msg:     "Erro ao registar estudante.",
-      error:   error.message,
+      msg: 'Erro ao registar estudante. Tente novamente.',
+      error_code: error.code || 'UNKNOWN_ERROR',
     });
   }
 };
+
+ 
+ 
+// ─── Helper: Email validation ──
+function isValidEmail(email) {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+ 
+// ─── Helper: User friendly messages ──
+function GetUserFriendlyMessage(error) {
+  if (error.code === 'ER_DUP_ENTRY') {
+    return 'Registo duplicado. Verifique os dados.';
+  }
+  if (error.message.includes('FOREIGN KEY')) {
+    return 'Referência inválida. Verifique os dados relacionados.';
+  }
+  if (error.message.includes('Contador')) {
+    return 'Erro ao gerar matrícula. Contacte o suporte.';
+  }
+  return 'Erro ao registar estudante. Tente novamente.';
+}
+// ═════════════════════════════════════════════════════════════════════════════════
+//  EXEMPLOS DE USO DO ERRORLOGGER
+// ═════════════════════════════════════════════════════════════════════════════════
+ 
+/**
+ * Exemplo 1: Log de Sucesso
+ */
+const ExampleSuccess = () => {
+  BackendErrorLogger.success('CACHE_REFRESH',
+    {
+      cached: 152,
+      duration: '45ms',
+      students: 3420,
+    },
+    'Cache de alunos atualizado'
+  );
+};
+ 
+/**
+ * Exemplo 2: Log de Aviso
+ */
+const ExampleWarn = () => {
+  BackendErrorLogger.warn('SLOW_QUERY',
+    {
+      query: 'SELECT * FROM eduall_students WHERE ed_student_institute_code = ?',
+      duration: '2340ms',
+      rows: 1250,
+    },
+    'Query lenta detectada'
+  );
+};
+ 
+/**
+ * Exemplo 3: Log de Info
+ */
+const ExampleInfo = () => {
+  BackendErrorLogger.info('SCHEDULED_JOB',
+    {
+      job: 'RefreshAllCaches',
+      institutes: 5,
+      totalStudents: 15000,
+    },
+    'Job agendado iniciado'
+  );
+};
+ 
+/**
+ * Exemplo 4: Log de Erro com SQL error
+ */
+const ExampleError = () => {
+  const sqlError = new Error('Duplicate entry for key "primary"');
+  sqlError.code = 'ER_DUP_ENTRY';
+  sqlError.status = 400;
+  sqlError.sql = 'INSERT INTO eduall_students (ed_student_code) VALUES (?)';
+  sqlError.sqlState = '23000';
+ 
+  BackendErrorLogger.log('REGISTER_STUDENT', sqlError,
+    {
+      studentCode: '000001',
+      studentName: 'João Silva',
+      instituteCode: 'INST-001',
+    }
+  );
+};
+ 
+/**
+ * Exemplo 5: Get user message
+ */
+const ExampleGetUserMessage = () => {
+  const err1 = new Error('Duplicate entry');
+  err1.code = 'ER_DUP_ENTRY';
+  console.log(BackendErrorLogger.getUserMessage(err1));
+  // Output: "Este registro já existe no sistema."
+ 
+  const err2 = new Error('Connection refused');
+  err2.message = 'Connection ECONNREFUSED';
+  console.log(BackendErrorLogger.getUserMessage(err2));
+  // Output: "Base de dados indisponível."
+ 
+  const err3 = new Error('Unknown');
+  console.log(BackendErrorLogger.getUserMessage(err3, 'salvar dados'));
+  // Output: "Não foi possível salvar dados. Tente novamente."
+};
+ 
 
 // ──────────────────────────────────────────────────────────────
 // ── STUDENT UPDATE (Dados completos)
@@ -1046,8 +1593,42 @@ const StudentUpdate = async (req, res) => {
       }
     }
 
-    // ── UPDATE principal + pais — tudo em eduall_students ────────
-    const picturePath = req.file ? "images/students/" + req.file.filename : null;
+    // ── VALIDAÇÃO 3: Arquivo (Multer) ────────────────────────────────────────
+    console.log('\n3️⃣  VALIDANDO ARQUIVO...');
+    
+    let picturePath = null;
+    if (req.file) {
+      console.log(`  ✅ Arquivo recebido: ${req.file.filename}`);
+      console.log(`  ✅ Tipo: ${req.file.mimetype}`);
+      console.log(`  ✅ Tamanho: ${(req.file.size / 1024).toFixed(2)}KB`);
+      
+      // Validar tipo de ficheiro (dupla verificação)
+      const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+      if (!allowedMimes.includes(req.file.mimetype)) {
+        console.error('ARQUIVO_TIPO_INVALIDO:', req.file.mimetype);
+        if (req.file) fs.unlink(req.file.path, (err) => {});
+        return res.status(400).json({
+          success: false,
+          msg: 'Tipo de ficheiro inválido. Apenas JPG, PNG, GIF e WebP.',
+        });
+      }
+
+      // Validar tamanho (máx 5MB)
+      const maxSize = 5 * 1024 * 1024;
+      if (req.file.size > maxSize) {
+        console.error('ARQUIVO_TAMANHO_INVALIDO:', req.file.size);
+        if (req.file) fs.unlink(req.file.path, (err) => {});
+        return res.status(400).json({
+          success: false,
+          msg: 'Ficheiro muito grande. Máximo 5MB.',
+        });
+      }
+
+      picturePath = "images/students/" + req.file.filename;
+      console.log(`  ✅ Path final: ${picturePath}`);
+    } else {
+      console.log(`  ⚠️  Nenhuma imagem foi enviada`);
+    }
 
     const updateQuery = `
       UPDATE eduall_students SET
@@ -1382,6 +1963,8 @@ async function getSingleStudentByInstitute(instituteCode, instituteType, ID) {
       [ID, instituteCode],
       true
     );
+
+     
     return results.length > 0 ? results[0] : null;
   } catch (error) {
     console.error("Erro ao buscar aluno:", error);
@@ -2347,5 +2930,7 @@ module.exports = {
   // Módulo de Transferência
   StudentTransferUpdate, GetStudentTransferStatus,
   GetStudentTransferHistory, GetTransferredStudents,
-  GetStudentOldClasses
+  GetStudentOldClasses,
+  // Multer - para usar em routes
+  uploadStd, SanitizeFilename, IsValidEmail, IsValidPhone, IsValidDate, ValidateAge
 };

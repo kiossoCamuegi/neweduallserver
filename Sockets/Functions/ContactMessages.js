@@ -117,7 +117,7 @@ socketIO.on('connection', (socket) => {
                                     border-radius:100%;
                                      margin-right:10px;
                                      margin-top:10px;
-                                    background: #6051ff; 
+                                    background: var(--ed-purple); 
                                 } 
                           
                                 .asignature .social-icons .icon img{
@@ -142,7 +142,7 @@ socketIO.on('connection', (socket) => {
                                       height:2px;
                                       width:100%;
                                       margin:4px 0px;
-                                      background: #6051ff;
+                                      background: var(--ed-purple);
                                 }
                           
                                 .asignature .text-block p{
@@ -150,7 +150,7 @@ socketIO.on('connection', (socket) => {
                                     font-size:11px !important;
                                 }  
                           
-                                          a{color:#6051ff !important;}
+                                          a{color:var(--ed-purple) !important;}
                           
                                         </style>
                                           
@@ -162,7 +162,7 @@ socketIO.on('connection', (socket) => {
                                               width:100%;
                                               max-width:550px;
                                               padding:10px 20px; 
-                                              background:#6051ff;
+                                              background:var(--ed-purple);
                                               color:#ffff;
                                               font-size:12px;
                                               margin-bottom:20px;

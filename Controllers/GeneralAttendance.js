@@ -1404,7 +1404,7 @@ const RFIDFullInfo = async (req, res) => {
         faculty: basic.ed_faculty_id
           ? {
               faculty_id: basic.ed_faculty_id,
-              faculty_name: basic.ed_faculty_name,
+              faculty_name: basic.ed_faculty_title,
               course_id: basic.ed_course_id,
               course_title: basic.ed_course_title,
             }

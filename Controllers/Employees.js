@@ -24,8 +24,7 @@ const ValidateEmployeeFields = (body) => {
   if (body.employee_name && body.employee_name.trim().length < 3)
     errors.push("Nome do funcionário deve ter pelo menos 3 caracteres.");
 
-  if (!body.employee_code || body.employee_code.trim() === "")
-    errors.push("Código do funcionário é obrigatório.");
+  // employee_code é opcional: se não vier, é gerado automaticamente no backend
 
   if (!body.employee_email || body.employee_email.trim() === "")
     errors.push("Email do funcionário é obrigatório.");
@@ -40,6 +39,31 @@ const ValidateEmployeeFields = (body) => {
     errors.push("Cargo/função é obrigatória.");
 
   return errors;
+};
+
+// ─── Gerar código único de funcionário ────────────────────────────────────────
+const GenerateUniqueEmployeeCode = async (req, res, instituteCode) => {
+  let code;
+  let exists = true;
+
+  while (exists) {
+    code = `FUNC${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 900 + 100)}`;
+
+    const checkQuery = `
+      SELECT ed_employee_id FROM eduall_employees
+      WHERE ed_employee_code = ?
+        AND ed_employee_institute_code = ?
+    `;
+    const found = await ExecuteQuery(res, checkQuery, [code, instituteCode], true, {
+      db: "eduall_employees",
+      type: "select",
+      data: req,
+    });
+
+    exists = found && found.length > 0;
+  }
+
+  return code;
 };
 
 // ─── Fetch base (sem cache) ────────────────────────────────────────────────────
@@ -81,6 +105,26 @@ const FetchEmployees = async (res, req, instituteCode) => {
     type: "select",
     data: req,
   });
+};
+
+// ─── Fetch de um único funcionário (com job_title) ────────────────────────────
+const FetchSingleEmployee = async (res, req, id, instituteCode) => {
+  const query = `
+    SELECT
+      e.*,
+      COALESCE(j.ed_job_title, 'Não atribuído') AS job_title
+    FROM eduall_employees e
+    LEFT JOIN eduall_job_titles j
+      ON j.ed_job_title_id = e.ed_employee_charge
+    WHERE e.ed_employee_id = ?
+      AND e.ed_employee_institute_code = ?
+  `;
+  const rows = await ExecuteQuery(res, query, [id, instituteCode], true, {
+    db: "eduall_employees",
+    type: "select",
+    data: req,
+  });
+  return rows && rows[0] ? rows[0] : null;
 };
 
 // ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
@@ -317,6 +361,7 @@ const GetEmployeeDataByUser = async (req, res) => {
 
 /**
  * POST — Registar novo funcionário
+ * Se employee_code não vier no body, é gerado automaticamente e garantido único na BD.
  */
 const RegisterEmployee = async (req, res) => {
   try {
@@ -333,12 +378,12 @@ const RegisterEmployee = async (req, res) => {
       employee_nif,
       employee_email,
       employee_civil_state,
-      employee_code,
       employee_identityCard,
       employee_charge,
       employee_subjects,
       employee_status,
     } = req.body;
+    let employee_code = req.body.employee_code;
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
     // Validações
@@ -366,6 +411,35 @@ const RegisterEmployee = async (req, res) => {
         success: false,
         msg: `Já existe um funcionário com o email "${employee_email.trim()}".`,
       });
+
+    // Se não veio código do frontend, gera um automaticamente (único na BD)
+    if (!employee_code || employee_code.trim() === "") {
+      employee_code = await GenerateUniqueEmployeeCode(req, res, instituteCode);
+      console.log(`🔑 Código gerado automaticamente para novo funcionário: ${employee_code}`);
+    } else {
+      employee_code = employee_code.trim();
+
+      // Se veio um código manual, confirmar que não está em uso
+      const checkCodeQuery = `
+        SELECT ed_employee_id FROM eduall_employees
+        WHERE ed_employee_deleted = 0
+          AND ed_employee_code = ?
+          AND ed_employee_institute_code = ?
+      `;
+      const existingCode = await ExecuteQuery(
+        res,
+        checkCodeQuery,
+        [employee_code, instituteCode],
+        true,
+        { db: "eduall_employees", type: "select", data: req }
+      );
+
+      if (existingCode && existingCode.length > 0)
+        return res.status(409).json({
+          success: false,
+          msg: `Já existe um funcionário com o código "${employee_code}".`,
+        });
+    }
 
     const picturePath = req.file ? "images/employees/" + req.file.filename : "";
 
@@ -406,7 +480,7 @@ const RegisterEmployee = async (req, res) => {
       employee_nif || null,
       employee_email.trim(),
       employee_civil_state || null,
-      employee_code.trim(),
+      employee_code,
       picturePath,
       employee_identityCard || null,
       employee_charge.trim(),
@@ -425,7 +499,7 @@ const RegisterEmployee = async (req, res) => {
       session: req.session,
       action: 1,
       form: "Funcionários",
-      description: `Registrou novo funcionário (${employee_name.trim()}) com código ${employee_code.trim()}`,
+      description: `Registrou novo funcionário (${employee_name.trim()}) com código ${employee_code}`,
     });
 
     console.log(
@@ -433,10 +507,17 @@ const RegisterEmployee = async (req, res) => {
     );
     await RefreshEmployeeCache(res, req, instituteCode);
 
+    // Buscar o registo completo recém-criado (com job_title incluído)
+    const insertedId = rows && rows.insertId ? rows.insertId : null;
+    const fullEmployee = insertedId
+      ? await FetchSingleEmployee(res, req, insertedId, instituteCode)
+      : null;
+
     res.status(201).json({
       success: true,
       message: "Funcionário registado com sucesso!",
-      data: rows,
+      data: fullEmployee || rows,
+      employee_code, // devolve o código (gerado ou fornecido) ao frontend
     });
   } catch (error) {
     res.status(500).json({
@@ -451,6 +532,9 @@ const RegisterEmployee = async (req, res) => {
 
 /**
  * PUT — Atualizar funcionário
+ * O employee_code NUNCA é alterado aqui: mantém-se sempre o valor já existente na BD.
+ * A resposta devolve o registo completo e atualizado (fullEmployee), incluindo o
+ * código original e o job_title, mesmo que o frontend só tenha enviado alguns campos.
  */
 const EmployeeUpdate = async (req, res) => {
   try {
@@ -480,9 +564,9 @@ const EmployeeUpdate = async (req, res) => {
     if (errors.length > 0)
       return res.status(422).json({ success: false, msg: errors.join(" "), errors });
 
-    // Confirmar que o funcionário existe
+    // Confirmar que o funcionário existe (e obter o código atual, que será mantido)
     const checkExistQuery = `
-      SELECT ed_employee_id FROM eduall_employees
+      SELECT ed_employee_id, ed_employee_code FROM eduall_employees
       WHERE ed_employee_deleted = 0
         AND ed_employee_id = ?
         AND ed_employee_institute_code = ?
@@ -532,6 +616,8 @@ const EmployeeUpdate = async (req, res) => {
       pictureParams.push(picturePath);
     }
 
+    // NOTA: ed_employee_code propositadamente NÃO faz parte deste UPDATE,
+    // pelo que o código já existente na BD é sempre mantido.
     const query = `
       UPDATE eduall_employees SET
         ed_employee_name = ?,
@@ -578,7 +664,7 @@ const EmployeeUpdate = async (req, res) => {
       instituteCode,
     ];
 
-    const rows = await ExecuteQuery(res, query, PARAMS, false, {
+    await ExecuteQuery(res, query, PARAMS, false, {
       db: "eduall_employees",
       type: "update",
       data: req,
@@ -594,10 +680,13 @@ const EmployeeUpdate = async (req, res) => {
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> EmployeeUpdate: funcionário ${ID} atualizado`);
     await RefreshEmployeeCache(res, req, instituteCode);
 
+    // Buscar o registo completo e atualizado (código mantido, job_title incluído)
+    const fullEmployee = await FetchSingleEmployee(res, req, ID, instituteCode);
+
     res.status(200).json({
       success: true,
       message: "Funcionário atualizado com sucesso!",
-      data: rows,
+      data: fullEmployee,
     });
   } catch (error) {
     res.status(500).json({

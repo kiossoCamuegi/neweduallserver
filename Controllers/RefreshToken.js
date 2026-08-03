@@ -12,7 +12,7 @@
  *   essa app é DEDICADA e tem prioridade sobre o dashboard access
  * - Se não tem app_type dedicada, segue lógica normal (dashboard > app > denied)
  */
-
+ 
 const jwt  = require("jsonwebtoken");
 const CalculateRemainingDays = require("../config/CalculateRemainingDays");
 const ExecuteQuery           = require("../Functions/ExecuteQuery");
@@ -197,6 +197,7 @@ const RefreshToken = async (req, res) => {
         cr_username:       row.ed_user_account_name,
         cr_useremail:      row.ed_user_account_email,
         cr_usertype:       0,
+        userapp:row.ed_system_account_app_type,
       });
 
       const LicenceData = { ...pair, remaining };

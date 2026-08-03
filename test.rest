@@ -6,8 +6,14 @@
 @auth = Basic c8029d1e9e6d01b312e09aad711310ad:
 
  
-GET https://www.vendus.co.ao/ws/v1.1/registers
-Authorization: @auth
+POST  http://172.18.20.7:4000/api/library
+content-type: application/json
+
+{
+    "numeroEstudante":252553,
+    "senha": "1234",
+    "tipoUtilizador":3
+}
 
  
 ###

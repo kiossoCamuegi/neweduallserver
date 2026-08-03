@@ -13,7 +13,8 @@ const { GetSingleStudent, GetSingleStudentByCode,GetStudents, GetStudentsByClass
     GetStudentTransferStatus,
     GetStudentTransferHistory,
     GetTransferredStudents,
-    GetStudentOldClasses} = require("../Controllers/Students");
+    GetStudentOldClasses,
+    uploadStd} = require("../Controllers/Students");
 const { CheckExistentEmail, getSingleUserData, GetUserAccounAccess, getUsers, Login, RegisterUserAccounAccess,
    RegisterUserAccount, uploadUserAccountPicture, UserAccountDelete, UpdateUserAccount, getSingleUserImageData,
     CheckUserAccountVerificationCode, UserPasswordReset, UpdateUserPassword, getCurrentUserInformation, UPDATEProfilePicture,
@@ -531,18 +532,7 @@ router.get('/eduallstudentenrollments/get', VerifyToken , GetEnrolledStudents);
 router.get('/eduallgetsingleenrolledstudent/get/:ID', VerifyToken,  GetSingleEnrolledStudent);
 router.get('/eduallgetsingleenrolledstudentbycode/get/:CODE', VerifyToken,  GetSingleEnrolledStudentByCode);
 
-// Rotas POST, PUT, DELETE estudantes (sem cache)
-router.post('/eduallstudentregisterapi/post', VerifyToken, uploadStudentPicture, RegisterStudent);
-router.post("/eduallstudentduplicate/duplicate/:id", VerifyToken, DuplicateStudent);
-router.put('/eduallstudentdelete/delete/:ID', VerifyToken, StudentDelete);
-router.put('/eduallstudentupdate/update/:ID', VerifyToken, uploadStudentPicture, StudentUpdate);
-router.put('/eduallstudentupdateclass/update/:ID', VerifyToken, StudentUpdateClass);
-router.put('/eduallstudentenrollmentupdate/update/:ID', VerifyToken, EnrolledStudentUpdate);
-router.put('/eduallstudentenrollmentconfirmationupdate/update/:ID', VerifyToken, EnrollmentConfirmationUpdate);
-router.post('/eduallregisterstudentenrollmentconfirmation/post', VerifyToken, RegisterEnrollmentConfirmation);
-router.put('/eduallenronllmentconfirmationdelete/delete/:ID', VerifyToken, EnrollmentConfirmationDelete);
-router.post('/eduallstudentenrollmentregister/post', VerifyToken, RegisterEnrollment);
-router.put('/eduallenrollmentconfirmationcancel/delete/:ID', VerifyToken, EnrolledStudentDelete);
+ 
 
 
 // ========== declarações ==========
@@ -985,16 +975,8 @@ router.post('/edualllibrarycategoryregister/post/', VerifyToken, RegisterBookCat
 router.get("/eduallsinglelibrarycategory/get/:ID", VerifyToken,  GetSingleBookCategory);
 router.put("/edualllibrarycategorydelete/delete/:ID", VerifyToken, BookCategoryDelete);
 router.put("/edualllibrarycategoryupdate/update/:ID", VerifyToken, BookCategoryUpdate);
-
-// --- ESTANTES ---
-router.get('/api/edualllibraryracks/get', VerifyToken, GetRacks);
-router.post('/api/edualllibraryrackregister/post', VerifyToken, RegisterRack);
-router.get('/api/eduallsinglelibraryrack/get/:ID ', VerifyToken, GetSingleRack);
-router.get("/api/edualllibraryrackupdate/update/:ID", VerifyToken,  RackUpdate);
-router.put("/api/edualllibraryrackdelete/delete/:ID", VerifyToken, RackDelete);
-router.put("/api/edualllibraryracksreorder/update", VerifyToken, ReorderRacks);
-router.put("/api/edualllibraryrackmove/update/:ID", VerifyToken, MoveRack);
-
+ 
+ 
   
 
 // --- COLEÇÕES DE LIVROS ---
@@ -1192,6 +1174,9 @@ const { initFineCron, GetFineRules, CreateFineRule, UpdateFineRule, ToggleFineRu
 const { RegisterAppManager, GetLibraryAccess, UpdateLibraryAccountType, GetLibraryUsers, EduallResetLibraryReaderPassword, EduallResetLibraryReaderPasswordByEmail } = require("../Controllers/AppManager");
 const { GetAllBulletinHistory, GetBulletinHistoryById, RegisterBulletinHistory, UpdateBulletinHistory, DeleteBulletinHistory } = require("../Controllers/BulletinHistoryController");
 const { GetRacks, GetSingleRack, RegisterRack, RackUpdate, RackDelete, ReorderRacks, MoveRack } = require("../Controllers/Racks");
+const { GetBookcases, RegisterBookcase, GetSingleBookcase, BookcaseUpdate, BookcaseDelete, ReorderBookcases } = require("../Controllers/Shelves");
+
+
 const upload = multer({ storage: multer.memoryStorage() });
 router.post("/edualllessoncontent/files/register", VerifyToken,  upload.array("files"),  RegisterLessonFiles);
 router.put("/edualllessoncontent/update/:ID", VerifyToken,  upload.fields([
@@ -1989,8 +1974,43 @@ router.get("/vd", async(req, res) => {
  
 
 
+// --- PRATELEIRAS ---
+router.get('/api/edualllibraryracks/get', VerifyToken, GetRacks);
+router.post('/api/edualllibraryrackregister/post', VerifyToken, RegisterRack);
+router.get('/api/eduallsinglelibraryrack/get/:ID ', VerifyToken, GetSingleRack);
+router.put("/api/edualllibraryrackupdate/update/:ID", VerifyToken,  RackUpdate);
+router.put("/api/edualllibraryrackdelete/delete/:ID", VerifyToken, RackDelete);
+router.put("/api/edualllibraryracksreorder/update", VerifyToken, ReorderRacks);
+router.put("/api/edualllibraryrackmove/update/:ID", VerifyToken, MoveRack);
+
+
+// --- ESTANTES ---
+router.get('/api/edualllibrarybookcases/get', VerifyToken, GetBookcases);
+router.post('/api/edualllibrarybookcaseregister/post',VerifyToken,RegisterBookcase);
+router.get('/api/eduallsinglelibrarybookcase/get/:ID', VerifyToken, GetSingleBookcase);
+router.put('/api/edualllibrarybookcaseupdate/update/:ID',VerifyToken,BookcaseUpdate);
+router.put('/api/edualllibrarybookcasedelete/delete/:ID',VerifyToken,BookcaseDelete);
+router.put('/api/edualllibrarybookcasesreorder/update',VerifyToken, ReorderBookcases);
+
+
+router.put("/api/edualllibrarybookmove/update/:ID", VerifyToken, MoveBook);
+router.put("/api/edualllibrarybooksreorder/update", VerifyToken, ReorderBooks);
+
+
+// Rotas POST, PUT, DELETE estudantes (sem cache)
+router.post('/eduallstudentregisterapi/post', VerifyToken,uploadStd.single('student_picture'), RegisterStudent);
+router.put('/eduallstudentupdate/update/:ID', VerifyToken,  uploadStd.single('student_picture'), StudentUpdate);
  
 
+router.post("/eduallstudentduplicate/duplicate/:id", VerifyToken, DuplicateStudent);
+router.put('/eduallstudentdelete/delete/:ID', VerifyToken, StudentDelete); 
+router.put('/eduallstudentupdateclass/update/:ID', VerifyToken, StudentUpdateClass);
+router.put('/eduallstudentenrollmentupdate/update/:ID', VerifyToken, EnrolledStudentUpdate);
+router.put('/eduallstudentenrollmentconfirmationupdate/update/:ID', VerifyToken, EnrollmentConfirmationUpdate);
+router.post('/eduallregisterstudentenrollmentconfirmation/post', VerifyToken, RegisterEnrollmentConfirmation);
+router.put('/eduallenronllmentconfirmationdelete/delete/:ID', VerifyToken, EnrollmentConfirmationDelete);
+router.post('/eduallstudentenrollmentregister/post', VerifyToken, RegisterEnrollment);
+router.put('/eduallenrollmentconfirmationcancel/delete/:ID', VerifyToken, EnrolledStudentDelete);
 
 // ── ROTAS DE FATURAÇÃO ──────────────────────────────────────────────────────
  
