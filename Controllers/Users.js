@@ -1255,7 +1255,7 @@ const GoogleAuth = async (req, res) => {
 
   } catch (err) {
     console.error("[GoogleAuth]", err.message);
-    return res.status(500).json({ msg: "Erro no servidor.", errorCode: "SERVER_ERROR" });
+    return res.status(500).json({ msg: "Lamentamos mas não foi possivel executar está operação .", errorCode: "SERVER_ERROR" });
   }
 };
 

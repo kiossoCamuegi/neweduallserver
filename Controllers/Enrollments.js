@@ -180,7 +180,7 @@ const GetSingleEnrolledStudentByCode = async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── REGISTER ENROLLMENT
 // ═══════════════════════════════════════════════════════════════════════════════
-
+ 
 const RegisterEnrollment = async (req, res) => {
   // ============================================================
   // Cores ANSI (sem dependências externas)
@@ -202,63 +202,137 @@ const RegisterEnrollment = async (req, res) => {
     bgRed:   "\x1b[41m\x1b[37m",
   };
 
-  // Imprime um "cartão" colorido no console com os dados da matrícula de um aluno
-  function printEnrollmentCard({ student, enrollment, service, newClass, oldClass, docsCount, classChanged }) {
-    const idOk = !!enrollment?.ed_enrollment_id;
-
-    const statusTag = idOk
-      ? `${C.bgGreen} ✔ MATRÍCULA CONFIRMADA ${C.reset}`
-      : `${C.bgRed} ✖ FALHA AO CONFIRMAR ${C.reset}`;
-
-    console.log(`\n${C.cyan}┌───────────────────────────────────────────────────────────┐${C.reset}`);
-    console.log(`${C.cyan}│${C.reset} ${C.bold}${C.white}👤 ${student.ed_student_name}${C.reset}`);
-    console.log(`${C.cyan}│${C.reset} ${C.dim}Código:${C.reset} ${C.yellow}${student.ed_student_id}${C.reset}   ${statusTag}`);
-    console.log(`${C.cyan}├───────────────────────────────────────────────────────────┤${C.reset}`);
-    console.log(
-      `${C.cyan}│${C.reset} ${C.magenta}🏫 Turma:${C.reset} ${
-        classChanged
-          ? `${C.dim}${oldClass ?? "—"}${C.reset} ${C.blue}→${C.reset} ${C.green}${newClass}${C.reset}`
-          : `${C.green}${newClass}${C.reset} ${C.dim}(sem alteração)${C.reset}`
-      }`
-    );
-    console.log(`${C.cyan}│${C.reset} ${C.magenta}📄 Serviço:${C.reset} ${C.white}${service}${C.reset}`);
-    console.log(
-      `${C.cyan}│${C.reset} ${C.magenta}🆔 ID Matrícula:${C.reset} ${
-        idOk ? C.green + enrollment.ed_enrollment_id + C.reset : C.red + "N/D" + C.reset
-      }`
-    );
-    console.log(`${C.cyan}│${C.reset} ${C.magenta}📎 Documentos anexados:${C.reset} ${C.white}${docsCount}${C.reset}`);
-    console.log(`${C.cyan}└───────────────────────────────────────────────────────────┘${C.reset}`);
-  }
-
-  // Imprime o resumo geral no final
-  function printSummaryBanner({ total, confirmed, failed, alreadyEnrolledCount }) {
-    const allOk = failed === 0;
-    console.log(`\n${allOk ? C.green : C.red}${C.bold}═══════════════════════════════════════════════════════════${C.reset}`);
-    console.log(`${C.bold}${allOk ? C.green + "✔ RESUMO DA OPERAÇÃO" : C.red + "⚠ RESUMO DA OPERAÇÃO (COM FALHAS)"}${C.reset}`);
-    console.log(`${C.dim}───────────────────────────────────────────────────────────${C.reset}`);
-    console.log(`  ${C.white}Total processado:${C.reset}      ${total}`);
-    console.log(`  ${C.green}Matrículas confirmadas:${C.reset} ${confirmed}`);
-    if (failed > 0) console.log(`  ${C.red}Falhas na confirmação:${C.reset}   ${failed}`);
-    if (alreadyEnrolledCount > 0)
-      console.log(`  ${C.yellow}Já matriculados (ignorados):${C.reset} ${alreadyEnrolledCount}`);
-    console.log(`${allOk ? C.green : C.red}${C.bold}═══════════════════════════════════════════════════════════${C.reset}\n`);
-  }
-
   // ============================================================
-  // Lógica principal
+  // LÓGICA PRINCIPAL
   // ============================================================
   try {
-    const students  = req.body.enrollment_students || [req.body.enrollment_student];
-    const service   = req.body.enrollment_service;
-    const newClass  = req.body.enrollment_class;
-    const institute = req.session.user.eduall_user_session_curentinstitute;
-    const docsPayload = Array.isArray(req.body.enrollment_docs) ? req.body.enrollment_docs : [];
+    // ─────────────────────────────────────────────────────────
+    // 0. LOG DO PAYLOAD RECEBIDO (DEBUGGING)
+    // ─────────────────────────────────────────────────────────
+    console.log(`\n${C.cyan}${C.bold}📥 RECEBIDO PAYLOAD DE MATRÍCULA${C.reset}`);
+    console.log(`${C.dim}${JSON.stringify(req.body, null, 2)}${C.reset}\n`);
 
-    if (!students || students.length === 0)
-      return res.status(400).json({ success: false, msg: "Nenhum estudante selecionado!" });
+    // ─────────────────────────────────────────────────────────
+    // 1. EXTRAIR E NORMALIZAR PAYLOAD (ADAPTÁVEL AO FRONTEND)
+    // ─────────────────────────────────────────────────────────
+    
+    // Aceita: enrollment_students (array) OU enrollment_student (single)
+    let students = req.body.enrollment_students || req.body.enrollment_student;
+    if (!Array.isArray(students)) {
+      students = [students];
+    }
+    students = students.filter(s => s); // Remove valores vazios
+    
+    const service     = req.body.enrollment_service;
+    const newClass    = req.body.enrollment_class;
+    const institute   = req.session?.user?.eduall_user_session_curentinstitute;
+    
+    // Normalizar documentos - aceita vir sem fileName, com ou sem student_id
+    let docsPayload = Array.isArray(req.body.enrollment_docs) ? req.body.enrollment_docs : [];
+    docsPayload = docsPayload.map(doc => ({
+      name: doc.name,
+      status: doc.status ?? 0,
+      file: doc.file || null,
+      fileName: doc.fileName || null,  // Pode não vir do frontend
+      // Ignora student_id se vier - não é usado aqui
+    }));
 
-    // Buscar estudantes
+    // Validar campos obrigatórios
+    if (!institute) {
+      console.error(`${C.bgRed} ✖ ERRO ${C.reset} Instituto não encontrado na sessão`);
+      return res.status(401).json({ 
+        success: false, 
+        msg: "Sessão inválida: instituto não identificado!",
+        code: "MISSING_INSTITUTE" 
+      });
+    }
+
+    if (!students || students.length === 0) {
+      console.error(`${C.bgRed} ✖ ERRO ${C.reset} Nenhum estudante fornecido`);
+      return res.status(400).json({ 
+        success: false, 
+        msg: "Nenhum estudante selecionado!",
+        code: "NO_STUDENTS" 
+      });
+    }
+
+    if (!service) {
+      console.error(`${C.bgRed} ✖ ERRO ${C.reset} Serviço não fornecido`);
+      return res.status(400).json({ 
+        success: false, 
+        msg: "Serviço inválido!",
+        code: "NO_SERVICE" 
+      });
+    }
+
+    if (!newClass) {
+      console.error(`${C.bgRed} ✖ ERRO ${C.reset} Turma não fornecida`);
+      return res.status(400).json({ 
+        success: false, 
+        msg: "Turma inválida!",
+        code: "NO_CLASS" 
+      });
+    }
+
+    console.log(`${C.green}✓${C.reset} Payload validado`);
+    console.log(`  ${C.white}Instituto:${C.reset} ${institute}`);
+    console.log(`  ${C.white}Estudantes:${C.reset} ${students.length}`);
+    console.log(`  ${C.white}Serviço:${C.reset} ${service}`);
+    console.log(`  ${C.white}Turma:${C.reset} ${newClass}`);
+    console.log(`  ${C.white}Documentos:${C.reset} ${docsPayload.length}\n`);
+
+    // ─────────────────────────────────────────────────────────
+    // 2. VALIDAR QUE TURMA EXISTE E PERTENCE AO INSTITUTO
+    // ─────────────────────────────────────────────────────────
+    console.log(`${C.yellow}🔍 Validando turma...${C.reset}`);
+    const classExists = await ExecuteQuery(
+      res,
+      `SELECT ed_class_id, ed_class_title, ed_class_year
+       FROM eduall_class
+       WHERE ed_class_id = ? AND ed_class_institute_code = ?`,
+      [newClass, institute],
+      true,
+      { db: "eduall_class", type: "select", data: req }
+    );
+
+    if (!classExists || classExists.length === 0) {
+      console.error(`${C.bgRed} ✖ ERRO ${C.reset} Turma ${newClass} não encontrada para o instituto ${institute}`);
+      return res.status(404).json({ 
+        success: false, 
+        msg: "Turma selecionada não existe ou não pertence ao seu instituto!",
+        code: "INVALID_CLASS" 
+      });
+    }
+    console.log(`${C.green}✓${C.reset} Turma validada: ${classExists[0].ed_class_title}\n`);
+
+    // ─────────────────────────────────────────────────────────
+    // 3. VALIDAR QUE SERVIÇO EXISTE E PERTENCE AO INSTITUTO
+    // ─────────────────────────────────────────────────────────
+    console.log(`${C.yellow}🔍 Validando serviço...${C.reset}`);
+    const serviceExists = await ExecuteQuery(
+      res,
+      `SELECT ed_service_id, ed_service_title
+       FROM eduall_services
+       WHERE ed_service_id = ? AND ed_service_institute_code = ?`,
+      [service, institute],
+      true,
+      { db: "eduall_services", type: "select", data: req }
+    );
+
+    if (!serviceExists || serviceExists.length === 0) {
+      console.error(`${C.bgRed} ✖ ERRO ${C.reset} Serviço ${service} não encontrado para o instituto ${institute}`);
+      return res.status(404).json({ 
+        success: false, 
+        msg: "Serviço selecionado não existe ou não pertence ao seu instituto!",
+        code: "INVALID_SERVICE" 
+      });
+    }
+    console.log(`${C.green}✓${C.reset} Serviço validado: ${serviceExists[0].ed_service_name}\n`);
+
+    // ─────────────────────────────────────────────────────────
+    // 4. BUSCAR ESTUDANTES
+    // ─────────────────────────────────────────────────────────
+    console.log(`${C.yellow}🔍 Buscando estudantes...${C.reset}`);
     const studentRows = await ExecuteQuery(
       res,
       `SELECT ed_student_id, ed_student_code, ed_student_name, ed_student_class
@@ -271,10 +345,20 @@ const RegisterEnrollment = async (req, res) => {
       { db: "eduall_students", type: "select", data: req }
     );
 
-    if (!studentRows || studentRows.length === 0)
-      return res.status(404).json({ success: false, msg: "Nenhum estudante encontrado!" });
+    if (!studentRows || studentRows.length === 0) {
+      console.error(`${C.bgRed} ✖ ERRO ${C.reset} Nenhum estudante encontrado`);
+      return res.status(404).json({ 
+        success: false, 
+        msg: "Nenhum estudante encontrado no seu instituto!",
+        code: "NO_STUDENTS_FOUND" 
+      });
+    }
+    console.log(`${C.green}✓${C.reset} Encontrados ${studentRows.length} estudante(s)\n`);
 
-    // Verificar já matriculados
+    // ─────────────────────────────────────────────────────────
+    // 5. VERIFICAR JÁ MATRICULADOS
+    // ─────────────────────────────────────────────────────────
+    console.log(`${C.yellow}🔍 Verificando matrículas existentes...${C.reset}`);
     const existing = await ExecuteQuery(
       res,
       `SELECT ed_enrollment_student FROM eduall_enrollment
@@ -290,146 +374,228 @@ const RegisterEnrollment = async (req, res) => {
     const toEnroll        = studentRows.filter(s => !alreadyEnrolledIds.has(s.ed_student_id));
     const alreadyEnrolled = studentRows.filter(s =>  alreadyEnrolledIds.has(s.ed_student_id));
 
-    if (toEnroll.length === 0)
+    if (toEnroll.length === 0) {
+      console.warn(`${C.yellow}⚠ AVISO ${C.reset} Os ${alreadyEnrolled.length} estudante(s) já estão matriculados`);
       return res.status(200).json({
         success: false,
         msg: `Os ${alreadyEnrolled.length} estudante(s) selecionados já estão matriculados!`,
+        code: "ALL_ALREADY_ENROLLED",
+        alreadyEnrolledCount: alreadyEnrolled.length,
       });
+    }
 
-    // Ano lectivo da nova turma
-    const newClassYear = await ExecuteQuery(
-      res,
-      `SELECT ed_class_year FROM eduall_class WHERE ed_class_id = ?`,
-      [newClass]
-    );
+    if (alreadyEnrolled.length > 0) {
+      console.warn(`${C.yellow}⚠ ${alreadyEnrolled.length} já estavam matriculados${C.reset}`);
+    }
+    console.log(`${C.green}✓${C.reset} Prontos para matricular: ${toEnroll.length} estudante(s)\n`);
 
-    // Inserir matrículas
-    const valuesPlaceholders = toEnroll.map(() => "(?, ?, ?)").join(",");
+    // ─────────────────────────────────────────────────────────
+    // 6. INSERIR MATRÍCULAS NA TABELA eduall_enrollment
+    // Colunas: ed_enrollment_student, ed_enrollment_service, ed_enrollment_class, ed_enrollment_institute_code
+    // Nota: ed_enrollment_id é auto_increment
+    //       ed_enrollment_registerDate tem default current_timestamp
+    //       ed_enrollment_deleted tem default 0
+    // ─────────────────────────────────────────────────────────
+    console.log(`${C.magenta}➕ Inserindo matrículas...${C.reset}`);
+    const valuesPlaceholders = toEnroll.map(() => "(?, ?, ?, ?)").join(",");
     const insertParams = [];
-    toEnroll.forEach(s => insertParams.push(s.ed_student_id, service, institute));
+    toEnroll.forEach(s => insertParams.push(s.ed_student_id, service, newClass, institute));
 
-    await ExecuteQuery(
+    const insertResult = await ExecuteQuery(
       res,
-      `INSERT INTO eduall_enrollment(ed_enrollment_student, ed_enrollment_service, ed_enrollment_institute_code)
+      `INSERT INTO eduall_enrollment(ed_enrollment_student, ed_enrollment_service, ed_enrollment_class, ed_enrollment_institute_code)
        VALUES ${valuesPlaceholders}`,
       insertParams,
       false,
       { db: "eduall_enrollment", type: "insert", data: req }
     );
 
-    // Buscar IDs das matrículas recém-criadas para associar documentos
-    // *** Esta consulta é também a nossa GARANTIA de que a matrícula foi realmente gravada ***
+    console.log(`${C.green}✓${C.reset} Matrículas inseridas na base de dados\n`);
+
+    // ─────────────────────────────────────────────────────────
+    // 7. RECUPERAR IDS DAS MATRÍCULAS CRIADAS (GARANTIA DE INTEGRIDADE)
+    // ─────────────────────────────────────────────────────────
+    console.log(`${C.yellow}🔍 Recuperando IDs das matrículas criadas...${C.reset}`);
     const insertedEnrollments = await ExecuteQuery(
       res,
       `SELECT ed_enrollment_id, ed_enrollment_student FROM eduall_enrollment
        WHERE ed_enrollment_deleted = 0
          AND ed_enrollment_institute_code = ?
          AND ed_enrollment_student IN (${toEnroll.map(() => "?").join(",")})
-       ORDER BY ed_enrollment_id DESC`,
-      [institute, ...toEnroll.map(s => s.ed_student_id)],
+       ORDER BY ed_enrollment_id DESC
+       LIMIT ?`,
+      [institute, ...toEnroll.map(s => s.ed_student_id), toEnroll.length],
       true,
       { db: "eduall_enrollment", type: "select", data: req }
     );
 
-    // ------------------------------------------------------------
-    // VERIFICAÇÃO DE INTEGRIDADE: cada aluno de toEnroll TEM de ter
-    // uma matrícula correspondente em insertedEnrollments.
-    // ------------------------------------------------------------
+    if (!insertedEnrollments || insertedEnrollments.length === 0) {
+      console.error(`${C.bgRed} ✖ ERRO ${C.reset} Falha ao recuperar IDs das matrículas (dados não foram gravados)`);
+      return res.status(500).json({
+        success: false,
+        msg: "Erro: as matrículas não foram confirmadas na base de dados!",
+        code: "ENROLLMENT_NOT_CONFIRMED",
+      });
+    }
+
+    console.log(`${C.green}✓${C.reset} Recuperados ${insertedEnrollments.length} ID(s) de matrícula\n`);
+
+    // ─────────────────────────────────────────────────────────
+    // 8. VERIFICAÇÃO DE INTEGRIDADE
+    // ─────────────────────────────────────────────────────────
     const missingEnrollments = toEnroll.filter(
       s => !insertedEnrollments.some(e => e.ed_enrollment_student == s.ed_student_id)
     );
 
     if (missingEnrollments.length > 0) {
-      console.log(
-        `${C.bgRed} ⚠ ATENÇÃO ${C.reset} ${C.red}${missingEnrollments.length} aluno(s) NÃO tiveram a matrícula confirmada na base de dados:${C.reset}`
+      console.error(
+        `\n${C.bgRed} ⚠ FALHA DE INTEGRIDADE ${C.reset} ${C.red}${missingEnrollments.length} aluno(s) NÃO confirmado(s) na BD:${C.reset}`
       );
       missingEnrollments.forEach(s =>
-        console.log(`   ${C.red}✖ ${s.ed_student_name} (cod: ${s.ed_student_id})${C.reset}`)
+        console.error(`   ${C.red}✖ ${s.ed_student_name} (código: ${s.ed_student_code}, ID: ${s.ed_student_id})${C.reset}`)
       );
     }
 
-    // Processar turmas dos estudantes
+    // ─────────────────────────────────────────────────────────
+    // 9. PROCESSAR TURMAS E DOCUMENTOS
+    // ─────────────────────────────────────────────────────────
+    console.log(`\n${C.magenta}🔄 Processando turmas e documentos...${C.reset}`);
+
     const cardData = [];
 
     for (const student of toEnroll) {
       const oldClass = student.ed_student_class;
       let classChanged = false;
 
+      // Atualizar turma do estudante (apenas se mudou de turma)
       if (oldClass && oldClass != newClass) {
         classChanged = true;
+
+        // Buscar ano lectivo da turma antiga
         const oldClassYear = await ExecuteQuery(
           res,
           `SELECT ed_class_year FROM eduall_class WHERE ed_class_id = ?`,
-          [oldClass]
+          [oldClass],
+          true
         );
+
+        // Buscar ano lectivo da turma nova
+        const newClassYear = await ExecuteQuery(
+          res,
+          `SELECT ed_class_year FROM eduall_class WHERE ed_class_id = ?`,
+          [newClass],
+          true
+        );
+
+        // Se anos lectivos são diferentes, registar na tabela de turmas antigas
         if (
-          oldClassYear.length &&
-          newClassYear.length &&
+          oldClassYear && oldClassYear.length > 0 &&
+          newClassYear && newClassYear.length > 0 &&
           oldClassYear[0].ed_class_year !== newClassYear[0].ed_class_year
         ) {
           await ExecuteQuery(
             res,
-            `INSERT INTO eduall_student_old_classes(ed_student_old_class_student, ed_student_old_class) VALUES (?, ?)`,
-            [student.ed_student_id, oldClass]
+            `INSERT INTO eduall_student_old_classes(ed_student_old_class_student, ed_student_old_class) 
+             VALUES (?, ?)`,
+            [student.ed_student_id, oldClass],
+            false
           );
         }
       }
 
-      await ExecuteQuery(
-        res,
-        `UPDATE eduall_students SET ed_student_class = ? WHERE ed_student_id = ?`,
-        [newClass, student.ed_student_id]
-      );
+      // Atualizar turma actual do estudante (se mudou)
+      if (oldClass != newClass) {
+        await ExecuteQuery(
+          res,
+          `UPDATE eduall_students SET ed_student_class = ? WHERE ed_student_id = ?`,
+          [newClass, student.ed_student_id],
+          false
+        );
+      }
 
+      // Encontrar matrícula criada
       const enrollment = insertedEnrollments.find(
         e => e.ed_enrollment_student == student.ed_student_id
       );
 
-      // Inserir documentos para cada matrícula criada (se existirem no payload)
+      // ────────────────────────────────────────────────────────
+      // INSERIR DOCUMENTOS (se existirem e matrícula foi criada)
+      // Tabela: eduall_enrollment_docs (você pode ter um nome diferente)
+      // Coluna FK: ed_enrollment_docs_enrollment ou similar
+      // ────────────────────────────────────────────────────────
       if (docsPayload.length > 0 && enrollment) {
+        console.log(`   📎 Anexando ${docsPayload.length} documento(s) ao aluno ${student.ed_student_name}...`);
+
         for (const doc of docsPayload) {
-          await ExecuteQuery(
-            res,
-            `INSERT INTO eduall_enrollment_docs
-             (ed_enroll_doc_enrollment, ed_enroll_doc_name, ed_enroll_doc_status,
-              ed_enroll_doc_file, ed_enroll_doc_file_name, ed_enroll_doc_institute)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [
-              enrollment.ed_enrollment_id,
-              doc.name   || "Documento",
-              doc.status ?? 0,
-              doc.file   || null,
-              doc.fileName || null,
-              institute,
-            ]
-          );
+          // Validar documento - o nome é obrigatório
+          if (!doc.name || typeof doc.name !== 'string' || doc.name.trim() === '') {
+            console.warn(`   ${C.yellow}⚠${C.reset} Documento sem nome válido, pulando...`);
+            continue;
+          }
+
+          try {
+            // Backend adapta-se ao payload do frontend
+            // Aceita que fileName pode não vir
+            // Ignora student_id se vier (não é usado aqui)
+            const docName = doc.name.trim() || "Documento";
+            const docStatus = doc.status !== undefined ? Number(doc.status) : 0;
+            const docFile = doc.file || null;
+            const docFileName = doc.fileName || null;  // Frontend pode não enviar
+            
+            // NOTA: Ajuste o nome da tabela e colunas se necessário!
+            // A estrutura esperada é: tabela com FK para enrollment e campos de documento
+            await ExecuteQuery(
+              res,
+              `INSERT INTO eduall_enrollment_docs
+               (ed_enrollment_docs_enrollment, ed_enrollment_docs_name, ed_enrollment_docs_status,
+                ed_enrollment_docs_file, ed_enrollment_docs_file_name, ed_enrollment_docs_institute)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+              [
+                enrollment.ed_enrollment_id,
+                docName,
+                docStatus,
+                docFile,
+                docFileName,  // Pode ser null, BD aceita
+                institute,
+              ],
+              false
+            );
+          } catch (docErr) {
+            console.error(`   ${C.red}✖ Erro ao anexar documento "${doc.name}":${C.reset} ${docErr.message}`);
+          }
         }
       }
 
       cardData.push({
         student,
         enrollment,
-        service,
-        newClass,
+        service: serviceExists[0].ed_service_name,
+        newClass: classExists[0].ed_class_title,
         oldClass,
         docsCount: enrollment ? docsPayload.length : 0,
         classChanged,
       });
     }
 
-    // ------------------------------------------------------------
-    // Console colorido, um cartão por aluno
-    // ------------------------------------------------------------
-    cardData.forEach(printEnrollmentCard);
+    console.log(`${C.green}✓${C.reset} Turmas e documentos processados\n`);
 
-    printSummaryBanner({
-      total: toEnroll.length,
-      confirmed: toEnroll.length - missingEnrollments.length,
-      failed: missingEnrollments.length,
-      alreadyEnrolledCount: alreadyEnrolled.length,
-    });
+    // ─────────────────────────────────────────────────────────
+    // 10. IMPRIMIR RESUMO (CARTÕES)
+    // ─────────────────────────────────────────────────────────
+    printEnrollmentCards(cardData, C);
+    printSummaryBanner(
+      {
+        total: toEnroll.length,
+        confirmed: toEnroll.length - missingEnrollments.length,
+        failed: missingEnrollments.length,
+        alreadyEnrolledCount: alreadyEnrolled.length,
+      },
+      C
+    );
 
-    // Auditoria
+    // ─────────────────────────────────────────────────────────
+    // 11. AUDITORIA
+    // ─────────────────────────────────────────────────────────
     Promise.all(
       toEnroll.map(student =>
         RegisterAuditAction({
@@ -441,13 +607,19 @@ const RegisterEnrollment = async (req, res) => {
       )
     ).catch(err => console.error("Erro ao registar auditoria:", err));
 
+    // ─────────────────────────────────────────────────────────
+    // 12. ATUALIZAR CACHE
+    // ─────────────────────────────────────────────────────────
     await RefreshEnrollmentCache(req, res, institute);
 
-    // Se houve falhas de confirmação, devolvemos isso na resposta também
+    // ─────────────────────────────────────────────────────────
+    // 13. RESPONDER AO CLIENTE
+    // ─────────────────────────────────────────────────────────
     if (missingEnrollments.length > 0) {
       return res.status(207).json({
         success: true,
-        msg: `Matrícula processada, mas ${missingEnrollments.length} aluno(s) não foram confirmados na base de dados. Verifique os logs.`,
+        msg: `Matrícula processada, mas ${missingEnrollments.length} aluno(s) não foram confirmados. Verifique os logs.`,
+        code: "PARTIAL_SUCCESS",
         failedStudents: missingEnrollments.map(s => ({
           id: s.ed_student_id,
           code: s.ed_student_code,
@@ -461,16 +633,86 @@ const RegisterEnrollment = async (req, res) => {
         ? `Matrícula efetuada para ${toEnroll.length} estudante(s). ${alreadyEnrolled.length} já estavam matriculados e foram ignorados.`
         : `Matrícula efetuada com sucesso para ${toEnroll.length} estudante(s)!`;
 
-    return res.status(200).json({ success: true, msg: message });
+    return res.status(200).json({ 
+      success: true, 
+      msg: message,
+      code: "SUCCESS",
+      enrolledCount: toEnroll.length,
+      alreadyEnrolledCount: alreadyEnrolled.length,
+    });
 
   } catch (error) {
-    console.error(`\x1b[41m\x1b[37m ✖ ERRO \x1b[0m \x1b[31mErro ao registar matrículas: ${error.message}\x1b[0m`);
-    res.status(500).json({ success: false, msg: "Erro ao efetuar matrícula!", error: error.message });
+    console.error(`\n${C.bgRed} ✖ ERRO ${C.reset} ${C.red}${error.message}${C.reset}`);
+    console.error(error.stack);
+    
+    res.status(500).json({ 
+      success: false, 
+      msg: "Erro ao efetuar matrícula!", 
+      error: error.message,
+      code: "INTERNAL_ERROR"
+    });
   }
 };
 
-module.exports = { RegisterEnrollment };
+// ============================================================
+// FUNÇÕES AUXILIARES
+// ============================================================
 
+/**
+ * Imprime um "cartão" colorido de matrícula para cada aluno
+ */
+function printEnrollmentCards(cardData, C) {
+  cardData.forEach(({ student, enrollment, service, newClass, oldClass, docsCount, classChanged }) => {
+    const idOk = !!enrollment?.ed_enrollment_id;
+    const statusTag = idOk
+      ? `${C.bgGreen} ✔ CONFIRMADA ${C.reset}`
+      : `${C.bgRed} ✖ FALHA ${C.reset}`;
+
+    console.log(`\n${C.cyan}┌───────────────────────────────────────────────────────────┐${C.reset}`);
+    console.log(`${C.cyan}│${C.reset} ${C.bold}${C.white}👤 ${student.ed_student_name}${C.reset}`);
+    console.log(`${C.cyan}│${C.reset} ${C.dim}Código:${C.reset} ${C.yellow}${student.ed_student_id}${C.reset}   ${statusTag}`);
+    console.log(`${C.cyan}├───────────────────────────────────────────────────────────┤${C.reset}`);
+    console.log(
+      `${C.cyan}│${C.reset} ${C.magenta}🏫 Turma:${C.reset} ${ 
+        classChanged
+          ? `${C.dim}${oldClass ?? "—"}${C.reset} ${C.blue}→${C.reset} ${C.green}${newClass}${C.reset}`
+          : `${C.green}${newClass}${C.reset} ${C.dim}(sem alteração)${C.reset}`
+      }`
+    );
+    console.log(`${C.cyan}│${C.reset} ${C.magenta}📄 Serviço:${C.reset} ${C.white}${service}${C.reset}`);
+    console.log(
+      `${C.cyan}│${C.reset} ${C.magenta}🆔 ID Matrícula:${C.reset} ${
+        idOk ? C.green + enrollment.ed_enrollment_id + C.reset : C.red + "N/D" + C.reset
+      }`
+    );
+    console.log(`${C.cyan}│${C.reset} ${C.magenta}📎 Documentos:${C.reset} ${C.white}${docsCount}${C.reset}`);
+    console.log(`${C.cyan}└───────────────────────────────────────────────────────────┘${C.reset}`);
+  });
+}
+
+/**
+ * Imprime o resumo geral da operação
+ */
+function printSummaryBanner({ total, confirmed, failed, alreadyEnrolledCount }, C) {
+  const allOk = failed === 0;
+  console.log(`\n${allOk ? C.green : C.red}${C.bold}═══════════════════════════════════════════════════════════${C.reset}`);
+  console.log(`${C.bold}${allOk ? C.green + "✔ RESUMO" : C.red + "⚠ RESUMO (COM FALHAS)"}${C.reset}`);
+  console.log(`${C.dim}───────────────────────────────────────────────────────────${C.reset}`);
+  console.log(`  ${C.white}Total processado:${C.reset}        ${total}`);
+  console.log(`  ${C.green}Confirmadas:${C.reset}            ${confirmed}`);
+  if (failed > 0) console.log(`  ${C.red}Falhas:${C.reset}                 ${failed}`);
+  if (alreadyEnrolledCount > 0)
+    console.log(`  ${C.yellow}Já matriculados (ignorados):${C.reset} ${alreadyEnrolledCount}`);
+  console.log(`${allOk ? C.green : C.red}${C.bold}═══════════════════════════════════════════════════════════${C.reset}\n`);
+}
+
+ 
+
+
+
+
+
+ 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── DELETE ENROLLED STUDENT
 // ═══════════════════════════════════════════════════════════════════════════════

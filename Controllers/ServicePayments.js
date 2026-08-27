@@ -631,6 +631,68 @@ const buildDuplicateFeesErrorResponse = (dupFeesRows, formattedMonths) => {
  
  
 
+ // ═══════════════════════════════════════════════════════════════════════════════
+// ✅ NOVO: HELPER DE CAPACIDADE DE TURMA
+//
+// Verifica se uma turma já atingiu o limite máximo de alunos configurado em
+// eduall_class.ed_class_student_limit. Se o limite for 0/NULL, a turma é
+// considerada sem restrição de vagas.
+//
+// `excludeStudentId` permite ignorar o próprio aluno na contagem (útil em
+// confirmações, quando o aluno já pertence à turma de origem e não deve
+// contar contra o limite da turma de destino se, por algum motivo, já
+// estivesse listado nela).
+// ═══════════════════════════════════════════════════════════════════════════════
+async function checkClassCapacity(res, classId, instituteCode, excludeStudentId = null) {
+  const [classRow] = await ExecuteQuery(
+    res,
+    `SELECT ed_class_id, ed_class_title, ed_class_student_limit
+     FROM eduall_class
+     WHERE ed_class_id = ? AND ed_class_institute_code = ? AND COALESCE(ed_class_deleted, 0) = 0
+     LIMIT 1`,
+    [classId, instituteCode],
+    true
+  );
+
+  if (!classRow) {
+    return { exists: false, isFull: false, current: 0, limit: null, title: null };
+  }
+
+  const limit = Number(classRow.ed_class_student_limit);
+
+  // Sem limite configurado (0, NULL ou não numérico) = turma sem restrição de vagas
+  if (!Number.isFinite(limit) || limit <= 0) {
+    return { exists: true, isFull: false, current: 0, limit: null, title: classRow.ed_class_title };
+  }
+
+  const excludeClause = excludeStudentId ? "AND ed_student_id != ?" : "";
+  const params = excludeStudentId
+    ? [classId, instituteCode, excludeStudentId]
+    : [classId, instituteCode];
+
+  const [countRow] = await ExecuteQuery(
+    res,
+    `SELECT COUNT(*) AS total
+     FROM eduall_students
+     WHERE ed_student_class = ?
+       AND ed_student_institute_code = ?
+       AND COALESCE(ed_student_deleted, 0) = 0
+       ${excludeClause}`,
+    params,
+    true
+  );
+
+  const current = Number(countRow?.total || 0);
+
+  return {
+    exists: true,
+    isFull: current >= limit,
+    current,
+    limit,
+    title: classRow.ed_class_title,
+  };
+}
+
 const RegisterServicePayment = async (req, res) => {
   const timerLabel = `RegisterServicePayment_${Date.now()}`;
   console.time(timerLabel);
@@ -655,9 +717,18 @@ const RegisterServicePayment = async (req, res) => {
     // pagamento, sempre que não havia nenhum serviço customizado no payload).
     let operatorName = "Desconhecido";
     try {
-      const operatorData = await getOperatorData(operatorId);
-      if (operatorData && operatorData.name) {
-        operatorName = operatorData.name;
+      const [operatorRow] = await ExecuteQuery(
+        null,
+        `SELECT u.ed_user_account_name
+         FROM eduall_user_accounts u
+         WHERE u.ed_user_account_id = ?
+         LIMIT 1`,
+        [operatorId],
+        true
+      );
+
+      if (operatorRow && operatorRow.ed_user_account_name) {
+        operatorName = operatorRow.ed_user_account_name;
       }
     } catch (opErr) {
       console.warn(`[OPERADOR] Falha ao obter nome do operador (a usar fallback):`, opErr.message || opErr);
@@ -684,7 +755,14 @@ const RegisterServicePayment = async (req, res) => {
       alsofeepaymenet = false,
       feemonths = [],
       fee_service_code: feeServiceFromBody = null,
+      // ✅ FIX: precisamos do ano letivo para gravar em eduall_fees_payments
+      // (coluna ed_fee_payment_academic_year). Aceita tanto academic_year_id
+      // como academicYearId, consoante o payload do frontend.
+      academic_year_id: academicYearIdFromBody = null,
+      academicYearId: academicYearIdCamel = null,
     } = req.body || {};
+
+    const academicYearId = academicYearIdFromBody || academicYearIdCamel || null;
 
     const OTHER_SERVICE_ID = "OTHER_CUSTOM";
 
@@ -693,6 +771,14 @@ const RegisterServicePayment = async (req, res) => {
       const n = Number(v);
       return Number.isFinite(n) ? n : NaN;
     };
+
+    // NOVO (secção 23): a turma de matrícula deixou de ser obrigatória —
+    // este helper trata "" / null / undefined / 0 / "0" como "sem turma",
+    // tal como já é feito no frontend para o studentId.
+    const isEmptyClassId = (value) =>
+      value === null || value === undefined || value === '' || value === 0 || value === '0';
+
+    const matriculaClassProvided = !isEmptyClassId(matricula_class);
 
     console.log("\n[VALIDACOES] Iniciando validacoes...");
 
@@ -1013,11 +1099,25 @@ const RegisterServicePayment = async (req, res) => {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
-    // ✅ VALIDACOES DE TURMAS
+    // ✅ VALIDACOES DE TURMAS (existência + capacidade/vagas)
+    //
+    // NOVO (secção 23 — TURMA DE MATRÍCULA OPCIONAL):
+    //   A validação de existência da turma de matrícula só corre quando uma
+    //   turma foi de facto enviada (`matriculaClassProvided`). Sem turma, não
+    //   há nada para validar aqui — a matrícula prossegue.
+    //
+    // ✅ NOVO — VALIDAÇÃO DE CAPACIDADE (VAGAS):
+    //   Além de confirmar que a turma existe, agora também confirmamos que
+    //   ainda há vagas disponíveis (com base em eduall_class.ed_class_student_limit
+    //   vs. contagem actual de alunos na turma). Aplica-se tanto à matrícula
+    //   (quando uma turma é fornecida) como à confirmação (turma sempre
+    //   obrigatória). Esta é apenas a checagem "de fora da transação" — ela é
+    //   REPETIDA dentro da transação, logo antes do UPDATE que efetivamente
+    //   move o aluno para a turma, para proteger contra pedidos concorrentes.
     // ═══════════════════════════════════════════════════════════════════════════════
     console.log("\n[VALIDACOES] Validando turmas...");
 
-    if (has_matricula) {
+    if (has_matricula && matriculaClassProvided) {
       const [classExists] = await ExecuteQuery(
         null,
         `SELECT ed_class_id FROM eduall_class WHERE ed_class_id = ? AND ed_class_institute_code = ? LIMIT 1`,
@@ -1031,6 +1131,22 @@ const RegisterServicePayment = async (req, res) => {
           msg: `Turma de matricula ${matricula_class} nao existe.`,
         });
       }
+
+      // ✅ NOVO: validar limite de vagas da turma de matrícula
+      const matriculaCapacity = await checkClassCapacity(res, matricula_class, sessionInstitute, studentId);
+      console.log(`[TURMA][VAGAS] Matrícula | Turma: ${matriculaCapacity.title || matricula_class} | Ocupação: ${matriculaCapacity.current}/${matriculaCapacity.limit ?? "∞"}`);
+
+      if (matriculaCapacity.isFull) {
+        console.error(`❌ TURMA DE MATRICULA LOTADA: ${matriculaCapacity.title || matricula_class}`);
+        return res.status(409).json({
+          success: false,
+          msg: `A turma "${matriculaCapacity.title || matricula_class}" está lotada (${matriculaCapacity.current}/${matriculaCapacity.limit} alunos). Não é possível matricular mais alunos nesta turma.`,
+          error: "CLASS_FULL",
+          capacity: matriculaCapacity,
+        });
+      }
+    } else if (has_matricula && !matriculaClassProvided) {
+      console.log("[TURMA] Matrícula sem turma associada — turma é opcional, a prosseguir sem validação de turma.");
     }
 
     if (has_confirmacao) {
@@ -1045,6 +1161,22 @@ const RegisterServicePayment = async (req, res) => {
         return res.status(400).json({
           success: false,
           msg: `Turma de confirmacao ${confirmacao_class} nao existe.`,
+        });
+      }
+
+      // ✅ NOVO: validar limite de vagas da turma de confirmação
+      // (exclui o próprio aluno da contagem, caso por algum motivo já conste
+      // na turma de destino, para não penalizá-lo contra o próprio limite)
+      const confirmacaoCapacity = await checkClassCapacity(res, confirmacao_class, sessionInstitute, studentId);
+      console.log(`[TURMA][VAGAS] Confirmação | Turma: ${confirmacaoCapacity.title || confirmacao_class} | Ocupação: ${confirmacaoCapacity.current}/${confirmacaoCapacity.limit ?? "∞"}`);
+
+      if (confirmacaoCapacity.isFull) {
+        console.error(`❌ TURMA DE CONFIRMACAO LOTADA: ${confirmacaoCapacity.title || confirmacao_class}`);
+        return res.status(409).json({
+          success: false,
+          msg: `A turma "${confirmacaoCapacity.title || confirmacao_class}" está lotada (${confirmacaoCapacity.current}/${confirmacaoCapacity.limit} alunos). Não é possível confirmar mais alunos nesta turma.`,
+          error: "CLASS_FULL",
+          capacity: confirmacaoCapacity,
         });
       }
     }
@@ -1105,7 +1237,7 @@ const RegisterServicePayment = async (req, res) => {
     const feePricePerMonth = feeEntry?.priceVal || 0;
 
     if (has_matricula) {
-      console.log(`[MATRICULA] Serviço: ${matriculaServiceName} | ID: ${matricula_service} | Preço: ${matriculaTotal}`);
+      console.log(`[MATRICULA] Serviço: ${matriculaServiceName} | ID: ${matricula_service} | Turma: ${matriculaClassProvided ? matricula_class : "(nao fornecida)"} | Preço: ${matriculaTotal}`);
     }
     if (has_confirmacao) {
       console.log(`[CONFIRMACAO] Serviço: ${confirmacaoServiceName} | ID: ${confirmacao_service} | Preço: ${confirmacaoTotal}`);
@@ -1155,7 +1287,27 @@ const RegisterServicePayment = async (req, res) => {
 
     console.log(`Aluno encontrado: ${student.ed_student_name} (${student.ed_student_code})`);
 
-    if (has_matricula && student.ed_student_enrolled >= 1) {
+    // 🆕 ✅ VERIFICAR MATRICULA NA TABELA eduall_enrollment (TABELA CORRETA)
+    //    (fonte de verdade para saber se o aluno já está matriculado)
+    //    ⚠️ FIX: a tabela "eduall_student_enrollment" NAO EXISTE / esta errada.
+    //    A tabela correta e "eduall_enrollment", cujo campo "ed_enrollment_student"
+    //    e int(11) — por isso usamos o ID numerico do aluno (student.ed_student_id),
+    //    e nao o codigo (ed_student_code) como se fazia antes.
+    console.log("[MATRICULA] Verificando matrícula existente em eduall_enrollment...");
+
+    const [existingEnrollment] = await ExecuteQuery(
+      null,
+      `SELECT ed_enrollment_id
+       FROM eduall_enrollment
+       WHERE ed_enrollment_deleted = 0
+         AND ed_enrollment_student = ?
+         AND ed_enrollment_institute_code = ?
+       LIMIT 1`,
+      [student.ed_student_id, sessionInstitute],
+      true
+    );
+
+    if (has_matricula && existingEnrollment) {
       return res.status(409).json({
         success: false,
         msg: "Este aluno ja foi matriculado! Nao e possivel fazer nova matricula.",
@@ -1163,13 +1315,92 @@ const RegisterServicePayment = async (req, res) => {
       });
     }
 
-    if (has_confirmacao && (!student.ed_student_enrolled || student.ed_student_enrolled < 1)) {
+    if (has_confirmacao && !existingEnrollment) {
       return res.status(409).json({
         success: false,
         msg: "Este aluno NAO foi matriculado ainda! Faca a matricula primeiro.",
         error: "NOT_ENROLLED"
       });
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🆕 ✅ BUSCAR DADOS COMPLETOS DA TURMA (ciclo, sala, curso, ano letivo,
+    //    nível académico, director) PARA ENRIQUECER A OBSERVAÇÃO DA FATURA
+    //
+    //    A turma "efetiva" para este pagamento é:
+    //      - a turma de matrícula, se has_matricula E turma tiver sido fornecida
+    //      - caso contrário (matrícula sem turma), a turma actual do aluno,
+    //        se já existir uma (NOVO — secção 23)
+    //      - a turma de confirmação, se has_confirmacao
+    //      - caso contrário, a turma atual do aluno (student.ed_student_class)
+    // ═══════════════════════════════════════════════════════════════════════════════
+    console.log("\n[TURMA] Buscando dados completos da turma para a observação da fatura...");
+
+    const classIdForObs = has_matricula
+      ? (matriculaClassProvided ? matricula_class : student.ed_student_class)
+      : (has_confirmacao ? confirmacao_class : student.ed_student_class);
+
+    let classDetails = null;
+
+    if (classIdForObs) {
+      const [classRow] = await ExecuteQuery(
+        null,
+        `SELECT
+            c.ed_class_id,
+            c.ed_class_title,
+            cr.ed_classroom_title,
+            al.ed_academic_level_title,
+            ci.ed_cicle_title,
+            ay.ed_academic_year_title,
+            ay.ed_academic_year_id,
+            co.ed_course_title
+         FROM eduall_class c
+         LEFT JOIN eduall_classrooms     cr  ON cr.ed_classroom_id      = c.ed_class_room
+         LEFT JOIN eduall_academic_level al  ON al.ed_academic_level_id = c.ed_class_academic_level
+         LEFT JOIN eduall_cicles         ci  ON ci.ed_cicle_id          = c.ed_class_cicle
+         LEFT JOIN eduall_academic_year  ay  ON ay.ed_academic_year_id  = c.ed_class_year
+         LEFT JOIN eduall_courses        co  ON co.ed_course_id         = c.ed_class_course
+         WHERE c.ed_class_id = ?
+           AND c.ed_class_institute_code = ?
+           AND COALESCE(c.ed_class_deleted, 0) = 0
+         LIMIT 1`,
+        [classIdForObs, sessionInstitute],
+        true
+      );
+
+      classDetails = classRow || null;
+
+      if (classDetails) {
+        console.log(`[TURMA] ✓ Turma: ${classDetails.ed_class_title} | Ciclo: ${classDetails.ed_cicle_title || "-"} | Curso: ${classDetails.ed_course_title || "-"} | Sala: ${classDetails.ed_classroom_title || "-"}`);
+      } else {
+        console.warn(`[TURMA] ⚠ Turma ${classIdForObs} não encontrada — observação seguirá sem dados de turma`);
+      }
+    } else {
+      console.log("[TURMA] Sem turma associada a este pagamento — observação seguirá sem dados de turma");
+    }
+
+    // 🆕 Monta o bloco de texto com os dados da turma, UM CAMPO POR LINHA
+    //    (só entram os campos que existirem / não forem null)
+    const buildClassObsBlock = (cls) => {
+      if (!cls) return "";
+
+      const lines = [];
+      if (cls.ed_class_title)            lines.push(`Turma: ${cls.ed_class_title}`);
+      if (cls.ed_cicle_title)            lines.push(`Ciclo: ${cls.ed_cicle_title}`);
+      if (cls.ed_academic_level_title)   lines.push(`Classe: ${cls.ed_academic_level_title}`);
+      if (cls.ed_course_title)           lines.push(`Curso: ${cls.ed_course_title}`);
+      if (cls.ed_classroom_title)        lines.push(`Sala: ${cls.ed_classroom_title}`);
+      if (cls.ed_academic_year_title)    lines.push(`Ano Letivo: ${cls.ed_academic_year_title}`);
+
+      return lines.length ? lines.join("\n") : "";
+    };
+
+    const classObsBlock = buildClassObsBlock(classDetails);
+
+    // ✅ FIX: se o payload não trouxe academic_year_id, tentamos usar o ano
+    // letivo resolvido a partir da turma (classDetails), para não gravarmos
+    // NULL desnecessariamente na tabela de propinas.
+    const resolvedAcademicYearId = academicYearId || classDetails?.ed_academic_year_id || null;
 
     // ═══════════════════════════════════════════════════════════════════════════════
     // ✅ CRIAR FATURA VENDUS - COM TITLE E GROSS_PRICE (uma linha por cada serviço,
@@ -1275,7 +1506,17 @@ const RegisterServicePayment = async (req, res) => {
       nif: student.ed_student_identityCard || "",
     };
 
-    const obs = observations || `Pagamento do aluno ${student.ed_student_code}`;
+    // 🆕 ✅ OBS ROBUSTA: junta a observação original (ou a mensagem por omissão) com
+    //    o bloco de dados da turma (ciclo, curso, sala, ano letivo, etc.) e o
+    //    nome do operador que registou o pagamento, cada campo numa linha própria.
+    const baseObs = observations || `Pagamento do aluno ${student.ed_student_code}`;
+    const operatorObsLine = `Operador: ${operatorName}`;
+
+    const obs = [baseObs, classObsBlock, operatorObsLine]
+      .filter(Boolean)
+      .join("\n");
+
+    console.log(`[OBS] Observação final enviada à fatura: ${obs}`);
 
     // 🆕 FIX: sanity-check final ANTES de chamar a Vendus — recalcula o total
     // a partir do próprio array invoiceLines e recusa avançar se detectar NaN.
@@ -1342,6 +1583,39 @@ const RegisterServicePayment = async (req, res) => {
     try {
 
       // ═════════════════════════════════════════════════════════════════════════════
+      // ✅ NOVO — RECONFIRMAR CAPACIDADE DE TURMA DENTRO DA TRANSAÇÃO
+      //
+      // Protege contra condição de corrida: entre a validação inicial (antes
+      // da criação da fatura Vendus) e este ponto, outro pedido concorrente
+      // pode ter preenchido a última vaga da turma. Se isso aconteceu,
+      // abortamos e revertemos ANTES de tocar em eduall_students/eduall_enrollment.
+      //
+      // Nota: a fatura Vendus já foi emitida neste ponto. Se a turma lotou
+      // entretanto, o pagamento é abortado (rollback) e a fatura Vendus
+      // fica "órfã" do lado do operador — o response deixa isso explícito
+      // para que a equipa possa anular/cancelar a fatura manualmente.
+      // ═════════════════════════════════════════════════════════════════════════════
+      if (has_matricula && matriculaClassProvided) {
+        const matriculaCapacityRecheck = await checkClassCapacity(res, matricula_class, sessionInstitute, studentId);
+        if (matriculaCapacityRecheck.isFull) {
+          throw Object.assign(
+            new Error(`A turma "${matriculaCapacityRecheck.title || matricula_class}" ficou lotada enquanto este pagamento era processado (${matriculaCapacityRecheck.current}/${matriculaCapacityRecheck.limit}). Matrícula NAO foi registada.`),
+            { code: "CLASS_FULL", vendusOrphan: true }
+          );
+        }
+      }
+
+      if (has_confirmacao) {
+        const confirmacaoCapacityRecheck = await checkClassCapacity(res, confirmacao_class, sessionInstitute, studentId);
+        if (confirmacaoCapacityRecheck.isFull) {
+          throw Object.assign(
+            new Error(`A turma "${confirmacaoCapacityRecheck.title || confirmacao_class}" ficou lotada enquanto este pagamento era processado (${confirmacaoCapacityRecheck.current}/${confirmacaoCapacityRecheck.limit}). Confirmação NAO foi registada.`),
+            { code: "CLASS_FULL", vendusOrphan: true }
+          );
+        }
+      }
+
+      // ═════════════════════════════════════════════════════════════════════════════
       // ✅ REGISTAR PAGAMENTO DE SERVICO
       // ═════════════════════════════════════════════════════════════════════════════
       console.log("[BD] Registando pagamento de servico...");
@@ -1377,7 +1651,12 @@ const RegisterServicePayment = async (req, res) => {
         )
       `;
 
-      const newClassForPayment = has_matricula ? matricula_class : (has_confirmacao ? confirmacao_class : null);
+      // NOVO (secção 23): se a matrícula não trouxer turma, `matricula_class`
+      // é null/"" — o campo `ed_service_payment_new_class` fica então null,
+      // tal como já acontecia quando não havia matrícula nem confirmação.
+      const newClassForPayment = has_matricula
+        ? (matriculaClassProvided ? matricula_class : null)
+        : (has_confirmacao ? confirmacao_class : null);
 
       await ExecuteQuery(null, insertPaymentQuery, [
         paymentCode,
@@ -1449,55 +1728,112 @@ const RegisterServicePayment = async (req, res) => {
 
       // ═════════════════════════════════════════════════════════════════════════════
       // ✅ PROCESSAR MATRICULA
+      //    ⚠️ FIX (mantido): grava em "eduall_enrollment" (tabela correta), usando
+      //    "ed_enrollment_student" (int, ID do aluno) em vez de
+      //    "ed_student_enrollment_studentcode" (tabela antiga/errada).
+      //
+      //    NOVO (secção 23 — TURMA DE MATRÍCULA OPCIONAL):
+      //    `matricula_class` pode agora chegar como null/"" (turma não
+      //    fornecida). Isso é gravado como `ed_enrollment_class = NULL` em
+      //    `eduall_enrollment` (sem alteração ao endpoint/tabela). O impacto
+      //    fica isolado à actualização do aluno, abaixo:
+      //      - COM turma: comportamento inalterado — actualiza
+      //        `ed_student_class` para a nova turma (guardando a turma
+      //        anterior no histórico, se diferente) e marca `enrolled = 1`.
+      //        A capacidade da turma já foi reconfirmada acima.
+      //      - SEM turma: já NÃO actualizamos `ed_student_class` (evita
+      //        apagar/anular a turma actual do aluno com NULL só porque a
+      //        matrícula não especificou turma) — apenas marcamos
+      //        `enrolled = 1`. O aluno fica matriculado e pode receber uma
+      //        turma mais tarde (ex.: através de uma confirmação de
+      //        matrícula, que continua a exigir turma).
       // ═════════════════════════════════════════════════════════════════════════════
       if (has_matricula) {
-        console.log("[BD] Registando matricula...");
+        console.log(`[BD] Registando matricula... (turma: ${matriculaClassProvided ? matricula_class : "nao fornecida"})`);
 
         await ExecuteQuery(
           null,
           `INSERT INTO eduall_enrollment(
             ed_enrollment_student,
             ed_enrollment_service,
-            ed_enrollment_institute_code
-          ) VALUES (?, ?, ?)`,
-          [studentId, matricula_service, sessionInstitute],
+            ed_enrollment_class,
+            ed_enrollment_institute_code,
+            ed_enrollment_paid_value,
+            ed_enrollment_payment_method_id,
+            ed_enrollment_payment_bank,
+            ed_enrollment_payment_place,
+            ed_enrollment_bordereau
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            student.ed_student_id,
+            matricula_service,
+            matriculaClassProvided ? matricula_class : null,
+            sessionInstitute,
+            matriculaTotal,
+            selectedPaymentMethod.vendus_id,
+            bankName || null,
+            paymentPlace || null,
+            paymentReference || null,
+          ],
           false,
           { db: "eduall_enrollment", type: "insert", data: req }
         );
 
-        const currentClass = student.ed_student_class;
-        const newClass = matricula_class;
+        if (matriculaClassProvided) {
+          const currentClass = student.ed_student_class;
+          const newClass = matricula_class;
 
-        if (currentClass && currentClass !== newClass) {
+          if (currentClass && currentClass !== newClass) {
+            await ExecuteQuery(
+              null,
+              `INSERT INTO eduall_student_old_classes(ed_student_old_class_student, ed_student_old_class)
+               VALUES (?, ?)`,
+              [studentId, currentClass],
+              false
+            );
+            console.log(`Turma antiga registada no historico`);
+          }
+
           await ExecuteQuery(
             null,
-            `INSERT INTO eduall_student_old_classes(ed_student_old_class_student, ed_student_old_class)
-             VALUES (?, ?)`,
-            [studentId, currentClass],
-            false
+            `UPDATE eduall_students
+             SET ed_student_class = ?, ed_student_enrolled = 1
+             WHERE ed_student_id = ? AND ed_student_institute_code = ?`,
+            [newClass, studentId, sessionInstitute],
+            false,
+            {
+              db: "eduall_students",
+              type: "update",
+              data: req,
+            }
           );
-          console.log(`Turma antiga registada no historico`);
+
+          console.log("Aluno actualizado com matricula (com turma)");
+        } else {
+          // Turma não fornecida: marca o aluno como matriculado, mas não
+          // mexe em ed_student_class (nem para NULL, nem para outro valor).
+          await ExecuteQuery(
+            null,
+            `UPDATE eduall_students
+             SET ed_student_enrolled = 1
+             WHERE ed_student_id = ? AND ed_student_institute_code = ?`,
+            [studentId, sessionInstitute],
+            false,
+            {
+              db: "eduall_students",
+              type: "update",
+              data: req,
+            }
+          );
+
+          console.log("Aluno actualizado com matricula (sem turma — turma nao fornecida, ed_student_class mantido)");
         }
-
-        await ExecuteQuery(
-          null,
-          `UPDATE eduall_students
-           SET ed_student_class = ?, ed_student_enrolled = 1
-           WHERE ed_student_id = ? AND ed_student_institute_code = ?`,
-          [newClass, studentId, sessionInstitute],
-          false,
-          {
-            db: "eduall_students",
-            type: "update",
-            data: req,
-          }
-        );
-
-        console.log("Aluno actualizado com matricula");
       }
 
       // ═════════════════════════════════════════════════════════════════════════════
       // ✅ PROCESSAR CONFIRMACAO
+      //    (turma continua obrigatória na confirmação; capacidade já
+      //    reconfirmada acima, dentro da transação)
       // ═════════════════════════════════════════════════════════════════════════════
       if (has_confirmacao) {
         console.log("[BD] Registando confirmacao...");
@@ -1535,25 +1871,70 @@ const RegisterServicePayment = async (req, res) => {
 
       // ═════════════════════════════════════════════════════════════════════════════
       // ✅ PROCESSAR PROPINAS (preço por mês vem do frontend, já validado > 0)
+      //
+      // 🔧 FIX PRINCIPAL (mantido):
+      // A query anterior usava as colunas "ed_fee_payment_amount" e
+      // "ed_fee_payment_payment_code", que NAO EXISTEM na tabela
+      // eduall_fees_payments (daí o erro "Unknown column 'ed_fee_payment_amount'
+      // in 'INSERT INTO'"). O schema real (confirmado pelo INSERT usado em
+      // RegisterFeepayment) usa "ed_fee_payment_price" para o valor da linha e
+      // não tem coluna para o código do pagamento de serviço — em vez disso
+      // guardamos a referência da fatura (ed_fee_payment_invoiceCode /
+      // ed_fee_payment_invoiceFile) e o próprio código do pagamento de
+      // propina (ed_fee_payment_code) fica a cargo do auto_increment/trigger
+      // da tabela, tal como acontece no fluxo normal de propinas.
       // ═════════════════════════════════════════════════════════════════════════════
       if (alsofeepaymenet && feemonths?.length > 0) {
         console.log("[BD] Registando propinas...");
 
         for (const month of feemonths) {
+          console.log(`[BD PROPINA] Inserindo: mes=${month} | servico=${fee_service_code} | preco=${feePricePerMonth}`);
+
           await ExecuteQuery(
             null,
             `INSERT INTO eduall_fees_payments(
               ed_fee_payment_student,
-              ed_fee_payment_month,
               ed_fee_payment_service,
-              ed_fee_payment_amount,
-              ed_fee_payment_payment_code,
-              ed_fee_payment_institute_code
-            ) VALUES (?, ?, ?, ?, ?, ?)`,
-            [studentId, month, fee_service_code, feePricePerMonth, paymentCode, sessionInstitute],
+              ed_fee_payment_price,
+              ed_fee_payment_month,
+              ed_fee_payment_discount,
+              ed_fee_payment_type,
+              ed_fee_payment_bank,
+              ed_fee_payment_academic_year,
+              ed_fee_payment_place,
+              ed_fee_payment_balance,
+              ed_fee_payment_bordereux,
+              ed_fee_payment_invoiceCode,
+              ed_fee_payment_invoiceFile,
+              ed_fee_payment_institute_code,
+              ed_fee_payment_operator,
+              ed_fee_payment_operator_id,
+              ed_fee_payment_observations
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              studentId,
+              fee_service_code,
+              feePricePerMonth,
+              month,
+              discountPct || 0,
+              selectedPaymentMethod.vendus_id,
+              bankName || null,
+              resolvedAcademicYearId,
+              paymentPlace || null,
+              feePricePerMonth,
+              paymentReference || null,
+              vendus.number,
+              vendus.id,
+              sessionInstitute,
+              operatorName,
+              operatorId || null,
+              `Pago via pagamento de serviço ${paymentCode}. ${obs}`,
+            ],
             false,
             { db: "eduall_fees_payments", type: "insert", data: req }
           );
+
+          console.log(`[BD PROPINA] ✓ Mês ${month} inserido com sucesso`);
         }
 
         console.log(`${feemonths.length} propina(s) registada(s)`);
@@ -1607,7 +1988,7 @@ const RegisterServicePayment = async (req, res) => {
           })),
           matricula: has_matricula ? {
             done: true,
-            newClass: matricula_class,
+            newClass: matriculaClassProvided ? matricula_class : null,
             amount: matriculaTotal
           } : null,
           confirmacao: has_confirmacao ? {
@@ -1615,10 +1996,21 @@ const RegisterServicePayment = async (req, res) => {
             newClass: confirmacao_class,
             amount: confirmacaoTotal
           } : null,
+          // 🆕 Dados da turma que foram usados para compor a observação
+          classInfo: classDetails ? {
+            id: classDetails.ed_class_id,
+            title: classDetails.ed_class_title,
+            cicle: classDetails.ed_cicle_title,
+            classe: classDetails.ed_academic_level_title,
+            course: classDetails.ed_course_title,
+            classroom: classDetails.ed_classroom_title,
+            academicYear: classDetails.ed_academic_year_title,
+          } : null,
           subtotal: Number((totalInvoiceValue - feesTotalValue).toFixed(2)),
           fees: feesTotalValue > 0 ? Number(feesTotalValue.toFixed(2)) : 0,
           total: Number(totalInvoiceValue.toFixed(2)),
           balanceUsed: balance_used > 0 ? Number(balance_used.toFixed(2)) : 0,
+          observations: obs,
         },
         invoiceValue: Number(totalInvoiceValue.toFixed(2)),
         vendus: {
@@ -1641,6 +2033,18 @@ const RegisterServicePayment = async (req, res) => {
     } catch (txErr) {
       await ExecuteQuery(null, "ROLLBACK", [], false);
       console.error(`[TRANSACAO] ERRO:`, txErr.message || txErr);
+
+      // ✅ NOVO: resposta dedicada para o caso de a turma lotar durante o
+      // processamento (fatura Vendus já emitida — sinalizamos isso ao cliente).
+      if (txErr.code === "CLASS_FULL") {
+        return res.status(409).json({
+          success: false,
+          msg: txErr.message,
+          error: "CLASS_FULL",
+          vendusOrphanInvoice: txErr.vendusOrphan ? { number: vendus?.number, id: vendus?.id } : null,
+        });
+      }
+
       throw txErr;
     }
 
@@ -1662,6 +2066,7 @@ const RegisterServicePayment = async (req, res) => {
     });
   }
 };
+ 
  
  
  
@@ -2069,4 +2474,5 @@ module.exports = {
   getMonthName,
   getMonthNameFrom0Index,
   formatMonthsList,
+  checkClassCapacity
 };

@@ -6,7 +6,7 @@
 @auth = Basic c8029d1e9e6d01b312e09aad711310ad:
 
  
-POST  http://172.18.20.7:4000/api/library
+POST  https://admmnsvserver.eduall.site/admin/vendus/edodemoacademiadadialeticadoconhecimento/payment-methods/2076/test
 content-type: application/json
 
 {

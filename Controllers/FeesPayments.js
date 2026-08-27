@@ -672,8 +672,8 @@ const GetSingleFeepayment = async (req, res) => {
 // 8. Auditoria
 // 9. Invalidar cache
 
- const RegisterFeepayment = async (req, res) => {
- 
+const RegisterFeepayment = async (req, res) => {
+
   function computeItemTotals({ price, discountPct = 0, fineType = 0, fineValue = 0, applyIVA = false, instituteIVAPct = 0 }) {
     const discountAmount     = discountPct > 0 ? (price * discountPct) / 100 : 0;
     const priceAfterDiscount = Math.max(0, price - discountAmount);
@@ -682,31 +682,49 @@ const GetSingleFeepayment = async (req, res) => {
     const lineTotal          = priceAfterDiscount + fineAmount + ivaAmount;
     return { discountAmount, fineAmount, ivaAmount, lineTotal, baseAfterDiscount: priceAfterDiscount };
   }
- 
+
   function monthLabel(mdotY) {
     const m = String(mdotY).split(".")[0] * 1;
     const y = String(mdotY).split(".")[1] * 1;
     const N = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
     return Number.isFinite(m) && Number.isFinite(y) ? `${N[m]} / ${y}` : String(mdotY);
   }
- 
+
   function sanitizeExtras(extras) {
     if (!Array.isArray(extras)) return [];
     return extras
       .map(e => ({ name: String(e?.name || "").trim(), value: Number(String(e?.value ?? "").replace(",", ".")) }))
       .filter(e => e.name.length > 0 && Number.isFinite(e.value) && e.value > 0);
   }
- 
+
+  // 🆕 FIX: mesma lógica usada em RegisterServicePayment — monta o bloco de
+  // texto com os dados da turma, UM CAMPO POR LINHA (só entram os campos
+  // que existirem / não forem null), para deixar as observações da fatura
+  // de propinas tão robustas/completas quanto as do pagamento de serviços.
+  function buildClassObsBlock(cls) {
+    if (!cls) return "";
+
+    const lines = [];
+    if (cls.ed_class_title)          lines.push(`Turma: ${cls.ed_class_title}`);
+    if (cls.ed_cicle_title)          lines.push(`Ciclo: ${cls.ed_cicle_title}`);
+    if (cls.ed_academic_level_title) lines.push(`Classe: ${cls.ed_academic_level_title}`);
+    if (cls.ed_course_title)         lines.push(`Curso: ${cls.ed_course_title}`);
+    if (cls.ed_classroom_title)      lines.push(`Sala: ${cls.ed_classroom_title}`);
+    if (cls.ed_academic_year_title)  lines.push(`Ano Letivo: ${cls.ed_academic_year_title}`);
+
+    return lines.length ? lines.join("\n") : "";
+  }
+
   try {
     const sessionInstitute = req.session?.user?.eduall_user_session_curentinstitute;
     const operatorId       = req.session?.user?.eduall_user_session_ID;
     const operator         = await getOperatorData(res, operatorId);
- 
- 
+
+
     if (!sessionInstitute) {
       return res.status(401).json({ success: false, msg: "Sessão inválida." });
     }
- 
+
     const {
       studentId,
       academicYearId,
@@ -724,21 +742,21 @@ const GetSingleFeepayment = async (req, res) => {
       paymentObservations = "",
     } = req.body || {};
 
- 
- 
+
+
     if (!studentId || !academicYearId || !Array.isArray(items) || !items.length) {
       return res.status(400).json({ success: false, msg: "Dados incompletos." });
     }
- 
+
     const addons             = sanitizeExtras(extraServices);
     const balanceUsedValue   = Math.max(0, parseFloat(balanceUsed) || 0);
     const bordereauUsedValue = Math.max(0, parseFloat(bordereauAmountUsed) || 0);
     const bordereauNum       = (bordereux || "").trim();
- 
+
     // ✅ v32.2 FIX: Observações do frontend, já sanitizadas
     // JÁ CONTÊM a nota de saldo se foi consumido
     const frontendObs = String(paymentObservations || "").trim();
- 
+
     // ═══════════════════════════════════════════════════════════════════════
     // ✅ v32.2 FIX: VALIDAR CONSUMO DE SALDO
     // Se saldo foi consumido, DEVE ter a nota automática do frontend
@@ -753,18 +771,25 @@ const GetSingleFeepayment = async (req, res) => {
         });
       }
     }
- 
+
     // ── 1) ALUNO ─────────────────────────────────────────────────────────────
+    // 🆕 FIX: query enriquecida com ed_cicle_title e ed_academic_level_title
+    // (ciclo e classe/nível académico), para alimentar o mesmo bloco de
+    // observações de turma usado em RegisterServicePayment.
     const studentSql = `
       SELECT
         s.ed_student_id, s.ed_student_code, s.ed_student_name, s.ed_student_identityCard,
         s.ed_student_address, s.ed_student_email, s.ed_student_class, s.ed_student_institute_code,
-        cls.ed_class_title, room.ed_classroom_title, crs.ed_course_title, ay.ed_academic_year_title
+        cls.ed_class_id, cls.ed_class_title, room.ed_classroom_title, crs.ed_course_title,
+        ay.ed_academic_year_title, ay.ed_academic_year_id,
+        ci.ed_cicle_title, al.ed_academic_level_title
       FROM eduall_students s
       LEFT JOIN eduall_class cls ON cls.ed_class_id = s.ed_student_class AND COALESCE(cls.ed_class_deleted,0)=0
       LEFT JOIN eduall_classrooms room ON room.ed_classroom_id = cls.ed_class_room AND COALESCE(room.ed_classroom_deleted,0)=0
       LEFT JOIN eduall_courses crs ON crs.ed_course_id = cls.ed_class_course AND COALESCE(crs.ed_course_deleted,0)=0
       LEFT JOIN eduall_academic_year ay ON ay.ed_academic_year_id = cls.ed_class_year AND COALESCE(ay.ed_academic_year_deleted,0)=0
+      LEFT JOIN eduall_cicles ci ON ci.ed_cicle_id = cls.ed_class_cicle AND COALESCE(ci.ed_cicle_deleted,0)=0
+      LEFT JOIN eduall_academic_level al ON al.ed_academic_level_id = cls.ed_class_academic_level AND COALESCE(al.ed_academic_level_deleted,0)=0
       WHERE COALESCE(s.ed_student_deleted,0)=0
         AND s.ed_student_id = ?
         AND s.ed_student_institute_code = ?
@@ -774,7 +799,7 @@ const GetSingleFeepayment = async (req, res) => {
     if (!student) {
       return res.status(404).json({ success: false, msg: "Estudante não encontrado." });
     }
- 
+
     // ── 2) DUPLICATAS DE MESES ───────────────────────────────────────────────
     const months        = [...new Set(items.map(i => i.month))];
     const placeholdersM = months.map(() => "?").join(",");
@@ -798,7 +823,7 @@ const GetSingleFeepayment = async (req, res) => {
         monthsPaid: dupRows.map(r => String(r.month)),
       });
     }
- 
+
     // ── 3) IVA DA INSTITUIÇÃO ─────────────────────────────────────────────────
     const [ivaRow] = await ExecuteQuery(res,
       `SELECT COALESCE(ed_institute_iva_value,0) AS iva, ed_institute_name FROM eduall_institutes WHERE ed_institute_code=? LIMIT 1`,
@@ -806,7 +831,7 @@ const GetSingleFeepayment = async (req, res) => {
     );
     const instituteIVAPct = ivaRow?.iva * 1 || 0;
     const instituteName   = ivaRow?.ed_institute_name || "";
- 
+
     // ── 4) PRÉ-VALIDAÇÃO DO SALDO DO BORDERÔ ─────────────────────────────────
     // Apenas leitura — sem transacção, sem escrita
     if (bordereauNum && bordereauUsedValue > 0) {
@@ -832,16 +857,16 @@ const GetSingleFeepayment = async (req, res) => {
         }
       }
     }
- 
+
     // ── 5) CALCULAR TOTAIS ────────────────────────────────────────────────────
     const invoiceLines = [];
     const dbRows       = [];
     let grandTotal     = 0;
- 
+
     for (const it of items) {
       const { serviceId, month, price, discountPct = 0, fineType = 0, fineValue = 0, applyIVA = 0 } = it;
       const calc = computeItemTotals({ price: price * 1, discountPct, fineType, fineValue, applyIVA: !!applyIVA, instituteIVAPct });
- 
+
       invoiceLines.push({
         itemcode: `EDSERV-${serviceId}`,
         title:    `Propina ${monthLabel(month)}`,
@@ -850,7 +875,7 @@ const GetSingleFeepayment = async (req, res) => {
         discount: 0,
         quantity: "1",
       });
- 
+
       if (calc.fineAmount > 0) {
         invoiceLines.push({
           itemcode: "FINE001",
@@ -859,7 +884,7 @@ const GetSingleFeepayment = async (req, res) => {
           tax: 0, discount: 0, quantity: "1",
         });
       }
- 
+
       grandTotal += calc.lineTotal;
       dbRows.push({
         studentId, serviceId,
@@ -877,7 +902,7 @@ const GetSingleFeepayment = async (req, res) => {
         fineValue:   Number(calc.fineAmount.toFixed(2)),
       });
     }
- 
+
     if (addons.length) {
       addons.forEach((ex, idx) => {
         invoiceLines.push({
@@ -889,31 +914,39 @@ const GetSingleFeepayment = async (req, res) => {
         grandTotal += ex.value * 1;
       });
     }
- 
+
     // ── 6) OBSERVAÇÕES ────────────────────────────────────────────────────────
-    // ✅ v32.2 FIX: As observações vêm JÁ CONSTRUÍDAS do frontend
-    // (incluem nota de saldo automática se foi consumido)
-    // Aqui apenas adicionamos detalhes institucionais complementares
-    // e informações adicionais do borderô, SEM duplicar o saldo
-    
+    // 🆕 FIX: observações reconstruídas para ficarem tão robustas/completas
+    // quanto as do RegisterServicePayment — usam o mesmo bloco de turma
+    // (buildClassObsBlock: Turma / Ciclo / Classe / Curso / Sala / Ano Letivo),
+    // uma secção separada por "---" para cada grupo de informação, e mantêm
+    // a nota de saldo (frontendObs) exatamente como o frontend a construiu,
+    // sem duplicação.
     const obsParts = [];
- 
-    // PARTE 1: Observações do utilizador (que já incluem a nota de saldo se necessário)
+
+    // PARTE 1: Observações do utilizador (já incluem a nota de saldo se necessário)
     if (frontendObs) {
       obsParts.push(frontendObs);
       obsParts.push("---");
     }
- 
-    // PARTE 2: Detalhes institucionais do aluno
+
+    // PARTE 2: Identificação do aluno + matrícula
     obsParts.push(`Nº matrícula: ${student.ed_student_code || "-"}`);
-    if (student.ed_class_title)         obsParts.push(`Turma: ${student.ed_class_title}`);
-    if (student.ed_classroom_title)     obsParts.push(`Sala: ${student.ed_classroom_title}`);
-    if (student.ed_course_title)        obsParts.push(`Curso: ${student.ed_course_title}`);
-    if (student.ed_academic_year_title) obsParts.push(`Ano letivo: ${student.ed_academic_year_title}`);
-    if (instituteName)                  obsParts.push(`Instituição: ${instituteName}`);
-    if (operator)                       obsParts.push(`Operador: ${operator.name}`);
- 
-    // PARTE 3: Informações de borderô (se houver)
+    obsParts.push(`Aluno: ${student.ed_student_name || "-"}`);
+
+    // PARTE 3: Bloco completo da turma (Turma / Ciclo / Classe / Curso / Sala / Ano Letivo)
+    const classObsBlock = buildClassObsBlock(student);
+    if (classObsBlock) {
+      obsParts.push("---");
+      obsParts.push(classObsBlock);
+    }
+
+    // PARTE 4: Dados institucionais e operador
+    obsParts.push("---");
+    if (instituteName) obsParts.push(`Instituição: ${instituteName}`);
+    if (operator)       obsParts.push(`Operador: ${operator.name}`);
+
+    // PARTE 5: Informações de borderô (se houver)
     // ❌ NÃO adicionar novamente a seção de saldo aqui
     // (já vem no frontendObs, construído automaticamente no frontend)
     if (bordereauNum && bordereauUsedValue > 0) {
@@ -925,9 +958,9 @@ const GetSingleFeepayment = async (req, res) => {
         ? obsParts.push(`Restante da fatura após borderô: ${remaining.toFixed(2)}`)
         : obsParts.push("Fatura totalmente coberta pelo borderô.");
     }
- 
+
     const obs = obsParts.join("\n");
- 
+
     // ── 7) DADOS DO CLIENTE ───────────────────────────────────────────────────
     const customer = {
       name:      student.ed_student_name         || "",
@@ -935,20 +968,20 @@ const GetSingleFeepayment = async (req, res) => {
       address:   student.ed_student_address      || "",
       email:     student.ed_student_email        || "",
     };
- 
+
     // ── 8) CRIAR FATURA ── (ANTES de qualquer escrita em BD) ─────────────────
     const vendus = await VENDUS_CreateInvoiceCodeAndDoc(req, customer, invoiceLines, paymentType, obs);
     if (!vendus?.number) {
       return res.status(500).json({ success: false, msg: "Falha ao criar fatura." });
     }
- 
+
     // ── 9) TRANSACÇÃO PRINCIPAL ───────────────────────────────────────────────
     await ExecuteQuery(res, "START TRANSACTION", [], false);
- 
+
     try {
       // 9.a) Inserir linhas de propina
       // ✅ v32.2 FIX: Coluna ed_fee_payment_observations para persistir as observações
-      // que incluem a nota de saldo automática do frontend
+      // que incluem a nota de saldo automática do frontend + bloco de turma completo
       const insertSql = `
         INSERT INTO eduall_fees_payments (
           ed_fee_payment_student, ed_fee_payment_service, ed_fee_payment_price,
@@ -970,11 +1003,11 @@ const GetSingleFeepayment = async (req, res) => {
           r.bordereux, r.ivaPct, null, r.fineType, r.fineValue,
           vendus.number, vendus.id, sessionInstitute,
           operator?.name || "operator:null", operator?.id || null,
-          obs, // ✅ Observações com nota de saldo + detalhes institucionais
+          obs, // ✅ Observações completas: saldo + matrícula + turma + instituição + operador + borderô
         );
       }
       await ExecuteQuery(res, insertSql, params, false);
- 
+
       // 9.b) Extras
       if (addons.length) {
         try {
@@ -997,7 +1030,7 @@ const GetSingleFeepayment = async (req, res) => {
           console.warn("Persistência de extras ignorada:", auxErr?.message || auxErr);
         }
       }
- 
+
       // 9.c) Debitar saldo do aluno (dentro da transacção — crítico)
       if (Number(paymentType) === PAYMENT_TYPE_BALANCE && balanceUsedValue > 0) {
         try {
@@ -1026,7 +1059,7 @@ const GetSingleFeepayment = async (req, res) => {
           let deductDesc = `Pagamento de propina(s) via saldo do aluno — Fatura ${vendus.number}. Valor: ${balanceUsedValue.toFixed(2)} ${currency}`;
           deductDesc += remaining > 0 ? ` (total: ${grandTotal.toFixed(2)} ${currency}, restante: ${remaining.toFixed(2)} ${currency})` : ` (total: ${grandTotal.toFixed(2)} ${currency}, totalmente coberto)`;
           deductDesc += ".";
- 
+
           await ExecuteQuery(res,
             `UPDATE eduall_student_balance SET sb_balance = ?
              WHERE sb_student_id = ? AND sb_institute_code = ?`,
@@ -1045,15 +1078,15 @@ const GetSingleFeepayment = async (req, res) => {
           console.error("Erro ao debitar saldo (não crítico):", balanceErr?.message || balanceErr);
         }
       }
- 
+
       // ── COMMIT ── (fatura + propinas persistidas)
       await ExecuteQuery(res, "COMMIT", [], false);
- 
+
     } catch (txErr) {
       await ExecuteQuery(res, "ROLLBACK", [], false);
       throw txErr;
     }
- 
+
     // ── 10) DEBITAR BORDERÔ — APÓS COMMIT ────────────────────────────────────
     // Executado fora da transacção principal, na sua própria mini-transacção.
     // Se falhar, o pagamento já está registado; apenas o borderô não é debitado
@@ -1074,29 +1107,29 @@ const GetSingleFeepayment = async (req, res) => {
         console.error("[debitBordereau] Erro após commit:", bErr.message);
       }
     }
- 
+
     // ── 11) AUDITORIA ─────────────────────────────────────────────────────────
     const bordereauNote = bordereauNum && bordereauUsedValue > 0
       ? `. Borderô ${bordereauNum}: ${bordereauUsedValue.toFixed(2)} usados.` : "";
- 
+
     // ✅ v32.2 FIX: Log de auditoria inclui informações de saldo se foi consumido
     // (extraído das observações que já contêm a nota)
     const balanceAuditNote = balanceUsedValue > 0
       ? ` Saldo: ${balanceUsedValue.toFixed(2)}`
       : "";
- 
+
     const auditDesc = `[${operator?.name || "Desconhecido"}] Registou ${dbRows.length} linha(s) + ${addons.length} extra(s) para aluno ${student.ed_student_code}. Fatura ${vendus.number}. Total: ${grandTotal.toFixed(2)}${balanceAuditNote}${bordereauNote}.`;
- 
+
     await RegisterAuditAction({
       session: req.session,
       action:  1,
       form:    "Pagamentos de propinas (lote)",
       description: auditDesc,
     });
- 
+
     // ── 12) INVALIDAR CACHE ──────────────────────────────────────────────────
     await RefreshFeesPaymentCache(req, res, sessionInstitute);
- 
+
     return res.status(200).json({
       success:        true,
       invoice:        vendus,
@@ -1110,16 +1143,16 @@ const GetSingleFeepayment = async (req, res) => {
         : null,
       remaining:      Math.max(0, grandTotal - balanceUsedValue),
       operator:       operator?.name || "operator:null",
-      observations:   obs, // ✅ Observações completas (saldo + institucional)
+      observations:   obs, // ✅ Observações completas (saldo + matrícula + turma + institucional + borderô)
     });
- 
+
   } catch (err) {
     try { await ExecuteQuery(res, "ROLLBACK", [], false); } catch {}
     console.error("RegisterFeepayment error:", err);
     return res.status(500).json({ success: false, msg: "Erro no processamento.", error: String(err?.message || err) });
   }
 };
-
+ 
 
 // ════════════════════════════════════════════════════════════════════════════════
 // RESTANTES CONTROLLERS
@@ -1758,7 +1791,7 @@ const GetClassPaymentsStatusById = async (req, res) => {
     console.time("GetClassPaymentsStatusById");
     const institute = req.session.user.eduall_user_session_curentinstitute;
     const classId   = req.params.classId;
-    const cacheKey  = CacheKeys.classStatus(classId, institute);
+    const cacheKey  = `${CacheKeys.classStatus(classId, institute)}:v2`;
     const startTime = Date.now();
 
     // ── Check cache ──
@@ -1771,6 +1804,8 @@ const GetClassPaymentsStatusById = async (req, res) => {
     }
 
     const MonthsList = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+    // Constrói a lista de meses (com estado base) entre as datas de início/fim do ano letivo
     const buildMonths = (start, end) => {
       if (!start || !end || typeof start !== "string" || typeof end !== "string" || !start.includes("-") || !end.includes("-")) return [];
       const parts1 = start.split("-").map(Number); const parts2 = end.split("-").map(Number);
@@ -1782,6 +1817,39 @@ const GetClassPaymentsStatusById = async (req, res) => {
       else { for (let m = M1-1; m <= 11; m++) pushMonth(m, Y1); for (let m = 0; m <= M2-1; m++) pushMonth(m, Y2); }
       return months;
     };
+
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth();
+
+    // Dado um "class row" (dados da turma + ano letivo) e os pagamentos de UM aluno,
+    // devolve o bloco { class_id, class_title, academic_year, months } com os estados calculados.
+    // Só considera pagamentos cujo ed_fee_payment_academic_year bate com o ano letivo desta turma,
+    // o que evita qualquer duplicação entre turma atual e turmas anteriores.
+    const buildClassBlock = (classRow, studentPayments) => {
+      if (!classRow) return null;
+      const months = buildMonths(classRow.ed_academic_year_startDate, classRow.ed_academic_year_endDate);
+      const yearPayments = studentPayments.filter(p => p.ed_fee_payment_academic_year === classRow.ed_class_year);
+      const monthsStatus = months.map(m => {
+        const paid = yearPayments.find(p => parseFloat(p.ed_fee_payment_month) === m.code);
+        let status = paid ? "paid" : "other";
+        const mYear = parseInt(m.month.split(" ")[2]);
+        const mMonth = parseInt(m.code.toString().split(".")[0]);
+        if (!paid && (mYear < currentYear || (mYear === currentYear && mMonth < currentMonth))) status = "notpaid";
+        return { ...m, status };
+      });
+      return {
+        class_id: classRow.ed_class_id,
+        class_title: classRow.ed_class_title,
+        academic_year: {
+          ed_academic_year_id: classRow.ed_academic_year_id,
+          ed_academic_year_startDate: classRow.ed_academic_year_startDate,
+          ed_academic_year_endDate: classRow.ed_academic_year_endDate
+        },
+        months: monthsStatus
+      };
+    };
+
+    // ── Turma consultada (pode ser a turma atual de alguns alunos e turma anterior de outros) ──
     const classes = await ExecuteQuery(res,
       `SELECT c.ed_class_id, c.ed_class_title, c.ed_class_year, c.ed_class_institute_code, c.ed_class_deleted,
               y.ed_academic_year_id, y.ed_academic_year_startDate, y.ed_academic_year_endDate
@@ -1790,38 +1858,121 @@ const GetClassPaymentsStatusById = async (req, res) => {
       [institute, classId, institute], true, { db: "eduall_class", type: "select", data: req }
     );
     if (!classes || !classes.length) return res.status(404).json({ success: false, message: "Turma não encontrada!" });
+    const queriedClass = classes[0];
+
+    // ── Alunos da turma: matriculados atualmente + alunos que tiveram esta turma como turma anterior ──
     const allStudents = await ExecuteQuery(res,
-      `SELECT s.ed_student_id, s.ed_student_name, s.ed_student_picture, s.ed_student_code, s.ed_student_class
-       FROM eduall_students s WHERE s.ed_student_deleted = 0 AND s.ed_student_class = ? AND s.ed_student_institute_code = ? ORDER BY s.ed_student_name ASC`,
-      [classId, institute], true, { db: "eduall_students", type: "select", data: req }
+      `SELECT DISTINCT s.ed_student_id, s.ed_student_name, s.ed_student_picture, s.ed_student_code, s.ed_student_class
+       FROM eduall_students s
+       WHERE s.ed_student_deleted = 0 AND s.ed_student_institute_code = ?
+         AND (
+           s.ed_student_class = ?
+           OR s.ed_student_id IN (
+             SELECT soc.ed_student_old_class_student
+             FROM eduall_student_old_classes soc
+             WHERE soc.ed_student_old_class = ? AND soc.ed_student_old_class_institute_code = ?
+           )
+         )
+       ORDER BY s.ed_student_name ASC`,
+      [institute, classId, classId, institute], true, { db: "eduall_students", type: "select", data: req }
     );
+
+    if (!allStudents || !allStudents.length) {
+      const emptyResult = [{
+        class_id: queriedClass.ed_class_id,
+        class_title: queriedClass.ed_class_title,
+        academic_year: {
+          ed_academic_year_id: queriedClass.ed_academic_year_id,
+          ed_academic_year_startDate: queriedClass.ed_academic_year_startDate,
+          ed_academic_year_endDate: queriedClass.ed_academic_year_endDate
+        },
+        students: []
+      }];
+      await Cache.eduallSet(cacheKey, emptyResult, FEES_PAYMENT_CACHE_TTL);
+      console.timeEnd("GetClassPaymentsStatusById");
+      return res.status(200).json(emptyResult);
+    }
+
+    const studentIds = allStudents.map(st => st.ed_student_id);
+
+    // ── Turmas anteriores de cada aluno envolvido (tabela eduall_student_old_classes) ──
+    const oldClassRelations = await ExecuteQuery(res,
+      `SELECT soc.ed_student_old_class_id, soc.ed_student_old_class_student, soc.ed_student_old_class
+       FROM eduall_student_old_classes soc
+       WHERE soc.ed_student_old_class_institute_code = ? AND soc.ed_student_old_class_student IN (?)`,
+      [institute, studentIds], true, { db: "eduall_student_old_classes", type: "select", data: req }
+    );
+
+    // ── IDs de todas as turmas envolvidas: turma consultada + turma atual de cada aluno + todas as turmas anteriores ──
+    const currentClassIdsOfStudents = [...new Set(allStudents.map(st => st.ed_student_class).filter(Boolean))];
+    const oldClassIds = [...new Set((oldClassRelations || []).map(r => r.ed_student_old_class).filter(Boolean))];
+    const allClassIds = [...new Set([queriedClass.ed_class_id, ...currentClassIdsOfStudents, ...oldClassIds])];
+
+    // Nota: aqui não filtramos ed_class_deleted, porque turmas de anos anteriores
+    // podem estar marcadas como encerradas/inativas mas continuam válidas para histórico.
+    const classRows = await ExecuteQuery(res,
+      `SELECT c.ed_class_id, c.ed_class_title, c.ed_class_year,
+              y.ed_academic_year_id, y.ed_academic_year_startDate, y.ed_academic_year_endDate
+       FROM eduall_class c
+       INNER JOIN eduall_academic_year y ON y.ed_academic_year_id = c.ed_class_year AND y.ed_academic_year_deleted = 0
+       WHERE c.ed_class_institute_code = ? AND c.ed_class_id IN (?)`,
+      [institute, allClassIds], true, { db: "eduall_class", type: "select", data: req }
+    );
+    const classById = new Map((classRows || []).map(c => [c.ed_class_id, c]));
+    if (!classById.has(queriedClass.ed_class_id)) classById.set(queriedClass.ed_class_id, queriedClass);
+
+    // ── Pagamentos de todos os alunos envolvidos (turma atual + turmas anteriores) ──
     const allPayments = await ExecuteQuery(res,
       `SELECT p.ed_fee_payment_id, p.ed_fee_payment_student, p.ed_fee_payment_month, p.ed_fee_payment_academic_year, p.ed_fee_payment_deleted, p.ed_fee_payment_institute_code
-       FROM eduall_fees_payments p WHERE p.ed_fee_payment_deleted = 0 AND p.ed_fee_payment_institute_code = ?`,
-      [institute], true, { db: "eduall_fees_payments", type: "select", data: req }
+       FROM eduall_fees_payments p
+       WHERE p.ed_fee_payment_deleted = 0 AND p.ed_fee_payment_institute_code = ? AND p.ed_fee_payment_student IN (?)`,
+      [institute, studentIds], true, { db: "eduall_fees_payments", type: "select", data: req }
     );
-    const currentYear = new Date().getFullYear(); const currentMonth = new Date().getMonth();
-    const finalResult = classes.map(cls => {
-      const start = cls.ed_academic_year_startDate; const end = cls.ed_academic_year_endDate;
-      const months = buildMonths(start, end);
-      const students = allStudents.filter(st => st.ed_student_class === cls.ed_class_id);
-      const studentsData = students.map(st => {
-        const stPayments = allPayments.filter(p => p.ed_fee_payment_student === st.ed_student_id && p.ed_fee_payment_academic_year === cls.ed_class_year);
-        const monthsStatus = months.map(m => {
-          const paid = stPayments.find(p => parseFloat(p.ed_fee_payment_month) === m.code);
-          let status = paid ? "paid" : "other";
-          const mYear = parseInt(m.month.split(" ")[2]); const mMonth = parseInt(m.code.toString().split(".")[0]);
-          if (!paid && (mYear < currentYear || (mYear === currentYear && mMonth < currentMonth))) status = "notpaid";
-          return { ...m, status };
-        });
-        return { id: st.ed_student_id, name: st.ed_student_name, picture: st.ed_student_picture, code: st.ed_student_code, months: monthsStatus };
-      });
+
+    // ── Monta o histórico financeiro completo de cada aluno ──
+    const studentsData = allStudents.map(st => {
+      const stPayments = (allPayments || []).filter(p => p.ed_fee_payment_student === st.ed_student_id);
+
+      // Turma atual real do aluno (pode ser diferente da turma consultada, se esta for uma turma anterior dele)
+      const currentClassRow = classById.get(st.ed_student_class);
+      const currentClassBlock = buildClassBlock(currentClassRow, stPayments);
+
+      // Turmas anteriores do aluno, excluindo a turma atual (evita repetir a mesma turma nos dois blocos)
+      const studentOldClassIds = [...new Set(
+        (oldClassRelations || [])
+          .filter(r => r.ed_student_old_class_student === st.ed_student_id)
+          .map(r => r.ed_student_old_class)
+      )].filter(id => id !== st.ed_student_class);
+
+      const previousClasses = studentOldClassIds
+        .map(id => classById.get(id))
+        .filter(Boolean)
+        .map(classRow => buildClassBlock(classRow, stPayments))
+        .filter(Boolean);
+
       return {
-        class_id: cls.ed_class_id, class_title: cls.ed_class_title,
-        academic_year: { ed_academic_year_id: cls.ed_academic_year_id, ed_academic_year_startDate: start, ed_academic_year_endDate: end },
-        students: studentsData
+        id: st.ed_student_id,
+        name: st.ed_student_name,
+        picture: st.ed_student_picture,
+        code: st.ed_student_code,
+        is_current_class: st.ed_student_class === queriedClass.ed_class_id,
+        current_class: currentClassBlock,
+        previous_classes: previousClasses,
+        // compatibilidade com o formato antigo: meses referentes à turma que está a ser consultada
+        months: (buildClassBlock(queriedClass, stPayments) || { months: [] }).months
       };
     });
+
+    const finalResult = [{
+      class_id: queriedClass.ed_class_id,
+      class_title: queriedClass.ed_class_title,
+      academic_year: {
+        ed_academic_year_id: queriedClass.ed_academic_year_id,
+        ed_academic_year_startDate: queriedClass.ed_academic_year_startDate,
+        ed_academic_year_endDate: queriedClass.ed_academic_year_endDate
+      },
+      students: studentsData
+    }];
 
     // ── Set cache ──
     await Cache.eduallSet(cacheKey, finalResult, FEES_PAYMENT_CACHE_TTL);
@@ -1836,7 +1987,6 @@ const GetClassPaymentsStatusById = async (req, res) => {
     res.status(500).json({ success: false, message: "Erro ao carregar pagamentos da turma!", error: error.message });
   }
 };
-
 // ════════════════════════════════════════════════════════════════════════════════
 // IMPORT FUNCTIONS
 // ════════════════════════════════════════════════════════════════════════════════

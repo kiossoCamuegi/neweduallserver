@@ -1,1 +1,4 @@
 config/db.sql
+.env
+.env.*
+!.env.example

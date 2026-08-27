@@ -206,7 +206,7 @@
        return res.status(403).json({ error: 'Acesso negado por CORS' });
      }
    
-     console.error('🔥 ERRO NO SERVIDOR:', err.stack);
+     console.error('🔥 Lamentamos mas não foi possivel executar está operação :', err.stack);
      res.status(err.status || 500).json({
        error: process.env.NODE_ENV === 'production'
          ? 'Erro interno no servidor'

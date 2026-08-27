@@ -421,7 +421,20 @@ const dbConfig = require("./config/DatabaseCredentials");
          try { formBuilderSockets(io); console.log("[BOOT] FormBuilder sockets ligados"); }
          catch(e) { BOOT_ERRORS.push({ label: "FormBuilder sockets", error: e.message, stack: e.stack }); }
        }
- 
+
+        // ====== NOVO: montar o router do Plano Curricular ======
+        const buildLessonRouter = safeRequire("./Controllers/TCCD_SubjectContent", "Controllers/TCCD_SubjectContent");
+        if (buildLessonRouter) {
+          try {
+            app.use(buildLessonRouter(io));
+            console.log("[BOOT] lessonPlanningRouter montado");
+          } catch (e) {
+            BOOT_ERRORS.push({ label: "lessonPlanningRouter mount", error: e.message, stack: e.stack });
+          }
+        }
+        // =========================================================
+        
+    
        io.on("connection", socket => {
          console.log("Socket:", socket.id);
          socket.on("disconnect", () => console.log("Socket off:", socket.id));

@@ -1,4 +1,4 @@
-const ExecuteQuery = require("../Functions/ExecuteQuery");
+ const ExecuteQuery = require("../Functions/ExecuteQuery");
 const { RegisterAuditAction } = require("./Auditory");
 const Cache = require("../Functions/CacheRoutes");
 
@@ -9,6 +9,28 @@ const CacheKeys = {
   single: (id, instituteCode, userId) => `services:single:${id}:${instituteCode}:${userId}`,
   allByInstitute: (instituteCode, userId) => `services:${instituteCode}:${userId}:*`,
 };
+
+// ---------------------------------------------------------------------------
+// Log colorido de erros (para o console/servidor). Nunca é isto que vai
+// para o cliente — serve só para quem está a olhar para os logs perceber
+// rapidamente onde e porquê rebentou.
+// ---------------------------------------------------------------------------
+const LogError = (context, error) => {
+  const red = "\x1b[31m";
+  const bgRed = "\x1b[41m\x1b[37m";
+  const yellow = "\x1b[33m";
+  const reset = "\x1b[0m";
+
+  console.error(`${bgRed} 🔴 ERRO [${context}] ${reset}`);
+  console.error(`${red}Mensagem:${reset} ${error?.message || error}`);
+  if (error?.code) console.error(`${yellow}Code:${reset} ${error.code}`);
+  if (error?.sqlMessage) console.error(`${yellow}SQL Message:${reset} ${error.sqlMessage}`);
+  if (error?.sql) console.error(`${yellow}SQL:${reset} ${error.sql}`);
+  if (error?.stack) console.error(`${red}Stack:${reset}\n${error.stack}`);
+};
+
+// Mensagem genérica e amigável para devolver ao cliente, sem detalhes técnicos.
+const FRIENDLY_ERROR = "Ocorreu um erro ao processar o pedido. Tente novamente ou contacte o suporte.";
 
 const FetchServices = async (req, res, instituteCode) => {
   const query = `SELECT * FROM eduall_services  
@@ -68,7 +90,8 @@ const GetServices = async (req, res) => {
 
     res.status(200).json(rows);
   } catch (error) {
-    res.status(400).json({ success: false, msg: error.message });
+    LogError("GetServices", error);
+    res.status(400).json({ success: false, msg: FRIENDLY_ERROR });
   }
 };
 
@@ -111,7 +134,8 @@ const GetSingleService = async (req, res) => {
 
     res.status(200).json(rows);
   } catch (error) {
-    res.status(400).json({ success: false, msg: error.message });
+    LogError("GetSingleService", error);
+    res.status(400).json({ success: false, msg: FRIENDLY_ERROR });
   }
 };
 
@@ -119,6 +143,14 @@ const RegisterService = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
     const userId = req.session.user.eduall_user_session_ID;
+
+    // Fornecedor deixou de ser obrigatório: se não vier preenchido, grava-se null.
+    const serviceProvider =
+      req.body.service_provider === undefined ||
+      req.body.service_provider === null ||
+      req.body.service_provider === ""
+        ? null
+        : req.body.service_provider;
 
     const query = `INSERT INTO eduall_services 
       (ed_service_title, ed_service_type, ed_service_provider, ed_service_price, ed_service_iva, 
@@ -128,7 +160,7 @@ const RegisterService = async (req, res) => {
     const PARAMS = [
       req.body.service_title,
       req.body.service_type,
-      req.body.service_provider,
+      serviceProvider,
       req.body.service_price,
       req.body.service_iva,
       req.body.service_description,
@@ -160,7 +192,8 @@ const RegisterService = async (req, res) => {
 
     res.status(200).json({ success: true, msg: "Serviço registrado com sucesso!" });
   } catch (error) {
-    res.status(400).json({ success: false, msg: error.message });
+    LogError("RegisterService", error);
+    res.status(400).json({ success: false, msg: "Não foi possível registrar o serviço. Tente novamente." });
   }
 };
 
@@ -192,7 +225,8 @@ const ServiceDelete = async (req, res) => {
 
     res.status(200).json({ success: true, msg: "Serviço excluído com sucesso!" });
   } catch (error) {
-    res.status(400).json({ success: false, msg: error.message });
+    LogError("ServiceDelete", error);
+    res.status(400).json({ success: false, msg: "Não foi possível excluir o serviço. Tente novamente." });
   }
 };
 
@@ -214,6 +248,12 @@ const ServiceUpdate = async (req, res) => {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
     const userId = req.session.user.eduall_user_session_ID;
 
+    // Fornecedor continua opcional na edição.
+    const resolvedProvider =
+      service_provider === undefined || service_provider === null || service_provider === ""
+        ? null
+        : service_provider;
+
     const query = `UPDATE eduall_services SET ed_service_title = ?, ed_service_type = ?, ed_service_provider = ?, ed_service_price = ?,
       ed_service_iva = ?, ed_service_coin = ?, ed_service_description = ?, ed_service_is_matricula = ?, ed_service_is_confirmation = ? 
       WHERE ed_service_deleted = 0 AND ed_service_id = ? AND ed_service_institute_code = ?`;
@@ -221,7 +261,7 @@ const ServiceUpdate = async (req, res) => {
     const PARAMS = [
       service_title,
       service_type,
-      service_provider,
+      resolvedProvider,
       service_price,
       service_iva,
       service_coin,
@@ -252,7 +292,8 @@ const ServiceUpdate = async (req, res) => {
 
     res.status(200).json({ success: true, msg: "Serviço atualizado com sucesso!" });
   } catch (error) {
-    res.status(400).json({ success: false, msg: error.message });
+    LogError("ServiceUpdate", error);
+    res.status(400).json({ success: false, msg: "Não foi possível atualizar o serviço. Tente novamente." });
   }
 };
 
@@ -305,7 +346,8 @@ const ServiceUpdateDiscountData = async (req, res) => {
       msg: "Descontos do serviço atualizados com sucesso!",
     });
   } catch (error) {
-    res.status(400).json({ success: false, msg: error.message });
+    LogError("ServiceUpdateDiscountData", error);
+    res.status(400).json({ success: false, msg: "Não foi possível atualizar os descontos do serviço. Tente novamente." });
   }
 };
 
@@ -350,7 +392,8 @@ const ServiceUpdateMatriculaConfirmation = async (req, res) => {
       msg: "Dados de matrícula e confirmação do serviço atualizados com sucesso!",
     });
   } catch (error) {
-    res.status(400).json({ success: false, msg: error.message });
+    LogError("ServiceUpdateMatriculaConfirmation", error);
+    res.status(400).json({ success: false, msg: "Não foi possível atualizar os dados de matrícula/confirmação. Tente novamente." });
   }
 };
 

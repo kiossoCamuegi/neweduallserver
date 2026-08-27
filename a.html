@@ -1,0 +1,1361 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nova — Aprenda tocando na matemática</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FAF9F6;
+    --panel:#FFFFFF;
+    --panel-soft:#F1F1FB;
+    --line:#E4E3F5;
+    --ink:#171933;
+    --ink-dim:#5C5E82;
+    --ink-faint:#9C9DBF;
+    --blue:#3B49DF;
+    --blue-soft:#EDEEFC;
+    --coral:#FF6B4A;
+    --mint:#12B886;
+    --gold:#FFB020;
+    --purple:#8B5CF6;
+    --radius:20px;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.display{ font-family:'Space Grotesk',system-ui,sans-serif; letter-spacing:-0.015em; }
+  .mono{font-family:'IBM Plex Mono',monospace;}
+
+  .bg-lines{ position:fixed; inset:0; z-index:0; pointer-events:none; opacity:0.5; }
+
+  #app{position:relative; z-index:1; max-width:900px; margin:0 auto; padding:0 20px 90px;}
+
+  /* ---------- HEADER ---------- */
+  header{ display:flex; align-items:center; justify-content:space-between; padding:24px 0 14px; }
+  .brand{display:flex; align-items:center; gap:9px;}
+  .brand span{font-weight:800; font-size:21px; color:var(--ink);}
+  .stats{display:flex; gap:8px;}
+  .pill{
+    display:flex; align-items:center; gap:6px;
+    background:var(--panel-soft); border:1px solid var(--line); color:var(--ink);
+    padding:7px 13px; border-radius:100px; font-size:13px; font-weight:700;
+    transition:transform .25s ease;
+  }
+  .pill.bump{animation:bump .4s ease;}
+  @keyframes bump{ 0%{transform:scale(1);} 40%{transform:scale(1.16);} 100%{transform:scale(1);} }
+  .pill.streak{color:var(--coral);}
+  .pill.xp{color:var(--gold);}
+  .pill .lab{color:var(--ink-dim); font-weight:600;}
+
+  /* ---------- HOME ---------- */
+  .hero{margin:18px 0 30px; display:flex; align-items:center; gap:26px; flex-wrap:wrap;}
+  .hero-text{flex:1; min-width:260px;}
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:6px; background:var(--blue-soft); color:var(--blue);
+    font-size:12px; font-weight:700; padding:5px 12px; border-radius:100px; margin-bottom:14px;
+  }
+  .hero h1{font-size:36px; margin:0 0 10px; line-height:1.12; color:var(--ink);}
+  .hero p{color:var(--ink-dim); margin:0; font-size:16px; max-width:44ch; line-height:1.5;}
+  .hero-mark{flex:0 0 auto; width:150px; height:150px;}
+
+  .path{position:relative; padding:6px 0 20px;}
+  .node-row{display:flex; flex-direction:column; gap:12px;}
+
+  .lesson-node{
+    display:flex; align-items:center; gap:16px;
+    background:var(--panel); border:1.5px solid var(--line);
+    border-radius:var(--radius); padding:16px 18px;
+    cursor:pointer; transition:transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+    box-shadow:0 1px 2px rgba(23,25,51,0.03);
+  }
+  .lesson-node:hover{transform:translateY(-2px); border-color:var(--blue); box-shadow:0 10px 24px rgba(59,73,223,0.1);}
+  .lesson-node.locked{cursor:not-allowed; opacity:0.55;}
+  .lesson-node.locked:hover{transform:none; box-shadow:0 1px 2px rgba(23,25,51,0.03); border-color:var(--line);}
+  .lesson-node.complete{border-color:var(--mint);}
+
+  .node-badge{
+    flex:0 0 auto; width:50px; height:50px; border-radius:16px;
+    display:flex; align-items:center; justify-content:center; font-size:22px;
+  }
+  .node-body{flex:1;}
+  .node-body .k{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-faint); font-weight:700;}
+  .node-body .t{font-size:16px; font-weight:700; margin-top:2px; color:var(--ink);}
+  .node-arrow{color:var(--ink-faint); font-size:20px; font-weight:700;}
+  .lesson-node.complete .node-arrow{color:var(--mint);}
+
+  /* ---------- LESSON VIEW ---------- */
+  .lesson-view{display:none;}
+  .lesson-view.active{display:block;}
+  #home-view.hidden{display:none;}
+
+  .lesson-top{display:flex; align-items:center; gap:14px; margin:16px 0 6px;}
+  .back-btn{
+    background:var(--panel); border:1.5px solid var(--line); color:var(--ink);
+    width:40px; height:40px; border-radius:50%; cursor:pointer; font-size:17px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .back-btn:hover{border-color:var(--blue); color:var(--blue);}
+  .progress-track{flex:1; height:8px; background:var(--panel-soft); border-radius:100px; overflow:hidden;}
+  .progress-fill{height:100%; width:0%; background:linear-gradient(90deg,var(--blue),var(--purple)); transition:width .5s ease; border-radius:100px;}
+
+  .lesson-card{
+    background:var(--panel); border:1.5px solid var(--line); border-radius:26px;
+    padding:28px; margin-top:18px; box-shadow:0 1px 3px rgba(23,25,51,0.04);
+  }
+  .lesson-head{display:flex; align-items:flex-start; gap:14px; margin-bottom:20px;}
+  .lesson-icon{
+    flex:0 0 auto; width:44px; height:44px; border-radius:13px; display:flex;
+    align-items:center; justify-content:center; font-size:20px;
+  }
+  .lesson-card h2{font-size:23px; margin:0 0 4px; color:var(--ink);}
+  .lesson-card .concept{color:var(--ink-dim); font-size:15px; margin:0; max-width:60ch; line-height:1.5;}
+
+  .widget-frame{
+    background:var(--panel-soft); border:1.5px solid var(--line); border-radius:18px;
+    padding:16px; display:flex; align-items:center; justify-content:center; flex-direction:column;
+    gap:12px; margin-bottom:20px;
+  }
+  .widget-frame svg{max-width:100%; height:auto; touch-action:none;}
+  .readout{ display:flex; gap:18px; flex-wrap:wrap; justify-content:center; font-size:13.5px; color:var(--ink-dim); }
+  .readout b{color:var(--ink); font-family:'IBM Plex Mono',monospace; font-weight:600;}
+  .drag-hint{font-size:12px; color:var(--ink-faint); display:flex; align-items:center; gap:6px;}
+
+  .widget-btn{
+    background:var(--blue); color:#fff; border:none; border-radius:100px;
+    padding:10px 18px; font-weight:700; font-size:13px; cursor:pointer;
+    transition:transform .15s ease, filter .15s ease;
+  }
+  .widget-btn:hover{filter:brightness(1.08); transform:translateY(-1px);}
+
+  .insight{
+    display:flex; gap:12px; align-items:flex-start;
+    background:var(--blue-soft); border:1.5px solid #D7DAFB; border-radius:16px;
+    padding:15px 17px; font-size:14.5px; line-height:1.55; color:var(--ink);
+  }
+  .insight .ico{flex:0 0 auto; font-size:18px; margin-top:1px;}
+  .insight b{color:var(--blue);}
+
+  .lesson-actions{display:flex; justify-content:flex-end; margin-top:22px;}
+  .continue-btn{
+    background:linear-gradient(90deg,var(--blue),var(--purple)); color:#fff; border:none;
+    padding:13px 28px; border-radius:100px; font-weight:700; font-size:14.5px; cursor:pointer;
+    transition:transform .15s ease, filter .15s ease;
+    box-shadow:0 8px 20px rgba(59,73,223,0.25);
+  }
+  .continue-btn:hover{transform:translateY(-1px); filter:brightness(1.05);}
+
+  /* ---------- CARD DE PROMOÇÃO DO JOGO ---------- */
+  .game-promo{
+    display:flex; align-items:center; gap:16px;
+    background:linear-gradient(120deg,#3B49DF,#8B5CF6);
+    color:#fff; border-radius:var(--radius); padding:18px 20px; margin-top:14px;
+    cursor:pointer; transition:transform .18s ease, box-shadow .18s ease; border:none;
+    box-shadow:0 10px 26px rgba(59,73,223,0.28);
+  }
+  .game-promo:hover{transform:translateY(-2px);}
+  .game-promo .gp-icon{font-size:28px; flex:0 0 auto; width:54px; height:54px; border-radius:16px; background:rgba(255,255,255,0.18); display:flex; align-items:center; justify-content:center;}
+  .game-promo .gp-body{flex:1;}
+  .game-promo .gp-k{font-size:11px; text-transform:uppercase; letter-spacing:.08em; opacity:.85; font-weight:700;}
+  .game-promo .gp-t{font-size:17px; font-weight:800; margin-top:2px;}
+  .game-promo .gp-sub{font-size:13px; opacity:.85; margin-top:3px;}
+  .game-promo .gp-arrow{font-size:22px; font-weight:700;}
+
+  /* ---------- JOGOS (full screen) ---------- */
+  .game-view{display:none;}
+  .game-view.active{
+    display:flex; flex-direction:column; align-items:center;
+    position:fixed; inset:0; z-index:200; background:var(--bg);
+    padding:14px 14px calc(10px + env(safe-area-inset-bottom));
+    overflow:hidden;
+  }
+  .game-view .lesson-top{width:100%; max-width:760px; flex:0 0 auto;}
+  .game-view .equation-card{width:100%; max-width:560px; flex:0 0 auto;}
+  .board-stage{
+    flex:1 1 auto; width:100%; min-height:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .track-stage{
+    flex:1 1 auto; width:100%; max-width:900px; min-height:0;
+    display:flex; align-items:stretch; justify-content:center; padding-top:8px;
+  }
+  .game-view .game-controls{flex:0 0 auto; margin-top:6px;}
+
+  .icon-btn{
+    background:var(--panel); border:1.5px solid var(--line); color:var(--ink);
+    width:40px; height:40px; border-radius:50%; cursor:pointer; font-size:16px;
+    display:flex; align-items:center; justify-content:center; transition:border-color .15s ease, color .15s ease;
+  }
+  .icon-btn:hover{border-color:var(--blue); color:var(--blue);}
+
+  .game-hud{display:flex; align-items:center; gap:10px; flex:1; justify-content:flex-end;}
+  .level-pill{
+    background:var(--panel-soft); border:1.5px solid var(--line); color:var(--ink-dim);
+    padding:7px 14px; border-radius:100px; font-size:12.5px; font-weight:700;
+  }
+  .hud-score{
+    font-weight:800; font-size:16px; display:flex; align-items:center; gap:7px; color:var(--ink);
+    background:var(--panel); border:1.5px solid var(--line); padding:7px 15px; border-radius:100px;
+    transition:transform .18s ease;
+  }
+  .hud-score.bump{animation:bump .35s ease;}
+  .hud-score .mono{color:var(--blue); font-size:17px;}
+  .hud-score-lab{color:var(--ink-dim); font-weight:600; font-size:12px;}
+
+  .equation-card{
+    background:var(--panel); border:1.5px solid var(--line); border-radius:22px;
+    padding:20px 24px; text-align:center; margin-top:14px; box-shadow:0 1px 3px rgba(23,25,51,0.04);
+  }
+  .equation-text{font-family:'Space Grotesk',sans-serif; font-size:32px; font-weight:800; color:var(--ink); transition:transform .15s ease;}
+  .equation-text.pop{animation:eqPop .35s ease;}
+  @keyframes eqPop{ 0%{transform:scale(0.85); opacity:0;} 60%{transform:scale(1.05);} 100%{transform:scale(1); opacity:1;} }
+  .equation-text .op{color:var(--blue);}
+  .timer-track{height:9px; background:var(--panel-soft); border-radius:100px; overflow:hidden; margin-top:14px;}
+  .timer-fill{height:100%; width:100%; background:linear-gradient(90deg,var(--mint),var(--gold),var(--coral)); border-radius:100px;}
+
+  .board-wrap{
+    position:relative; width:440px; height:440px; max-width:100%; flex:0 0 auto;
+    background:var(--panel-soft); border:1.5px solid var(--line); border-radius:24px; overflow:hidden;
+    background-image:radial-gradient(circle, #E4E3F5 1.5px, transparent 1.5px); background-size:22px 22px;
+    box-shadow:0 1px 3px rgba(23,25,51,0.04);
+    --snake-color:#3B49DF;
+  }
+  .board-wrap.turbo{box-shadow:0 0 0 3px rgba(255,176,32,0.45), 0 1px 3px rgba(23,25,51,0.04);}
+
+  .pellet.turbo{
+    background:linear-gradient(135deg,#FFB020,#FF6B4A); border-color:#fff; color:#fff;
+    font-size:15px; box-shadow:0 0 14px rgba(255,176,32,0.55);
+    animation:pelletPop .28s cubic-bezier(.34,1.56,.64,1), turboSpin 1.6s linear infinite;
+  }
+  @keyframes turboSpin{ from{filter:hue-rotate(0deg);} to{filter:hue-rotate(30deg);} }
+  .board-wrap.shake{animation:boardShake .35s ease;}
+  @keyframes boardShake{ 10%,90%{transform:translateX(-3px);} 20%,80%{transform:translateX(5px);} 30%,50%,70%{transform:translateX(-8px);} 40%,60%{transform:translateX(8px);} }
+  .board-wrap.danger{animation:dangerPulse 1s ease-in-out infinite;}
+  @keyframes dangerPulse{ 0%,100%{box-shadow:0 0 0 0 rgba(255,107,74,0);} 50%{box-shadow:0 0 0 10px rgba(255,107,74,0.22);} }
+
+  .seg{
+    position:absolute; width:22px; height:22px; border-radius:8px;
+    background:var(--snake-color); transition:transform .12s linear, background-color .3s ease;
+    box-shadow:0 0 0 2px rgba(255,255,255,0.35) inset;
+  }
+  .seg.head{
+    border-radius:10px; z-index:2;
+    box-shadow:0 0 0 2px rgba(255,255,255,0.7) inset, 0 0 14px rgba(0,0,0,0.18);
+  }
+
+  .pellet{
+    position:absolute; width:34px; height:34px; border-radius:50%;
+    background:#fff; border:2.5px solid var(--coral); color:var(--ink);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'IBM Plex Mono',monospace; font-size:14px; font-weight:700;
+    animation:pelletPop .28s cubic-bezier(.34,1.56,.64,1);
+    box-shadow:0 3px 8px rgba(23,25,51,0.08);
+  }
+  @keyframes pelletPop{ from{transform:scale(0) translate(0,0);} to{transform:scale(1);} }
+
+  .float-pop{position:absolute; font-weight:800; font-family:'Space Grotesk',sans-serif; font-size:16px; pointer-events:none; animation:floatUp .8s ease forwards; z-index:4;}
+  @keyframes floatUp{ from{opacity:1; transform:translateY(0) scale(1);} to{opacity:0; transform:translateY(-34px) scale(1.15);} }
+
+  .game-controls{display:flex; flex-direction:column; align-items:center; gap:7px; margin-top:18px;}
+  .ctrl-row{display:flex; gap:7px;}
+  .ctrl-btn{
+    width:52px; height:52px; border-radius:15px; background:var(--panel); border:1.5px solid var(--line);
+    font-size:20px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--ink);
+    user-select:none; transition:transform .1s ease, background .1s ease;
+  }
+  .ctrl-btn:active{background:var(--blue-soft); border-color:var(--blue); transform:scale(0.92);}
+
+  .game-overlay{
+    position:absolute; inset:0; background:rgba(23,25,51,0.82); backdrop-filter:blur(3px);
+    display:flex; align-items:center; justify-content:center; flex-direction:column; gap:14px;
+    text-align:center; color:#fff; padding:26px; z-index:5;
+  }
+  .game-overlay h3{font-size:23px; margin:0; font-family:'Space Grotesk',sans-serif;}
+  .game-overlay p{margin:0; font-size:13.5px; opacity:.85; max-width:28ch; line-height:1.5;}
+  .game-overlay .go-score{font-size:40px; font-weight:800; font-family:'Space Grotesk',sans-serif; color:var(--gold);}
+
+  .level-choices{display:flex; flex-direction:column; gap:10px; width:100%; max-width:280px; margin-top:4px;}
+  .level-btn{
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+    background:rgba(255,255,255,0.07); border:1.5px solid rgba(255,255,255,0.28); color:#fff;
+    padding:13px 16px; border-radius:16px; cursor:pointer;
+    transition:transform .15s ease, background .15s ease, border-color .15s ease;
+  }
+  .level-btn:hover{transform:translateY(-2px); background:rgba(255,255,255,0.15);}
+  .level-btn.easy{border-color:rgba(18,184,134,0.6);}
+  .level-btn.medium{border-color:rgba(255,176,32,0.6);}
+  .level-btn.hard{border-color:rgba(255,107,74,0.6);}
+  .lvl-name{font-weight:800; font-size:15.5px; font-family:'Space Grotesk',sans-serif;}
+  .lvl-desc{font-size:11.5px; opacity:.8; font-family:'IBM Plex Mono',monospace;}
+
+  .overlay-btn{
+    background:linear-gradient(90deg,var(--blue),var(--purple)); color:#fff; border:none;
+    padding:12px 26px; border-radius:100px; font-weight:700; font-size:14px; cursor:pointer;
+  }
+  .overlay-btn.ghost{background:transparent; border:1.5px solid rgba(255,255,255,0.4);}
+
+  /* ---------- JOGO: PULA & COME (bounce ball) ---------- */
+  .track-wrap{
+    position:relative; width:100%; max-width:900px; height:100%;
+    background:linear-gradient(180deg, var(--panel-soft) 0%, var(--panel-soft) 78%, #E9E8FA 78%, #E9E8FA 100%);
+    border:1.5px solid var(--line); border-radius:24px; overflow:hidden;
+    box-shadow:0 1px 3px rgba(23,25,51,0.04);
+  }
+  .ground-line{position:absolute; left:0; right:0; bottom:22%; height:2px; background:var(--line);}
+  .ball{
+    position:absolute; left:14%; bottom:22%; width:38px; height:38px; border-radius:50%;
+    background:radial-gradient(circle at 32% 28%, #8FA0FF, var(--blue) 70%);
+    box-shadow:0 4px 10px rgba(59,73,223,0.35);
+    transform:translate(-50%,50%);
+    z-index:3;
+  }
+  .ball.hit{animation:ballHit .35s ease;}
+  @keyframes ballHit{ 0%{filter:brightness(1);} 40%{filter:brightness(1.6) hue-rotate(-30deg);} 100%{filter:brightness(1);} }
+
+  .obstacle{
+    position:absolute; bottom:22%; display:flex; align-items:center; justify-content:center;
+    font-family:'IBM Plex Mono',monospace; font-weight:700; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.15);
+    transform:translate(0,50%);
+  }
+  .obstacle.wrong{
+    width:38px; height:52px; border-radius:8px 8px 4px 4px;
+    background:linear-gradient(180deg,#FF8A6B,var(--coral)); font-size:15px;
+    clip-path:polygon(50% 0%, 100% 30%, 88% 100%, 12% 100%, 0% 30%);
+  }
+  .obstacle.correct{
+    width:40px; height:40px; border-radius:50%;
+    background:radial-gradient(circle at 32% 28%, #6FE3C0, var(--mint) 70%); font-size:14px;
+    animation:coinBob 1s ease-in-out infinite;
+  }
+  @keyframes coinBob{ 0%,100%{transform:translate(0,50%) translateY(0);} 50%{transform:translate(0,50%) translateY(-6px);} }
+  .obstacle.cleared{opacity:0; transform:translate(0,10%) scale(0.6); transition:opacity .25s ease, transform .25s ease;}
+  .obstacle.resolved-bad{opacity:0; transform:translate(0,60%) scale(0.5) rotate(20deg); transition:opacity .3s ease, transform .3s ease;}
+
+  .slowpick{
+    position:absolute; bottom:46%; width:32px; height:32px; border-radius:50%;
+    background:radial-gradient(circle at 32% 28%, #C9B8FF, var(--purple) 70%); transform:translate(0,50%);
+    display:flex; align-items:center; justify-content:center; font-size:15px;
+    animation:coinBob 1.3s ease-in-out infinite;
+    box-shadow:0 0 12px rgba(139,92,246,0.5);
+  }
+
+  .speed-badge{
+    position:absolute; top:12px; left:14px; font-size:11.5px; font-weight:700; color:var(--ink-dim);
+    background:var(--panel); border:1.5px solid var(--line); padding:4px 10px; border-radius:100px;
+  }
+  .track-wrap.slow .speed-badge{color:var(--purple); border-color:var(--purple);}
+
+  .jump-hint{
+    position:absolute; bottom:8px; left:0; right:0; text-align:center; font-size:11.5px; color:var(--ink-faint);
+  }
+
+  /* ---------- PAUSA ---------- */
+  .game-overlay.pause-overlay{background:rgba(23,25,51,0.72);}
+
+  .burst{position:fixed; inset:0; pointer-events:none; z-index:50;}
+
+  footer{text-align:center; color:var(--ink-faint); font-size:12px; padding:32px 0 10px;}
+
+  @media (max-width:560px){
+    .hero{flex-direction:column; align-items:flex-start;}
+    .hero-mark{display:none;}
+    .hero h1{font-size:28px;}
+    .lesson-card{padding:20px;}
+    .board-wrap{width:100%; height:auto; aspect-ratio:1/1;}
+    .ctrl-btn{width:46px; height:46px; font-size:18px;}
+  }
+  @media (prefers-reduced-motion: reduce){ *{animation:none !important; transition:none !important;} }
+</style>
+</head>
+<body>
+
+<svg class="bg-lines" id="bgLines" xmlns="http://www.w3.org/2000/svg"></svg>
+
+<div id="app">
+
+  <header>
+    <div class="brand">
+      <svg width="30" height="30" viewBox="0 0 30 30" fill="none">
+        <circle cx="15" cy="15" r="13" stroke="#3B49DF" stroke-width="2" fill="none"/>
+        <ellipse cx="15" cy="15" rx="13" ry="5.5" stroke="#3B49DF" stroke-width="1.4" fill="none"/>
+        <line x1="2" y1="15" x2="28" y2="15" stroke="#3B49DF" stroke-width="1.4"/>
+        <line x1="15" y1="2" x2="15" y2="28" stroke="#3B49DF" stroke-width="1.4"/>
+      </svg>
+      <span>nova</span>
+    </div>
+    <div class="stats">
+      <div class="pill streak"><span>▲</span> <span id="streakVal">4</span> <span class="lab">dias</span></div>
+      <div class="pill xp"><span>●</span> <span id="xpVal">0</span> <span class="lab">XP</span></div>
+    </div>
+  </header>
+
+  <!-- ============ HOME ============ -->
+  <div id="home-view">
+    <div class="hero">
+      <div class="hero-text">
+        <div class="eyebrow">✦ aprendizado interativo</div>
+        <h1>Aprenda matemática arrastando, não assistindo.</h1>
+        <p>Cinco problemas curtos e visuais. Mexa no diagrama, descubra o padrão — sem vídeos, sem provas de múltipla escolha.</p>
+      </div>
+      <svg class="hero-mark" viewBox="0 0 150 150" fill="none">
+        <polygon points="75,10 135,45 135,105 75,140 15,105 15,45" stroke="#3B49DF" stroke-width="2" fill="#EDEEFC"/>
+        <polygon points="75,45 105,62 105,88 75,105 45,88 45,62" fill="#FF6B4A" opacity="0.9"/>
+        <circle cx="75" cy="75" r="14" fill="#FFB020"/>
+      </svg>
+    </div>
+
+    <div class="path" id="path"></div>
+
+    <div class="game-promo" id="gamePromoCard">
+      <div class="gp-icon">🐍</div>
+      <div class="gp-body">
+        <div class="gp-k">Jogo · pratique cálculo</div>
+        <div class="gp-t">Cobra da Matemática</div>
+        <div class="gp-sub">Guie a cobra até o número certo antes que o tempo acabe.</div>
+      </div>
+      <div class="gp-arrow">→</div>
+    </div>
+
+    <div class="game-promo" id="bouncePromoCard" style="background:linear-gradient(120deg,#12B886,#3B49DF); box-shadow:0 10px 26px rgba(18,184,134,0.28); margin-top:12px;">
+      <div class="gp-icon">⚽</div>
+      <div class="gp-body">
+        <div class="gp-k">Jogo · pratique cálculo</div>
+        <div class="gp-t">Pula & Come</div>
+        <div class="gp-sub">Pule as respostas erradas e coma a resposta certa correndo.</div>
+      </div>
+      <div class="gp-arrow">→</div>
+    </div>
+  </div>
+
+  <!-- ============ LESSON ============ -->
+  <div class="lesson-view" id="lesson-view">
+    <div class="lesson-top">
+      <button class="back-btn" id="backBtn" title="Voltar">←</button>
+      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    </div>
+
+    <div class="lesson-card">
+      <div class="lesson-head">
+        <div class="lesson-icon" id="lessonIconWrap"></div>
+        <div>
+          <h2 id="lessonTitle"></h2>
+          <p class="concept" id="lessonConcept"></p>
+        </div>
+      </div>
+
+      <div class="widget-frame" id="widgetFrame"></div>
+
+      <div class="insight" id="insightBox">
+        <span class="ico">💡</span>
+        <span id="insightText"></span>
+      </div>
+
+      <div class="lesson-actions">
+        <button class="continue-btn" id="continueBtn">Próxima →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ JOGO: COBRA DA MATEMÁTICA ============ -->
+  <div class="game-view" id="game-view">
+    <div class="lesson-top">
+      <button class="back-btn" id="gameBackBtn" title="Voltar">←</button>
+      <div class="game-hud">
+        <div class="level-pill" id="levelPill">Nível: —</div>
+        <div class="hud-score" id="hudScoreBox">✦ <span class="mono" id="gameScore">10</span> <span class="hud-score-lab">pontos</span></div>
+        <button class="icon-btn" id="pauseBtn" title="Pausar">⏸</button>
+      </div>
+    </div>
+
+    <div class="equation-card">
+      <div class="equation-text" id="equationText">? + ? = ?</div>
+      <div class="timer-track"><div class="timer-fill" id="gameTimerFill"></div></div>
+    </div>
+
+    <div class="board-stage">
+    <div class="board-wrap" id="boardWrap">
+      <div id="gameOverlayStart" class="game-overlay">
+        <h3>🐍 Cobra da Matemática</h3>
+        <p>Guie a cobra até o número certo. Acertar soma pontos e faz a cobra crescer; errar, morder a si mesma ou deixar o tempo esgotar tira pontos e ela encolhe. Pegue a moeda dourada ⚡ para turbinar a velocidade. O jogo nunca para — só termina quando os pontos chegarem a zero.</p>
+        <div class="level-choices">
+          <button class="level-btn easy" data-level="facil">
+            <span class="lvl-name">Fácil</span>
+            <span class="lvl-desc">+1–2 · −1 pt · mais tempo</span>
+          </button>
+          <button class="level-btn medium" data-level="medio">
+            <span class="lvl-name">Médio</span>
+            <span class="lvl-desc">+1–3 · −1/−2 pt · tempo médio</span>
+          </button>
+          <button class="level-btn hard" data-level="dificil">
+            <span class="lvl-name">Difícil</span>
+            <span class="lvl-desc">+2–4 · −2 pt · pouco tempo</span>
+          </button>
+        </div>
+      </div>
+      <div id="gameOverlayPause" class="game-overlay pause-overlay" style="display:none;">
+        <h3>⏸ Pausado</h3>
+        <p>O tempo e o movimento estão parados. Volte quando quiser.</p>
+        <button class="overlay-btn" id="resumeGameBtn">Continuar</button>
+        <button class="overlay-btn ghost" id="exitFromPauseBtn">Sair para a trilha</button>
+      </div>
+      <div id="gameOverlayEnd" class="game-overlay" style="display:none;">
+        <h3>Fim de jogo</h3>
+        <div class="go-score" id="finalScore">0</div>
+        <p id="finalScoreLabel">seus pontos chegaram a zero.</p>
+        <button class="overlay-btn" id="retryGameBtn">Jogar novamente</button>
+        <button class="overlay-btn ghost" id="changeLevelBtn">Escolher outro nível</button>
+        <button class="overlay-btn ghost" id="exitGameBtn">Voltar à trilha</button>
+      </div>
+    </div>
+    </div>
+
+    <div class="game-controls">
+      <div class="ctrl-row"><button class="ctrl-btn" data-dir="up">↑</button></div>
+      <div class="ctrl-row">
+        <button class="ctrl-btn" data-dir="left">←</button>
+        <button class="ctrl-btn" data-dir="down">↓</button>
+        <button class="ctrl-btn" data-dir="right">→</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ JOGO: PULA & COME ============ -->
+  <div class="game-view" id="bounce-view">
+    <div class="lesson-top">
+      <button class="back-btn" id="bounceBackBtn" title="Voltar">←</button>
+      <div class="game-hud">
+        <div class="level-pill" id="bounceLevelPill">Nível: —</div>
+        <div class="hud-score" id="bounceHudScoreBox">✦ <span class="mono" id="bounceScore">10</span> <span class="hud-score-lab">pontos</span></div>
+        <button class="icon-btn" id="bouncePauseBtn" title="Pausar">⏸</button>
+      </div>
+    </div>
+
+    <div class="equation-card">
+      <div class="equation-text" id="bounceEquationText">? + ? = ?</div>
+      <div class="jump-hint">espaço / toque para pular · não pule nos números certos</div>
+    </div>
+
+    <div class="track-stage">
+    <div class="track-wrap" id="trackWrap">
+      <div class="speed-badge" id="speedBadge">velocidade: —</div>
+      <div class="ground-line"></div>
+      <div class="ball" id="ballEl"></div>
+
+      <div id="bounceOverlayStart" class="game-overlay">
+        <h3>⚽ Pula & Come</h3>
+        <p>A bolinha corre sozinha. Pule (espaço, ↑ ou toque na pista) para passar por cima das respostas erradas e deixe a bolinha comer a resposta certa no chão. A velocidade aumenta com o tempo — pegue a bolha roxa 🌀 para desacelerar por alguns segundos. Só acaba quando os pontos chegarem a zero.</p>
+        <div class="level-choices">
+          <button class="level-btn easy" data-level="facil">
+            <span class="lvl-name">Fácil</span>
+            <span class="lvl-desc">início lento · +1–2 · −1 pt</span>
+          </button>
+          <button class="level-btn medium" data-level="medio">
+            <span class="lvl-name">Médio</span>
+            <span class="lvl-desc">ritmo médio · +1–3 · −1/−2 pt</span>
+          </button>
+          <button class="level-btn hard" data-level="dificil">
+            <span class="lvl-name">Difícil</span>
+            <span class="lvl-desc">início rápido · +2–4 · −2 pt</span>
+          </button>
+        </div>
+      </div>
+      <div id="bounceOverlayPause" class="game-overlay pause-overlay" style="display:none;">
+        <h3>⏸ Pausado</h3>
+        <p>A pista está parada. Volte quando quiser.</p>
+        <button class="overlay-btn" id="bounceResumeBtn">Continuar</button>
+        <button class="overlay-btn ghost" id="bounceExitFromPauseBtn">Sair para a trilha</button>
+      </div>
+      <div id="bounceOverlayEnd" class="game-overlay" style="display:none;">
+        <h3>Fim de jogo</h3>
+        <div class="go-score" id="bounceFinalScore">0</div>
+        <p id="bounceFinalScoreLabel">seus pontos chegaram a zero.</p>
+        <button class="overlay-btn" id="bounceRetryBtn">Jogar novamente</button>
+        <button class="overlay-btn ghost" id="bounceChangeLevelBtn">Escolher outro nível</button>
+        <button class="overlay-btn ghost" id="bounceExitBtn">Voltar à trilha</button>
+      </div>
+    </div>
+    </div>
+
+    <div class="game-controls">
+      <button class="ctrl-btn" id="jumpBtn" style="width:96px; border-radius:100px; font-size:14px; font-weight:800;">PULAR</button>
+    </div>
+  </div>
+
+  <footer>Nova · esboço de MVP inspirado em apps de aprendizado visual e interativo</footer>
+</div>
+
+<svg class="burst" id="burstLayer"></svg>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- fundo geométrico sutil ---------- */
+  (function drawBg(){
+    const svg = document.getElementById('bgLines');
+    const W = window.innerWidth, H = window.innerHeight;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    let s = '';
+    for(let i=0;i<7;i++){
+      const x = (W/7)*i + 30;
+      s += `<line x1="${x}" y1="0" x2="${x+60}" y2="${H}" stroke="#E4E3F5" stroke-width="1"/>`;
+    }
+    s += `<circle cx="${W*0.9}" cy="${H*0.12}" r="90" stroke="#E4E3F5" stroke-width="1.2" fill="none"/>`;
+    s += `<polygon points="${W*0.06},${H*0.85} ${W*0.06+50},${H*0.8} ${W*0.06+50},${H*0.92} ${W*0.06},${H*0.97} ${W*0.06-50},${H*0.92} ${W*0.06-50},${H*0.8}" stroke="#E4E3F5" stroke-width="1.2" fill="none"/>`;
+    svg.innerHTML = s;
+  })();
+
+  /* ---------- estado ---------- */
+  const state = {
+    xp:0, streak:4, streakBumped:false,
+    currentLessonIndex:null,
+    lessonStatus:['available','available','available','available','available'],
+  };
+
+  const palette = ['#3B49DF','#FF6B4A','#12B886','#8B5CF6','#FFB020'];
+  const paletteSoft = ['#EDEEFC','#FFE9E3','#E1F8EF','#F1EBFE','#FFF3DC'];
+
+  /* ---------- lições ---------- */
+  const lessons = [
+    {
+      icon:'📈',
+      title:'Lendo a inclinação de uma reta',
+      concept:'Arraste o ponto e veja “subida sobre avanço” virar o número na frente do x.',
+      insight:'A inclinação é constante: para qualquer avanço que você escolher, a subida correspondente muda na mesma proporção — é exatamente esse número que a reta “carrega” em y = mx + b.',
+      mount(frame){
+        const W=440,H=320, ox=70, oy=250, scale=28;
+        const toSvg=(x,y)=>[ox+x*scale, oy-y*scale];
+        const fixed = {x:0,y:2};
+        let P = {x:3,y:5};
+        frame.innerHTML = `
+          <svg viewBox="0 0 ${W} ${H}" width="${W}">
+            <g id="gridLS"></g>
+            <line id="lineLS" x1="0" y1="0" x2="0" y2="0" stroke="#3B49DF" stroke-width="3" stroke-linecap="round"/>
+            <circle id="fixedLS" cx="0" cy="0" r="6" fill="#9C9DBF"/>
+            <circle id="dragLS" cx="0" cy="0" r="10" fill="#FF6B4A" stroke="#fff" stroke-width="2" style="cursor:grab"/>
+          </svg>
+          <div class="readout">
+            <span>Δy (subida): <b id="riseLS">0</b></span>
+            <span>Δx (avanço): <b id="runLS">0</b></span>
+            <span>inclinação: <b id="slopeLS">0</b></span>
+          </div>
+          <div class="drag-hint">↕ arraste o ponto laranja</div>`;
+        const svg = frame.querySelector('svg');
+        const grid = frame.querySelector('#gridLS');
+        let gridS='';
+        for(let gx=-2;gx<=8;gx++){ const [x1,y1]=toSvg(gx,-2); const [x2,y2]=toSvg(gx,8); gridS+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#E4E3F5" stroke-width="1"/>`; }
+        for(let gy=-2;gy<=8;gy++){ const [x1,y1]=toSvg(-2,gy); const [x2,y2]=toSvg(8,gy); gridS+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#E4E3F5" stroke-width="1"/>`; }
+        grid.innerHTML = gridS;
+        const lineEl=frame.querySelector('#lineLS'), fixedEl=frame.querySelector('#fixedLS'), dragEl=frame.querySelector('#dragLS');
+        const riseEl=frame.querySelector('#riseLS'), runEl=frame.querySelector('#runLS'), slopeEl=frame.querySelector('#slopeLS');
+        function render(){
+          const [fx,fy]=toSvg(fixed.x,fixed.y); const [px,py]=toSvg(P.x,P.y);
+          fixedEl.setAttribute('cx',fx); fixedEl.setAttribute('cy',fy);
+          dragEl.setAttribute('cx',px); dragEl.setAttribute('cy',py);
+          const dx=P.x-fixed.x, dy=P.y-fixed.y, t1=-3, t2=10;
+          const A={x:fixed.x+dx*t1,y:fixed.y+dy*t1}, B={x:fixed.x+dx*t2,y:fixed.y+dy*t2};
+          const [ax,ay]=toSvg(A.x,A.y), [bx,by]=toSvg(B.x,B.y);
+          lineEl.setAttribute('x1',ax); lineEl.setAttribute('y1',ay); lineEl.setAttribute('x2',bx); lineEl.setAttribute('y2',by);
+          riseEl.textContent=(P.y-fixed.y).toFixed(1);
+          runEl.textContent=(P.x-fixed.x).toFixed(1);
+          slopeEl.textContent = (P.x-fixed.x)===0 ? '∞' : ((P.y-fixed.y)/(P.x-fixed.x)).toFixed(2);
+        }
+        render();
+        function clientToMath(cx,cy){ const rect=svg.getBoundingClientRect(); const sx=(cx-rect.left)*(W/rect.width); const sy=(cy-rect.top)*(H/rect.height); return {x:(sx-ox)/scale, y:(oy-sy)/scale}; }
+        let dragging=false;
+        function start(e){dragging=true; dragEl.style.cursor='grabbing'; e.preventDefault();}
+        function move(e){ if(!dragging) return; const pt=e.touches?e.touches[0]:e; let m=clientToMath(pt.clientX,pt.clientY); m.x=Math.max(-2,Math.min(8,m.x)); m.y=Math.max(-2,Math.min(8,m.y)); P=m; render(); }
+        function end(){dragging=false; dragEl.style.cursor='grab';}
+        dragEl.addEventListener('mousedown',start); window.addEventListener('mousemove',move); window.addEventListener('mouseup',end);
+        dragEl.addEventListener('touchstart',start,{passive:false}); window.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',end);
+      }
+    },
+    {
+      icon:'⤴',
+      title:'Forma de vértice da parábola',
+      concept:'Arraste o vértice e veja suas coordenadas entrarem direto na equação y = (x − h)² + k.',
+      insight:'Mover o vértice para a esquerda deixa h negativo — por isso a equação soma dentro dos parênteses. Mover para cima soma k fora deles. A curva só desliza; a forma nunca muda.',
+      mount(frame){
+        const W=440,H=340, ox=220, oy=280, scale=24;
+        const toSvg=(x,y)=>[ox+x*scale, oy-y*scale];
+        let V = {x:0,y:0};
+        frame.innerHTML = `
+          <svg viewBox="0 0 ${W} ${H}" width="${W}">
+            <g id="gridPB"></g>
+            <path id="curvePB" d="" stroke="#3B49DF" stroke-width="3" fill="none" stroke-linecap="round"/>
+            <circle id="vertexPB" cx="0" cy="0" r="10" fill="#FF6B4A" stroke="#fff" stroke-width="2" style="cursor:grab"/>
+          </svg>
+          <div class="readout">
+            <span>h: <b id="hPB">0</b></span>
+            <span>k: <b id="kPB">0</b></span>
+            <span>equação: <b id="eqPB">y = x²</b></span>
+          </div>
+          <div class="drag-hint">✥ arraste o vértice</div>`;
+        const svg=frame.querySelector('svg'); const grid=frame.querySelector('#gridPB');
+        let gridS='';
+        for(let gx=-8;gx<=8;gx++){ const [x1,y1]=toSvg(gx,-2); const [x2,y2]=toSvg(gx,8); gridS+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#E4E3F5" stroke-width="1"/>`; }
+        for(let gy=-2;gy<=8;gy++){ const [x1,y1]=toSvg(-8,gy); const [x2,y2]=toSvg(8,gy); gridS+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#E4E3F5" stroke-width="1"/>`; }
+        grid.innerHTML = gridS;
+        const curveEl=frame.querySelector('#curvePB'), vertexEl=frame.querySelector('#vertexPB');
+        const hEl=frame.querySelector('#hPB'), kEl=frame.querySelector('#kPB'), eqEl=frame.querySelector('#eqPB');
+        function render(){
+          let d='';
+          for(let x=-8;x<=8;x+=0.25){ const a=0.35; const y=a*Math.pow(x-V.x,2)+V.y; const [sx,sy]=toSvg(x,y); d+=(x===-8?'M':'L')+sx.toFixed(1)+' '+sy.toFixed(1)+' '; }
+          curveEl.setAttribute('d',d);
+          const [vx,vy]=toSvg(V.x,V.y); vertexEl.setAttribute('cx',vx); vertexEl.setAttribute('cy',vy);
+          hEl.textContent=V.x.toFixed(0); kEl.textContent=V.y.toFixed(0);
+          const hSign = V.x>=0 ? `−${V.x.toFixed(0)}` : `+${Math.abs(V.x).toFixed(0)}`;
+          const kSign = V.y>=0 ? `+ ${V.y.toFixed(0)}` : `− ${Math.abs(V.y).toFixed(0)}`;
+          eqEl.textContent = `y = (x ${hSign})² ${kSign}`;
+        }
+        render();
+        function clientToMath(cx,cy){ const rect=svg.getBoundingClientRect(); const sx=(cx-rect.left)*(W/rect.width); const sy=(cy-rect.top)*(H/rect.height); return {x:(sx-ox)/scale, y:(oy-sy)/scale}; }
+        let dragging=false;
+        function start(e){dragging=true; vertexEl.style.cursor='grabbing'; e.preventDefault();}
+        function move(e){ if(!dragging) return; const pt=e.touches?e.touches[0]:e; let m=clientToMath(pt.clientX,pt.clientY); m.x=Math.round(Math.max(-6,Math.min(6,m.x))); m.y=Math.round(Math.max(-2,Math.min(6,m.y))); V=m; render(); }
+        function end(){dragging=false; vertexEl.style.cursor='grab';}
+        vertexEl.addEventListener('mousedown',start); window.addEventListener('mousemove',move); window.addEventListener('mouseup',end);
+        vertexEl.addEventListener('touchstart',start,{passive:false}); window.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',end);
+      }
+    },
+    {
+      icon:'🪙',
+      title:'Lei dos grandes números',
+      concept:'Jogue uma moeda muitas vezes e observe a proporção de caras se estabilizar.',
+      insight:'Cada lançamento é imprevisível, mas conforme o número de lançamentos cresce, a proporção de caras se aproxima de 50% — a linha tracejada. É a lei dos grandes números em ação.',
+      mount(frame){
+        const W=440,H=280;
+        frame.innerHTML = `
+          <svg viewBox="0 0 ${W} ${H}" width="${W}"><g id="barsPR"></g></svg>
+          <div class="readout">
+            <span>lançamentos: <b id="nPR">0</b></span>
+            <span>caras: <b id="hPR">0</b></span>
+            <span>proporção: <b id="pPR">—</b></span>
+          </div>
+          <button class="widget-btn" id="flipBtn">Lançar 20 moedas</button>`;
+        let n=0, heads=0; const history=[];
+        const barsG=frame.querySelector('#barsPR'), nEl=frame.querySelector('#nPR'), hEl=frame.querySelector('#hPR'), pEl=frame.querySelector('#pPR');
+        function render(){
+          nEl.textContent=n; hEl.textContent=heads; pEl.textContent = n===0 ? '—' : ((heads/n*100).toFixed(1)+'%');
+          let s = `<line x1="30" y1="115" x2="410" y2="115" stroke="#9C9DBF" stroke-width="1" stroke-dasharray="4 4"/>`;
+          if(history.length>1){
+            let d='';
+            history.forEach((p,i)=>{ const x=30+(380/(Math.max(history.length-1,1)))*i; const y=230-p*200; d+=(i===0?'M':'L')+x.toFixed(1)+' '+y.toFixed(1)+' '; });
+            s += `<path d="${d}" stroke="#12B886" stroke-width="2.5" fill="none" stroke-linecap="round"/>`;
+          }
+          if(history.length>0){ const lastP=history[history.length-1]; const lastX=30+(380/(Math.max(history.length-1,1)))*(history.length-1); const lastY=230-lastP*200; s+=`<circle cx="${lastX}" cy="${lastY}" r="5" fill="#FF6B4A"/>`; }
+          s += `<text x="34" y="108" fill="#9C9DBF" font-size="11" font-family="IBM Plex Mono">50%</text>`;
+          s += `<line x1="30" y1="230" x2="410" y2="230" stroke="#E4E3F5" stroke-width="1"/>`;
+          barsG.innerHTML = s;
+        }
+        render();
+        frame.querySelector('#flipBtn').addEventListener('click', ()=>{
+          let batch=0; for(let i=0;i<20;i++){ if(Math.random()<0.5) batch++; }
+          n+=20; heads+=batch; history.push(heads/n); render();
+        });
+      }
+    },
+    {
+      icon:'◐',
+      title:'O ângulo inscrito surpreendente',
+      concept:'Arraste o ponto pelo círculo, mantendo-o no mesmo arco, e observe o ângulo.',
+      insight:'Todo ponto no mesmo arco enxerga a mesma corda sob o mesmo ângulo — o Teorema do Ângulo Inscrito. Só muda se você pular para o outro arco.',
+      mount(frame){
+        const W=440,H=340, cx=220, cy=180, r=120;
+        let theta = 100*Math.PI/180; const thetaA=200*Math.PI/180, thetaB=340*Math.PI/180;
+        frame.innerHTML = `
+          <svg viewBox="0 0 ${W} ${H}" width="${W}">
+            <circle cx="${cx}" cy="${cy}" r="${r}" stroke="#E4E3F5" stroke-width="1" fill="none"/>
+            <line id="chAP" x1="0" y1="0" x2="0" y2="0" stroke="#9C9DBF" stroke-width="2"/>
+            <line id="chBP" x1="0" y1="0" x2="0" y2="0" stroke="#9C9DBF" stroke-width="2"/>
+            <line id="chAB" x1="0" y1="0" x2="0" y2="0" stroke="#E4E3F5" stroke-width="2" stroke-dasharray="5 5"/>
+            <circle id="ptA" r="6" fill="#3B49DF"/>
+            <circle id="ptB" r="6" fill="#3B49DF"/>
+            <circle id="ptP" r="10" fill="#FF6B4A" stroke="#fff" stroke-width="2" style="cursor:grab"/>
+          </svg>
+          <div class="readout"><span>∠ em P: <b id="angPR">—°</b></span></div>
+          <div class="drag-hint">↻ arraste o ponto laranja pelo arco</div>`;
+        const svg=frame.querySelector('svg');
+        const chAP=frame.querySelector('#chAP'), chBP=frame.querySelector('#chBP'), chAB=frame.querySelector('#chAB');
+        const ptA=frame.querySelector('#ptA'), ptB=frame.querySelector('#ptB'), ptP=frame.querySelector('#ptP');
+        const angEl=frame.querySelector('#angPR');
+        function pos(t){ return [cx+r*Math.cos(t), cy+r*Math.sin(t)]; }
+        function render(){
+          const [ax,ay]=pos(thetaA), [bx,by]=pos(thetaB), [px,py]=pos(theta);
+          ptA.setAttribute('cx',ax); ptA.setAttribute('cy',ay);
+          ptB.setAttribute('cx',bx); ptB.setAttribute('cy',by);
+          ptP.setAttribute('cx',px); ptP.setAttribute('cy',py);
+          chAP.setAttribute('x1',ax); chAP.setAttribute('y1',ay); chAP.setAttribute('x2',px); chAP.setAttribute('y2',py);
+          chBP.setAttribute('x1',bx); chBP.setAttribute('y1',by); chBP.setAttribute('x2',px); chBP.setAttribute('y2',py);
+          chAB.setAttribute('x1',ax); chAB.setAttribute('y1',ay); chAB.setAttribute('x2',bx); chAB.setAttribute('y2',by);
+          const v1={x:ax-px,y:ay-py}, v2={x:bx-px,y:by-py};
+          const dot=v1.x*v2.x+v1.y*v2.y, mag1=Math.hypot(v1.x,v1.y), mag2=Math.hypot(v2.x,v2.y);
+          const angle = Math.acos(Math.max(-1,Math.min(1,dot/(mag1*mag2))))*180/Math.PI;
+          angEl.textContent = angle.toFixed(1)+'°';
+        }
+        render();
+        function clientToTheta(cx2,cy2){ const rect=svg.getBoundingClientRect(); const sx=(cx2-rect.left)*(W/rect.width); const sy=(cy2-rect.top)*(H/rect.height); return Math.atan2(sy-cy, sx-cx); }
+        let dragging=false;
+        function start(e){dragging=true; ptP.style.cursor='grabbing'; e.preventDefault();}
+        function move(e){
+          if(!dragging) return; const pt=e.touches?e.touches[0]:e; let t=clientToTheta(pt.clientX,pt.clientY); if(t<0) t+=Math.PI*2;
+          const deg=t*180/Math.PI;
+          if(deg>200 && deg<340){ t=(Math.abs(deg-200)<Math.abs(deg-340)?200:340)*Math.PI/180; }
+          theta=t; render();
+        }
+        function end(){dragging=false; ptP.style.cursor='grab';}
+        ptP.addEventListener('mousedown',start); window.addEventListener('mousemove',move); window.addEventListener('mouseup',end);
+        ptP.addEventListener('touchstart',start,{passive:false}); window.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',end);
+      }
+    },
+    {
+      icon:'▦',
+      title:'Por que se chamam números quadrados',
+      concept:'Deslize n e veja a grade de pontos crescer — sempre n linhas de n pontos.',
+      insight:'O padrão é aₙ = n². Cada vez que n aumenta em 1, você adiciona uma linha e uma coluna inteiras de pontos, não só um ponto — por isso o total cresce em curva, não em linha reta.',
+      mount(frame){
+        const W=380,H=280; let n=4;
+        frame.innerHTML = `
+          <svg id="gridSQ" viewBox="0 0 ${W} ${H}" width="${W}"></svg>
+          <div class="readout">
+            <span>n: <b id="nSQ">4</b></span>
+            <span>total de pontos: <b id="totSQ">16</b></span>
+            <span>fórmula: <b>aₙ = n²</b></span>
+          </div>
+          <input type="range" min="1" max="9" value="4" id="sliderSQ" style="width:80%; accent-color:#3B49DF;">`;
+        const gridSvg=frame.querySelector('#gridSQ'), nEl=frame.querySelector('#nSQ'), totEl=frame.querySelector('#totSQ');
+        function render(){
+          const cell=Math.min(28,(W-60)/n); const totalW=cell*n, totalH=cell*n;
+          const ox=(W-totalW)/2, oy=(H-totalH)/2+6; let s='';
+          for(let i=0;i<n;i++){ for(let j=0;j<n;j++){ const cxp=ox+j*cell+cell/2, cyp=oy+i*cell+cell/2; s+=`<circle cx="${cxp}" cy="${cyp}" r="${Math.max(3,cell*0.28)}" fill="#3B49DF"/>`; } }
+          gridSvg.innerHTML=s; nEl.textContent=n; totEl.textContent=n*n;
+        }
+        render();
+        frame.querySelector('#sliderSQ').addEventListener('input',(e)=>{ n=parseInt(e.target.value,10); render(); });
+      }
+    },
+  ];
+
+  /* ---------- home / trilha ---------- */
+  const pathEl = document.getElementById('path');
+  function renderPath(){
+    let rows='';
+    lessons.forEach((lesson,i)=>{
+      const status = state.lessonStatus[i];
+      const color = palette[i%palette.length], soft = paletteSoft[i%paletteSoft.length];
+      const badge = status==='complete' ? '✓' : lesson.icon;
+      const badgeStyle = status==='complete' ? `background:#E1F8EF; color:#12B886;` : `background:${soft}; color:${color};`;
+      rows += `
+        <div class="lesson-node ${status}" data-index="${i}">
+          <div class="node-badge" style="${badgeStyle}">${badge}</div>
+          <div class="node-body">
+            <div class="k">${status==='complete' ? 'Concluída' : 'Lição '+(i+1)}</div>
+            <div class="t">${lesson.title}</div>
+          </div>
+          <div class="node-arrow">→</div>
+        </div>`;
+    });
+    pathEl.innerHTML = `<div class="node-row">${rows}</div>`;
+    pathEl.querySelectorAll('.lesson-node').forEach(node=>{
+      node.addEventListener('click', ()=>{
+        const i = parseInt(node.dataset.index,10);
+        openLesson(i);
+      });
+    });
+  }
+
+  /* ---------- view da lição ---------- */
+  const homeView=document.getElementById('home-view'), lessonView=document.getElementById('lesson-view');
+  const widgetFrame=document.getElementById('widgetFrame'), lessonTitle=document.getElementById('lessonTitle'), lessonConcept=document.getElementById('lessonConcept');
+  const lessonIconWrap=document.getElementById('lessonIconWrap'), insightText=document.getElementById('insightText');
+  const continueBtn=document.getElementById('continueBtn'), progressFill=document.getElementById('progressFill'), backBtn=document.getElementById('backBtn');
+
+  function openLesson(i){
+    state.currentLessonIndex=i;
+    const lesson = lessons[i];
+    const color = palette[i%palette.length], soft = paletteSoft[i%paletteSoft.length];
+    lessonIconWrap.style.background = soft; lessonIconWrap.style.color = color;
+    lessonIconWrap.textContent = lesson.icon;
+    lessonTitle.textContent = lesson.title;
+    lessonConcept.textContent = lesson.concept;
+    widgetFrame.innerHTML = '';
+    lesson.mount(widgetFrame);
+    insightText.textContent = lesson.insight;
+    progressFill.style.width = '100%';
+    homeView.classList.add('hidden');
+    lessonView.classList.add('active');
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+
+  continueBtn.addEventListener('click', ()=>{
+    const i = state.currentLessonIndex;
+    if(state.lessonStatus[i] !== 'complete'){
+      state.lessonStatus[i] = 'complete';
+      awardXP(20);
+      if(!state.streakBumped){
+        state.streak += 1; state.streakBumped = true;
+        document.getElementById('streakVal').textContent = state.streak;
+      }
+    }
+    closeLesson();
+  });
+  backBtn.addEventListener('click', closeLesson);
+  function closeLesson(){
+    lessonView.classList.remove('active');
+    homeView.classList.remove('hidden');
+    renderPath();
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+
+  /* ---------- XP / streak / confete ---------- */
+  const xpValEl = document.getElementById('xpVal');
+  function awardXP(amount){
+    if(amount<=0) return;
+    const start=state.xp, end=start+amount, duration=500, t0=performance.now();
+    function tick(now){ const p=Math.min(1,(now-t0)/duration); state.xp=Math.round(start+(end-start)*p); xpValEl.textContent=state.xp; if(p<1) requestAnimationFrame(tick); }
+    requestAnimationFrame(tick);
+    burstConfetti();
+  }
+  function burstConfetti(){
+    const layer=document.getElementById('burstLayer'); const W=window.innerWidth, H=window.innerHeight;
+    layer.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    const colors=['#3B49DF','#FF6B4A','#12B886','#FFB020','#8B5CF6'];
+    let pieces=''; const originX=W-70, originY=30; const bits=[];
+    for(let i=0;i<18;i++){ const angle=Math.random()*Math.PI*2; const dist=40+Math.random()*70; const color=colors[i%colors.length]; const id='c'+i;
+      bits.push({id,angle,dist,color}); pieces+=`<circle id="${id}" cx="${originX}" cy="${originY}" r="4" fill="${color}" opacity="1"/>`; }
+    layer.innerHTML = pieces;
+    requestAnimationFrame(()=>{ bits.forEach(b=>{ const el=document.getElementById(b.id); el.style.transition='transform .6s cubic-bezier(.2,.7,.3,1), opacity .6s ease'; el.style.transform=`translate(${Math.cos(b.angle)*b.dist}px, ${Math.sin(b.angle)*b.dist+40}px)`; el.style.opacity='0'; }); });
+    setTimeout(()=>{ layer.innerHTML=''; }, 700);
+  }
+
+  /* ============================================================
+     JOGO: COBRA DA MATEMÁTICA
+     - começa com 10 pontos
+     - nível escolhe quanto se ganha por acerto (variável) e quanto se
+       perde por erro / tempo esgotado
+     - a cobra cresce ao acertar e encolhe ao errar, mudando de cor
+       conforme o tamanho
+     - o jogo nunca "morre" por colisão — as bordas se conectam e o
+       jogo só termina quando os pontos chegam a zero
+  ============================================================ */
+  (function SnakeMathGame(){
+    const CELL=22;
+    const PELLET_SIZE=34, PELLET_OFFSET=(PELLET_SIZE-CELL)/2;
+    const START_SCORE=10, MIN_LEN=3, MAX_LEN_FOR_COLOR=26;
+    let COLS=20, ROWS=20;
+
+    const LEVELS = {
+      facil:   { name:'Fácil',   gainMin:1, gainMax:2, lossWrong:1, lossTimeout:1, timeSecs:10,  tickMs:190, ops:['+','-'],            numMax:12 },
+      medio:   { name:'Médio',   gainMin:1, gainMax:3, lossWrong:1, lossTimeout:2, timeSecs:7.5, tickMs:150, ops:['+','-','×'],        numMax:18 },
+      dificil: { name:'Difícil', gainMin:2, gainMax:4, lossWrong:2, lossTimeout:2, timeSecs:5.5, tickMs:115, ops:['+','-','×','÷'],    numMax:24 },
+    };
+
+    const gameView = document.getElementById('game-view');
+    const boardStage = gameView.querySelector('.board-stage');
+    const boardEl = document.getElementById('boardWrap');
+    const overlayStart = document.getElementById('gameOverlayStart');
+    const overlayPause = document.getElementById('gameOverlayPause');
+    const overlayEnd = document.getElementById('gameOverlayEnd');
+    const equationTextEl = document.getElementById('equationText');
+    const timerFillEl = document.getElementById('gameTimerFill');
+    const gameScoreEl = document.getElementById('gameScore');
+    const hudScoreBox = document.getElementById('hudScoreBox');
+    const levelPillEl = document.getElementById('levelPill');
+    const finalScoreEl = document.getElementById('finalScore');
+    const finalScoreLabelEl = document.getElementById('finalScoreLabel');
+    const pauseBtn = document.getElementById('pauseBtn');
+
+    let levelKey=null, levelCfg=null;
+    let snake=[], dir={x:1,y:0}, pendingDir={x:1,y:0};
+    let pellets=[], turboPellet=null, problem=null, score=START_SCORE, running=false, paused=false;
+    let segEls=[], pelletIdCounter=0;
+    let tickTimerId=null, problemTimeoutId=null, problemStartTime=0, currentTimerSecs=8, pauseRemainingMs=null;
+    let correctCount=0, peakScore=START_SCORE, turboActive=false, turboTimeoutId=null;
+
+    function sizeBoard(){
+      const availW = Math.min(boardStage.clientWidth || window.innerWidth*0.92, 640);
+      const availH = Math.min(boardStage.clientHeight || window.innerHeight*0.5, 640);
+      const side = Math.max(240, Math.min(availW, availH));
+      COLS = Math.max(14, Math.floor(side/CELL));
+      ROWS = COLS;
+      const px = COLS*CELL;
+      boardEl.style.width = px+'px';
+      boardEl.style.height = px+'px';
+    }
+
+    function tickMs(){
+      let t = Math.max(70, levelCfg.tickMs - Math.floor(Math.max(0,score-START_SCORE)/12));
+      if(turboActive) t = Math.max(45, Math.round(t*0.55));
+      return t;
+    }
+    function restartTickInterval(){ if(tickTimerId) clearInterval(tickTimerId); if(!paused) tickTimerId=setInterval(gameTick, tickMs()); }
+
+    function generateProblem(){
+      const op = levelCfg.ops[Math.floor(Math.random()*levelCfg.ops.length)];
+      let a,b,answer;
+      if(op==='+'){ a=1+Math.floor(Math.random()*levelCfg.numMax); b=1+Math.floor(Math.random()*levelCfg.numMax); answer=a+b; }
+      else if(op==='-'){ a=1+Math.floor(Math.random()*levelCfg.numMax); b=1+Math.floor(Math.random()*(a+1)); answer=a-b; }
+      else if(op==='×'){ const m=Math.max(4,Math.floor(levelCfg.numMax/3)); a=1+Math.floor(Math.random()*m); b=1+Math.floor(Math.random()*m); answer=a*b; }
+      else { b=1+Math.floor(Math.random()*8); answer=1+Math.floor(Math.random()*8); a=b*answer; }
+      return {a,b,op,answer};
+    }
+
+    function randomFreeCell(){
+      let x,y,tries=0;
+      do{ x=Math.floor(Math.random()*COLS); y=Math.floor(Math.random()*ROWS); tries++; }
+      while(tries<400 && (snake.some(s=>s.x===x&&s.y===y) || pellets.some(p=>p.x===x&&p.y===y) || (turboPellet && turboPellet.x===x && turboPellet.y===y)));
+      return {x,y};
+    }
+
+    function placePellets(){
+      const correctVal = problem.answer;
+      const values = new Set([correctVal]);
+      let guard=0;
+      while(values.size<4 && guard<80){
+        guard++;
+        let delta = Math.floor(Math.random()*11)-5;
+        if(delta===0) delta = (Math.random()<0.5?1:-1)*3;
+        let v = correctVal+delta;
+        if(v<0) v = correctVal + Math.abs(delta) + 1;
+        values.add(v);
+      }
+      let arr=[...values];
+      for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
+      pellets = arr.map(v=>{ const cell=randomFreeCell(); return {x:cell.x,y:cell.y,value:v,correct:v===correctVal,id:'pl'+(pelletIdCounter++)}; });
+
+      if(!turboPellet && Math.random()<0.3){
+        const cell = randomFreeCell();
+        turboPellet = {x:cell.x, y:cell.y, id:'turbo'+(pelletIdCounter++)};
+      }
+      renderPellets();
+    }
+
+    function renderPellets(){
+      boardEl.querySelectorAll('.pellet').forEach(el=>el.remove());
+      pellets.forEach(p=>{
+        const el=document.createElement('div');
+        el.className='pellet'; el.id=p.id;
+        el.style.transform=`translate(${p.x*CELL-PELLET_OFFSET}px, ${p.y*CELL-PELLET_OFFSET}px)`;
+        el.textContent=p.value;
+        boardEl.appendChild(el);
+      });
+      if(turboPellet){
+        const el=document.createElement('div');
+        el.className='pellet turbo'; el.id=turboPellet.id;
+        el.style.transform=`translate(${turboPellet.x*CELL-PELLET_OFFSET}px, ${turboPellet.y*CELL-PELLET_OFFSET}px)`;
+        el.textContent='⚡';
+        boardEl.appendChild(el);
+      }
+    }
+
+    function restartTimerBar(secs){
+      timerFillEl.style.transition='none';
+      timerFillEl.style.width='100%';
+      void timerFillEl.offsetWidth;
+      timerFillEl.style.transition=`width ${secs}s linear`;
+      timerFillEl.style.width='0%';
+    }
+
+    function newProblem(){
+      if(problemTimeoutId) clearTimeout(problemTimeoutId);
+      problem = generateProblem();
+      equationTextEl.innerHTML = `${problem.a} <span class="op">${problem.op}</span> ${problem.b} = ?`;
+      equationTextEl.classList.remove('pop'); void equationTextEl.offsetWidth; equationTextEl.classList.add('pop');
+      placePellets();
+      problemStartTime = performance.now();
+      currentTimerSecs = levelCfg.timeSecs;
+      restartTimerBar(currentTimerSecs);
+      problemTimeoutId = setTimeout(onTimeout, currentTimerSecs*1000);
+    }
+
+    function onTimeout(){
+      if(!running || paused) return;
+      score -= levelCfg.lossTimeout;
+      floatText(Math.floor(COLS/2), 1, '⏱ −'+levelCfg.lossTimeout, '#FF6B4A');
+      shakeBoard();
+      if(snake.length > MIN_LEN) snake.pop();
+      syncSnakeDom();
+      updateHUD();
+      if(score <= 0){ endGame(); return; }
+      newProblem();
+    }
+
+    function speedFrac(){
+      const elapsed=(performance.now()-problemStartTime)/1000;
+      return Math.max(0, Math.min(1, 1-elapsed/currentTimerSecs));
+    }
+
+    function selfBitePenalty(){ return Math.max(1, levelCfg.lossWrong); }
+
+    function colorForLength(len){
+      const t = Math.max(0, Math.min(1, (len-MIN_LEN)/(MAX_LEN_FOR_COLOR-MIN_LEN)));
+      const hue = 230 - t*175;
+      const sat = 72 + t*8;
+      const light = 54 - t*10;
+      return `hsl(${hue.toFixed(0)}, ${sat.toFixed(0)}%, ${light.toFixed(0)}%)`;
+    }
+
+    function applySnakeColor(){ boardEl.style.setProperty('--snake-color', colorForLength(snake.length)); }
+
+    function updateHUD(){
+      gameScoreEl.textContent = Math.max(0,score);
+      hudScoreBox.classList.remove('bump'); void hudScoreBox.offsetWidth; hudScoreBox.classList.add('bump');
+      boardEl.classList.toggle('danger', score<=3 && score>0);
+      boardEl.classList.toggle('turbo', turboActive);
+      peakScore = Math.max(peakScore, score);
+    }
+
+    function floatText(gx,gy,text,color){
+      const el=document.createElement('div');
+      el.className='float-pop';
+      el.style.left=(gx*CELL)+'px'; el.style.top=(gy*CELL)+'px'; el.style.color=color;
+      el.textContent=text;
+      boardEl.appendChild(el);
+      setTimeout(()=>el.remove(), 750);
+    }
+
+    function shakeBoard(){ boardEl.classList.remove('shake'); void boardEl.offsetWidth; boardEl.classList.add('shake'); }
+
+    function syncSnakeDom(instant){
+      while(segEls.length < snake.length){
+        const d=document.createElement('div'); d.className='seg';
+        if(instant) d.style.transition='none';
+        boardEl.appendChild(d); segEls.push(d);
+      }
+      while(segEls.length > snake.length){ segEls.pop().remove(); }
+      if(instant) segEls.forEach(el=> el.style.transition='none');
+      snake.forEach((seg,i)=>{
+        const el=segEls[i];
+        el.style.transform = `translate(${seg.x*CELL}px, ${seg.y*CELL}px)`;
+        el.className = 'seg'+(i===0?' head':'');
+      });
+      if(instant){
+        void boardEl.offsetWidth;
+        requestAnimationFrame(()=>{ segEls.forEach(el=> el.style.transition=''); });
+      }
+      applySnakeColor();
+    }
+
+    function activateTurbo(){
+      turboActive = true;
+      if(turboTimeoutId) clearTimeout(turboTimeoutId);
+      turboTimeoutId = setTimeout(()=>{ turboActive=false; boardEl.classList.remove('turbo'); restartTickInterval(); }, 3200);
+      restartTickInterval();
+    }
+
+    function gameTick(){
+      if(!running || paused) return;
+      dir = pendingDir;
+      const head = snake[0];
+      const nx = (head.x + dir.x + COLS) % COLS;
+      const ny = (head.y + dir.y + ROWS) % ROWS;
+
+      const selfHit = snake.some(s=>s.x===nx && s.y===ny);
+      snake.unshift({x:nx, y:ny});
+
+      if(selfHit){
+        const pen = selfBitePenalty();
+        score -= pen;
+        floatText(nx, ny, '🐍 −'+pen, '#FF6B4A');
+        shakeBoard();
+        snake.pop();
+        if(snake.length > MIN_LEN) snake.pop();
+        syncSnakeDom();
+        updateHUD();
+        if(score <= 0){ endGame(); return; }
+        return;
+      }
+
+      if(turboPellet && turboPellet.x===nx && turboPellet.y===ny){
+        score += 1;
+        turboPellet = null;
+        floatText(nx, ny, '⚡ turbo!', '#FFB020');
+        activateTurbo();
+        snake.pop();
+        syncSnakeDom();
+        updateHUD();
+        renderPellets();
+        if(score <= 0){ endGame(); return; }
+        return;
+      }
+
+      const hitIdx = pellets.findIndex(p=>p.x===nx && p.y===ny);
+      if(hitIdx === -1){
+        snake.pop();
+        syncSnakeDom();
+        return;
+      }
+
+      const hit = pellets[hitIdx];
+      if(hit.correct){
+        const gain = levelCfg.gainMin + Math.round(speedFrac()*(levelCfg.gainMax-levelCfg.gainMin));
+        score += gain;
+        correctCount++;
+        floatText(nx, ny, '+'+gain, '#12B886');
+        burstConfetti();
+        // não remove a cauda -> cobra cresce
+      } else {
+        score -= levelCfg.lossWrong;
+        floatText(nx, ny, '−'+levelCfg.lossWrong, '#FF6B4A');
+        shakeBoard();
+        snake.pop();
+        if(snake.length > MIN_LEN) snake.pop();
+      }
+
+      syncSnakeDom();
+      updateHUD();
+      restartTickInterval();
+
+      if(score <= 0){ endGame(); return; }
+      newProblem();
+    }
+
+    function startGame(key){
+      levelKey = key;
+      levelCfg = LEVELS[key];
+      sizeBoard();
+      overlayStart.style.display='none';
+      overlayPause.style.display='none';
+      overlayEnd.style.display='none';
+      levelPillEl.textContent = 'Nível: ' + levelCfg.name;
+      score = START_SCORE; peakScore = START_SCORE; correctCount = 0;
+      running = true; paused = false; turboActive = false; turboPellet = null;
+      const midY = Math.floor(ROWS/2), startX = Math.floor(COLS/2);
+      snake = [{x:startX,y:midY},{x:startX-1,y:midY},{x:startX-2,y:midY}];
+      dir = {x:1,y:0}; pendingDir = {x:1,y:0};
+      segEls.forEach(el=>el.remove()); segEls=[];
+      syncSnakeDom(true);
+      updateHUD();
+      pellets=[];
+      newProblem();
+      restartTickInterval();
+    }
+
+    function endGame(){
+      running = false; paused = false;
+      if(tickTimerId) clearInterval(tickTimerId);
+      if(problemTimeoutId) clearTimeout(problemTimeoutId);
+      if(turboTimeoutId) clearTimeout(turboTimeoutId);
+      gameScoreEl.textContent = '0';
+      finalScoreEl.textContent = peakScore;
+      finalScoreLabelEl.textContent = `${correctCount} resposta${correctCount===1?'':'s'} certa${correctCount===1?'':'s'} no nível ${levelCfg.name} — seus pontos chegaram a zero.`;
+      overlayEnd.style.display='flex';
+      if(correctCount>0) awardXP(Math.min(80, correctCount*8));
+    }
+
+    function stopLoops(){
+      running = false; paused = false;
+      if(tickTimerId) clearInterval(tickTimerId);
+      if(problemTimeoutId) clearTimeout(problemTimeoutId);
+      if(turboTimeoutId) clearTimeout(turboTimeoutId);
+    }
+
+    function pauseGame(){
+      if(!running || paused) return;
+      paused = true;
+      if(tickTimerId) clearInterval(tickTimerId);
+      if(problemTimeoutId) clearTimeout(problemTimeoutId);
+      const elapsed = performance.now() - problemStartTime;
+      pauseRemainingMs = Math.max(0, currentTimerSecs*1000 - elapsed);
+      const computedWidth = getComputedStyle(timerFillEl).width;
+      timerFillEl.style.transition='none';
+      timerFillEl.style.width = computedWidth;
+      overlayPause.style.display='flex';
+    }
+
+    function resumeGame(){
+      if(!running || !paused) return;
+      paused = false;
+      overlayPause.style.display='none';
+      const remain = pauseRemainingMs==null ? currentTimerSecs*1000 : pauseRemainingMs;
+      problemStartTime = performance.now() - (currentTimerSecs*1000 - remain);
+      void timerFillEl.offsetWidth;
+      timerFillEl.style.transition = `width ${(remain/1000).toFixed(2)}s linear`;
+      timerFillEl.style.width='0%';
+      problemTimeoutId = setTimeout(onTimeout, remain);
+      restartTickInterval();
+    }
+
+    function togglePause(){ paused ? resumeGame() : pauseGame(); }
+
+    function openGame(){
+      homeView.classList.add('hidden');
+      lessonView.classList.remove('active');
+      gameView.classList.add('active');
+      sizeBoard();
+      overlayStart.style.display='flex';
+      overlayPause.style.display='none';
+      overlayEnd.style.display='none';
+      levelPillEl.textContent = 'Nível: —';
+      const midY = Math.floor(ROWS/2), startX = Math.floor(COLS/2);
+      snake=[{x:startX,y:midY},{x:startX-1,y:midY},{x:startX-2,y:midY}];
+      segEls.forEach(el=>el.remove()); segEls=[];
+      boardEl.querySelectorAll('.pellet').forEach(el=>el.remove());
+      turboPellet = null; turboActive = false;
+      boardEl.classList.remove('danger','turbo');
+      score = START_SCORE;
+      syncSnakeDom(true);
+      gameScoreEl.textContent = START_SCORE;
+      equationTextEl.textContent = '? + ? = ?';
+      window.scrollTo({top:0, behavior:'smooth'});
+    }
+
+    function closeGame(){
+      stopLoops();
+      gameView.classList.remove('active');
+      homeView.classList.remove('hidden');
+      window.scrollTo({top:0, behavior:'smooth'});
+    }
+
+    const dirMap = { up:{x:0,y:-1}, down:{x:0,y:1}, left:{x:-1,y:0}, right:{x:1,y:0} };
+    function setDirection(nd){
+      if(snake.length>1 && nd.x===-dir.x && nd.y===-dir.y) return;
+      pendingDir = nd;
+    }
+
+    document.getElementById('gamePromoCard').addEventListener('click', openGame);
+    document.getElementById('gameBackBtn').addEventListener('click', closeGame);
+    document.getElementById('exitGameBtn').addEventListener('click', closeGame);
+    document.getElementById('exitFromPauseBtn').addEventListener('click', closeGame);
+    document.getElementById('retryGameBtn').addEventListener('click', ()=> startGame(levelKey));
+    document.getElementById('resumeGameBtn').addEventListener('click', resumeGame);
+    pauseBtn.addEventListener('click', togglePause);
+    document.getElementById('changeLevelBtn').addEventListener('click', ()=>{
+      stopLoops();
+      overlayEnd.style.display='none';
+      overlayStart.style.display='flex';
+    });
+
+    overlayStart.querySelectorAll('.level-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=> startGame(btn.dataset.level));
+    });
+
+    gameView.querySelectorAll('.ctrl-btn[data-dir]').forEach(btn=>{
+      btn.addEventListener('click', ()=> setDirection(dirMap[btn.dataset.dir]));
+    });
+
+    window.addEventListener('keydown', (e)=>{
+      if(!gameView.classList.contains('active')) return;
+      if(e.key==='p' || e.key==='P' || e.key==='Escape'){ e.preventDefault(); togglePause(); return; }
+      const map = { ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left', ArrowRight:'right', w:'up', s:'down', a:'left', d:'right' };
+      const k = map[e.key];
+      if(k){ e.preventDefault(); setDirection(dirMap[k]); }
+    });
+
+    window.addEventListener('resize', ()=>{ if(gameView.classList.contains('active') && running) sizeBoard(); });
+  })();
+
+  renderPath();
+})();
+</script>
+</body>
+</html>

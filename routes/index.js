@@ -22,7 +22,8 @@ const { CheckExistentEmail, getSingleUserData, GetUserAccounAccess, getUsers, Lo
      UpdateUserAccountWhileLoggedin,
      ResetUserPasswordWhileLoggedin,   GoogleAuth} = require("../Controllers/Users");
 const VerifyToken  = require("../middleware/VerifyToken");
-const { ClassDelete, ClassUpdate, GetClass, GetSingleClass, RegisterClass, GetClassInformation, GetClassOfExams, UpdateAllClassesTransport } = require("../Controllers/Class");
+const authRateLimit = require("../middleware/authRateLimit");
+const { ClassDelete, ClassUpdate, GetClass, GetSingleClass, RegisterClass, GetClassInformation, GetClassOfExams, UpdateAllClassesTransport, ConfirmClassWizard, PreviewClassWizard, ConfirmAiClassModelsSelection, SuggestClassModelsAI } = require("../Controllers/Class");
 const { CourseDelete, CourseUpdate, GetCourse, GetsingleCourse, RegisterCourse } = require("../Controllers/Courses");
 const { AcademicyearDelete, AcademicyearUpdate, GetAcademicYear, GetSingleAcademicYear, RegisterAcademicYear } = require("../Controllers/AcademicYear");
 const { ClassRoomDelete, ClassRoomUpdate, GetClassroom, GetSingleClassroom, RegisterClassRoom } = require("../Controllers/ClassRoom");
@@ -83,7 +84,7 @@ const { GetProjectsByCreator, GetSingleTaskAndProject, GetAllTasksAndProjects, T
 const { RegisterTaskAndProjectMember, TaskAndProjectMemberDelete, GetMembersByProject } = require("../Controllers/TasksAndProjectsMembers");
 const { RegisterLessonSection, GetSingleLessonSection, GetLessonsSectionByGroup, LessonSectionDelete, LessonSectionUpdate, LessonSectionUpdatePosition, GetLessonsSectionBuyGroupCode, GetLessonsSectionByCreator, GetSingerAlbums } = require("../Controllers/LessonsSection");
 const { ReorderLessonContent, RegisterLessonContent, UpdateLessonContent, DeleteLessonContent, MoveLessonContent, UploadLessonVideo, UploadLessonVideoPoster, GetFullLessonTree, MarkLessonContentDone, RegisterLessonFiles, GetLessonContentById } = require("../Controllers/LessonsSectionContent");
-const { RegisterEmployeeAttendance, GetEmployeesAttendance, GetEmployeeAttendanceBycode, EmployeeAttendanceDelete, EmployeeAttendanceUpdate, GetSingleEmployeeAttendance } = require("../Controllers/EmployeeAttendence");
+const { RegisterEmployeeAttendance, GetEmployeesAttendance, GetEmployeeAttendanceBycode, EmployeeAttendanceDelete, EmployeeAttendanceUpdate, GetSingleEmployeeAttendance, GetEmployeeEffectivenessReport, ExportEmployeeEffectivenessExcel, DepartmentDelete, DepartmentUpdate, RegisterDepartment, GetSingleDepartment, GetDepartments } = require("../Controllers/EmployeeAttendence");
 const { GetSingleStudentOldClasses, RegisterOldClass } = require("../Controllers/StudentOldClasses");
 const { GetsingleStudentExamNotebYSubStCls, RegisterStudentExamNotes, UpdateStudentExamNotes, DeleteStudentExamNotes, GetAllStudentFeaturedNotesByClassSubject, BulkUpsertStudentFeaturedNotes } = require("../Controllers/StudentExams");
 const { GetsingleStudentFeaturedNotebYSubStCls, RegisterStudentFeaturedNotes, UpdateStudentFeaturedNotes, DeleteStudentFeaturedNotes } = require("../Controllers/StudentFeaturedNotes");
@@ -140,9 +141,33 @@ const InvoiceController = require("../Functions/CreateInvoiceCode");
 const { generateSAFT } = require("../Functions/CreateSaftFiles");
 const { GetBookCollections, RegisterBookCollection, GetSingleBookCollection, BookCollectionDelete, BookCollectionUpdate } = require("../Controllers/BooksCollection");
 const { GetAllAuditActionsByInstitute } = require("../Controllers/Auditory");
+const {
+  RequirePrincipalPortalAccess,
+  GetDashboardSummary,
+  GetGoals,
+  CreateGoal,
+  UpdateGoal,
+  DeleteGoal,
+  GetApprovals,
+  Approve,
+  Reject,
+  RequestClarification,
+  GetAuditLog,
+  GetInsights,
+  GetApprovalRules,
+  UpdateApprovalRule,
+  GetAnnouncements,
+  CreateAnnouncement,
+  GetAgenda,
+  CreateAgendaEvent,
+  GetPreferences,
+  UpdatePreferences,
+  GetSignableDocuments,
+  SignDocument
+} = require("../Controllers/PrincipalPortal");
 const { VENUDS_GetInvoicePdf, VENDUS_CreateInvoiceCodeAndDoc, VENDUS_GetSAFTFile, handleSaveConfig, handleGetConfig, handleSavePaymentMethod, handleGetPaymentMethods, handleDeletePaymentMethod, handleCreateInvoice, handleGetInvoicesByIds } = require("../Functions/VENDUS");
 const { GeminiIA, GetIAConversations } = require("../Controllers/0IA");
-const { UpdateQuarterlyNoteRestriction, GetQuarterlyNotesPermissions } = require("../Controllers/NotesRestrictions");
+const { UpdateQuarterlyNoteRestriction, GetQuarterlyNotesPermissions, GetAllTeachersRestrictions } = require("../Controllers/NotesRestrictions");
 const { cacheMiddleware } = require("../middleware/CacheMiddleware"); 
 const UploadMiddleware = require("../middleware/UploadMiddleware");
 const { RegisterFeedback, DeleteFeedback, GetFeedbacks } = require("../Controllers/DebugFeedback");
@@ -232,6 +257,12 @@ const {
   } = require('../Controllers/Filemanager');
 
 
+  const {
+  BulkUpsertStudentExamNote,
+  BulkUpsertStudentFeaturedNote,
+  GetAllNotesByClassSubject,
+} = require("../Controllers/StudentExamsAndFeaturesNotes"); // ajustar path/nome real do ficheiro
+
   
 const {
   GetLoans,
@@ -298,13 +329,19 @@ const {
  const ExecuteQuery = require("../Functions/ExecuteQuery"); 
 const { GetInvoices, GetSingleInvoice, GetInvoiceByCode, GetInvoiceByVendusNumber, RegisterInvoice, InvoiceDelete, InvoiceUpdate } = require("../Controllers/Invoices");
 const DeletedItemsRecovery = require("../Controllers/Recicle");
+const FeeAlerts = require("../Controllers/Automation/PaymentsReports");
+FeeAlerts.StartFeeAlertsScheduler(); 
+
+
+
+
 
 
 router.get("/" ,  (req, res)=>{
    res.send("Hello my greatest friennds !");
 })
 
-router.get("/token", RefreshToken);
+router.get("/token", authRateLimit, RefreshToken);
 
 const CacheLimitTime_one = 300;
 const CacheLimitTime_two = 60;
@@ -362,8 +399,8 @@ router.get("/eduallrfid/read/:code",VerifyToken, AutoDBSetup, RFIDRead);
 router.post("/eduallrfid/assign/student/:ID",VerifyToken, AutoDBSetup, AssignStudentRFID);
 router.post("/eduallrfid/assign/employee/:ID", VerifyToken, AutoDBSetup, AssignEmployeeRFID);
 router.get("/eduallrfid/generate", VerifyToken, AutoDBSetup, GenerateRFIDCode);
-router.post("/eduallrfid/log/register", AutoDBSetup, RegisterRFIDLog);
-router.get("/eduallrfid/logs/get", AutoDBSetup, GetRFIDLogs);
+router.post("/eduallrfid/log/register", VerifyToken, AutoDBSetup, RegisterRFIDLog);
+router.get("/eduallrfid/logs/get", VerifyToken, AutoDBSetup, GetRFIDLogs);
 
 //=============   FULL INFO POR RFID
 router.get("/eduallrfid/fullinfo/:code", VerifyToken, AutoDBSetup, RFIDFullInfo);
@@ -410,7 +447,7 @@ router.get("/news/unseen/latest", VerifyToken, GetLatestUnseenNews);
  
 // ========== USUÁRIOS ==========
 router.get('/eduallusersaccounts/get/', VerifyToken, getUsers);
-router.get('/students/get/', GetSTDS);
+router.get('/students/get/', VerifyToken, GetSTDS);
 router.get('/eduallcheckexistentuseraccountemail/:EMAIL', VerifyToken,  CheckExistentEmail);
 router.get('/eduallsingleuserdata/get/:ID', VerifyToken,  getSingleUserData);
 router.get('/eduallgetuserimagebyuser/get/:EMAIL',  getSingleUserImageData);
@@ -448,10 +485,10 @@ router.delete('/filemanager/delete',             VerifyToken, DeleteItems);
 
   
 // Rotas POST, PUT, DELETE (sem cache)
-router.post('/eduallusersaccountsignup/post', RegisterUserAccount);
-router.post('/login', Login);
-router.post('/google-auth', GoogleAuth);
-router.post('/eduallpasswordupdate', UpdateUserPassword);
+router.post('/eduallusersaccountsignup/post', authRateLimit, RegisterUserAccount);
+router.post('/login', authRateLimit, Login);
+router.post('/google-auth', authRateLimit, GoogleAuth);
+router.post('/eduallpasswordupdate', authRateLimit, UpdateUserPassword);
 router.put('/eduallchnagecurrentuserpassword/update', VerifyToken, ResetUserPasswordWhileLoggedin);
 router.put('/eduallchangecurrentuserinformation/update', VerifyToken, uploadUserAccountPicture, UpdateUserAccountWhileLoggedin);
 router.put('/edualluseraccountupdate/update/:ID', VerifyToken, UpdateUserAccount);
@@ -459,8 +496,8 @@ router.put('/edualluserinstituteaccountdelete/delete/:ID', VerifyToken, DeleteUs
 router.put('/edualluserinstituteaccountupdate/update/:ID', VerifyToken, UpdateInstituteUserAccount);
 router.put('/eduallprofilepictureupdate/update/', VerifyToken, uploadUserAccountPicture, UPDATEProfilePicture);
 router.put('/eduallprofilecoverimageupdate/update/', VerifyToken, uploadUserAccountBackgroundPicture, UPDATEProfileCoverImage);
-router.post('/eduallpasswordreset', UserPasswordReset);
-router.post('/edualluseraccountverificationcode/post', CheckUserAccountVerificationCode);
+router.post('/eduallpasswordreset', authRateLimit, UserPasswordReset);
+router.post('/edualluseraccountverificationcode/post', authRateLimit, CheckUserAccountVerificationCode);
 router.put('/eduallchangecurrentuserpassword', VerifyToken, ChangeCurrentUserPassword);
 
 
@@ -574,9 +611,13 @@ router.get('/eduallgetsingleclassdata/get/:ID', VerifyToken,  GetClassInformatio
 router.post('/eduallclassregisterapi/post', VerifyToken, RegisterClass);
 router.put('/eduallclassdelete/delete/:ID', VerifyToken, ClassDelete);
 router.put('/eduallclassupdate/update/:ID', VerifyToken, ClassUpdate);
+router.post('/eduallclassapi/wizard/preview', VerifyToken, PreviewClassWizard);
+router.post('/eduallclassapi/wizard/confirm', VerifyToken, ConfirmClassWizard);
+router.post("/eduallclassapi/ai/suggest", VerifyToken,  SuggestClassModelsAI);
+router.post("/eduallclassapi/ai/confirm", VerifyToken,  ConfirmAiClassModelsSelection);  
 
-
-
+ 
+ 
 // ========== DECLARAÇÕES DE HABILITAÇÕES ==========
 router.get ('/eduall-qualifications-statement/get',          VerifyToken, GetAllQualificationsStatements);
 router.get ('/eduall-qualifications-statement/get/:ID',      VerifyToken, GetQualificationsStatementById);
@@ -599,6 +640,13 @@ router.put ('/eduall-certificates/update/:ID',   VerifyToken, UpdateCertificate)
 router.put ('/eduall-certificates/delete/:ID',   VerifyToken, DeleteCertificate);
 
 
+
+// ── Upsert em bulk — Notas de Exame ─────────────────────────────
+router.post("/eduallstudentexamnotesupsertbulk/post",VerifyToken,  BulkUpsertStudentExamNote); 
+// ── Upsert em bulk — Notas de Recurso ───────────────────────────
+router.post("/eduallstudentfeaturednotesupsertbulk/post",VerifyToken,  BulkUpsertStudentFeaturedNote); 
+// ── Listagem combinada (exame + recurso) por turma/disciplina ───
+router.get("/eduallgetallnotesbyclasssubject/:CLASS,:SUBJECT",VerifyToken,  GetAllNotesByClassSubject);
 
 
 
@@ -942,7 +990,7 @@ router.put("/edualllibraryauthordelete/delete/:ID", VerifyToken, AuthorDelete);
 router.put("/edualllibraryauthorupdate/update/:ID", VerifyToken, AuthorUpdate);
 
 // --- MATRÍCULAS DOS ALUNOS --- 
-router.post('/eduallstudentenrollmentregister/post', VerifyToken, RegisterStudentEnrollment);
+router.post('/eduallstudentenrollmentregister/post', VerifyToken, RegisterEnrollment);
 router.get("/eduallsinglestudentenrollment/get/:ID", VerifyToken,  GetSingleStudentEnrollment);
 router.get("/eduallchecksinglestudentenrollment/get/:STUDENT", VerifyToken,  CheckExistentStudentEnrollment);
 router.put("/eduallstudentenrollmentdelete/delete/:ID", VerifyToken, StudentEnrollmentDelete);
@@ -1175,6 +1223,8 @@ const { RegisterAppManager, GetLibraryAccess, UpdateLibraryAccountType, GetLibra
 const { GetAllBulletinHistory, GetBulletinHistoryById, RegisterBulletinHistory, UpdateBulletinHistory, DeleteBulletinHistory } = require("../Controllers/BulletinHistoryController");
 const { GetRacks, GetSingleRack, RegisterRack, RackUpdate, RackDelete, ReorderRacks, MoveRack } = require("../Controllers/Racks");
 const { GetBookcases, RegisterBookcase, GetSingleBookcase, BookcaseUpdate, BookcaseDelete, ReorderBookcases } = require("../Controllers/Shelves");
+const { GetStudentsFullOverview, RegisterUnifiedEnrollmentOrConfirmation, GetEnrollmentConfirmationReport } = require("../Controllers/GetStudentsFullOverview");
+const { GetEvaluations, GetSingleEvaluation, GetEvaluationsByProfessor, GetEvaluationsByPeriod, GetEvaluationsDashboard, RegisterEvaluation, EvaluationUpdate, EvaluationDelete } = require("../Controllers/PedagogicalEvaluationControllers");
 
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -1198,6 +1248,15 @@ router.get("/eduallgetsingleemployeeattendence/get/:ID", VerifyToken,  GetSingle
 router.post("/eduallregisteremployeeattendence/post/", VerifyToken, RegisterEmployeeAttendance);
 router.put("/eduallemployeeattendencedelete/delete/:ID", VerifyToken, EmployeeAttendanceDelete);
 router.put("/eduallemployeeattendenceupdate/update/:ID", VerifyToken, EmployeeAttendanceUpdate);
+router.get("/eduall-employee-attendance/report", VerifyToken, GetEmployeeEffectivenessReport);
+router.get("/eduall-employee-attendance/report/export/excel", VerifyToken, ExportEmployeeEffectivenessExcel);
+
+
+router.get("/eduallgetalldepartments/get/", VerifyToken, GetDepartments);
+router.get("/eduallgetsingledepartment/get/:ID", VerifyToken, GetSingleDepartment);
+router.post("/eduallregisterdepartment/insert/", VerifyToken , RegisterDepartment);
+router.put("/eduallupdatedepartment/update/:ID", VerifyToken, DepartmentUpdate);
+router.delete("/eduallddeletedepartment/delete/:ID", VerifyToken , DepartmentDelete);
 
 
 // ===========================
@@ -1615,6 +1674,28 @@ router.get("/eduall_mn_getstatebycountry/get/:ID",  GetStatesByCountry);
  
 router.get("/eduallgetcurrentinstituteauditory/get", VerifyToken, GetAllAuditActionsByInstitute); 
 
+router.get("/api/principal-portal/dashboard/summary", VerifyToken, RequirePrincipalPortalAccess, GetDashboardSummary);
+router.get("/api/principal-portal/goals", VerifyToken, RequirePrincipalPortalAccess, GetGoals);
+router.post("/api/principal-portal/goals", VerifyToken, RequirePrincipalPortalAccess, CreateGoal);
+router.put("/api/principal-portal/goals/:id", VerifyToken, RequirePrincipalPortalAccess, UpdateGoal);
+router.delete("/api/principal-portal/goals/:id", VerifyToken, RequirePrincipalPortalAccess, DeleteGoal);
+router.get("/api/principal-portal/approvals", VerifyToken, RequirePrincipalPortalAccess, GetApprovals);
+router.post("/api/principal-portal/approvals/:id/approve", VerifyToken, RequirePrincipalPortalAccess, Approve);
+router.post("/api/principal-portal/approvals/:id/reject", VerifyToken, RequirePrincipalPortalAccess, Reject);
+router.post("/api/principal-portal/approvals/:id/request-clarification", VerifyToken, RequirePrincipalPortalAccess, RequestClarification);
+router.get("/api/principal-portal/audit-log", VerifyToken, RequirePrincipalPortalAccess, GetAuditLog);
+router.get("/api/principal-portal/insights", VerifyToken, RequirePrincipalPortalAccess, GetInsights);
+router.get("/api/principal-portal/approval-rules", VerifyToken, RequirePrincipalPortalAccess, GetApprovalRules);
+router.put("/api/principal-portal/approval-rules/:key", VerifyToken, RequirePrincipalPortalAccess, UpdateApprovalRule);
+router.get("/api/principal-portal/announcements", VerifyToken, RequirePrincipalPortalAccess, GetAnnouncements);
+router.post("/api/principal-portal/announcements", VerifyToken, RequirePrincipalPortalAccess, CreateAnnouncement);
+router.get("/api/principal-portal/agenda", VerifyToken, RequirePrincipalPortalAccess, GetAgenda);
+router.post("/api/principal-portal/agenda", VerifyToken, RequirePrincipalPortalAccess, CreateAgendaEvent);
+router.get("/api/principal-portal/preferences", VerifyToken, RequirePrincipalPortalAccess, GetPreferences);
+router.put("/api/principal-portal/preferences", VerifyToken, RequirePrincipalPortalAccess, UpdatePreferences);
+router.get("/api/principal-portal/documents", VerifyToken, RequirePrincipalPortalAccess, GetSignableDocuments);
+router.post("/api/principal-portal/documents/:id/sign", VerifyToken, RequirePrincipalPortalAccess, SignDocument);
+
 router.get("/eduallinvoicedoc/:id/pdf",  VerifyToken, VENUDS_GetInvoicePdf); 
 router.get("/vendus-saft/:year/:month", VerifyToken, VENDUS_GetSAFTFile); 
 router.post("/eduallcreateinvoice", VerifyToken, handleCreateInvoice); 
@@ -1683,6 +1764,9 @@ router.get("/eduallgeminiallconversations", VerifyToken, GetIAConversations);
  
 router.put("/eduallpedagogyrestriction/update", VerifyToken, UpdateQuarterlyNoteRestriction);
 router.get("/eduallgetquarterpermittions/get", VerifyToken, GetQuarterlyNotesPermissions);
+router.get("/edualllistallteacherrestrictions/get", VerifyToken, GetAllTeachersRestrictions);
+
+
 router.get("/eduallquarterlyminipauta/:class/:quarter/:student?",  VerifyToken, GetQuarterlyMiniPautaFullData); 
 router.get("/eduallstudentmtby3quarters/get/:class/:student", VerifyToken, GetStudentMTAll3Quarters);
 router.put("/eduallsinglequarterlynotedelete/delete/:ID", VerifyToken, QuarterlyNoteDelete);
@@ -1875,8 +1959,9 @@ router.put('/eduallcashoutflowupdate/put/:ID',    VerifyToken,UpdateCashOutflow)
 router.put('/eduallcashoutflowdelete/delete/:ID', VerifyToken,   DeleteCashOutflow);
 router.get('/eduallcashoutflowreport/get/',    VerifyToken,    GetCashOutflowReport);
 
-
-
+router.post("/eduallstudents/full-overview", VerifyToken, GetStudentsFullOverview);
+router.post("/eduallenrollment/unified/register",VerifyToken,  RegisterUnifiedEnrollmentOrConfirmation);
+router.post("/eduallenrollmentreport/get", VerifyToken, GetEnrollmentConfirmationReport);
 
 // ========== Relatorios ====================================================
 router.get("/eduall/portaria/students/search", VerifyToken,  SearchStudent); 
@@ -2022,303 +2107,53 @@ router.post("/eduallregisterinvoice/post/", VerifyToken, RegisterInvoice);
 router.put("/eduallinvoiceupdate/update/:ID", VerifyToken, InvoiceUpdate); 
 router.delete("/eduallinvoicedelete/delete/:ID", VerifyToken, InvoiceDelete);
 
-router.get("/check-school-users-access", VerifyToken, async (req, res) => {
-  try {
-    const institute_code = "edodemoacademiadadialeticadoconhecimento";
- 
-    const query = `SELECT 
-      esa.ed_system_account_id,
-      esa.ed_system_account_name,
-      ua.ed_user_account_name,
-      ua.ed_user_account_email,
-      ea.ed_employee_name,
-      CASE WHEN uac.ed_user_access_id IS NOT NULL THEN '✅ COM ACESSO' ELSE '❌ SEM ACESSO' END as access_status,
-      uac.ed_user_access_id,
-      COALESCE(
-        (SELECT COUNT(*) FROM (SELECT 1 FROM DUAL WHERE uac.ed_user_access_pedagogicalarea = 1 UNION ALL
-         SELECT 1 FROM DUAL WHERE uac.ed_user_access_myinstitute = 1 UNION ALL
-         SELECT 1 FROM DUAL WHERE uac.ed_user_access_portal = 1 UNION ALL
-         SELECT 1 FROM DUAL WHERE uac.ed_user_access_secretary = 1 UNION ALL
-         SELECT 1 FROM DUAL WHERE uac.ed_user_access_configuration = 1 UNION ALL
-         SELECT 1 FROM DUAL WHERE uac.ed_user_access_finances = 1 UNION ALL
-         SELECT 1 FROM DUAL WHERE uac.ed_user_access_administration = 1 UNION ALL
-         SELECT 1 FROM DUAL WHERE uac.ed_user_access_library = 1 UNION ALL
-         SELECT 1 FROM DUAL WHERE uac.ed_user_access_transportation = 1 UNION ALL
-         SELECT 1 FROM DUAL WHERE uac.ed_user_access_others = 1 UNION ALL
-         SELECT 1 FROM DUAL WHERE uac.ed_user_access_apps = 1 UNION ALL
-         SELECT 1 FROM DUAL WHERE uac.ed_user_access_system = 1) t),
-        0
-      ) as permissions_count
-     FROM eduall_system_accounts esa
-     LEFT JOIN eduall_employees ea ON ea.ed_employee_id = esa.ed_system_account_employee
-     LEFT JOIN eduall_user_accounts ua ON ua.ed_user_account_id = esa.ed_system_account_userid
-     LEFT JOIN eduall_user_access uac ON CAST(esa.ed_system_account_id AS CHAR) = uac.ed_user_access_usercode
-     WHERE esa.ed_system_account_institute_code = ?
-     AND esa.ed_system_account_app_type = 'library'
-     AND esa.ed_system_account_deleted = 0
-     AND ua.ed_user_account_deleted = 0
-     ORDER BY ua.ed_user_account_name ASC`;
- 
-    const users = await ExecuteQuery(res, query, [institute_code], true, {
-      db: "eduall_school_access",
-      type: "select",
-      data: req
-    });
- 
-    if (!users) return;
- 
-    const withAccess = users.filter(u => u.access_status.includes('✅')).length;
-    const withoutAccess = users.filter(u => u.access_status.includes('❌')).length;
- 
-    return res.status(200).json({
-      success: true,
-      institute_code: institute_code,
-      statistics: {
-        total: users.length,
-        with_access: withAccess,
-        without_access: withoutAccess
-      },
-      users: users
-    });
- 
-  } catch (error) {
-    console.error("❌ Erro ao verificar acessos:", error);
-    return res.status(500).json({
-      success: false,
-      msg: "Erro ao verificar acessos de sistema",
-      error: error.message
-    });
-  }
-});
- 
-// ══════════════════════════════════════════════════════════════════════════════
-// 🔑 GET - ATUALIZAR ACESSOS (APENAS ExecuteQuery)
-// ══════════════════════════════════════════════════════════════════════════════
- 
-router.get("/update-school-users-access", VerifyToken, async (req, res) => {
-  try {
-    const institute_code = "edodemoacademiadadialeticadoconhecimento";
- 
-    console.log(`\n🔄 Iniciando atualização de acessos: ${institute_code}`);
- 
-    // ════════════════════════════════════════════════════════════════════════
-    // PASSO 1: Buscar todos os users
-    // ════════════════════════════════════════════════════════════════════════
- 
-    const queryGetUsers = `SELECT 
-      esa.ed_system_account_id,
-      esa.ed_system_account_name,
-      esa.ed_system_account_employee,
-      esa.ed_system_account_userid,
-      ua.ed_user_account_name,
-      ua.ed_user_account_email,
-      ea.ed_employee_name,
-      uac.ed_user_access_id,
-      CASE WHEN uac.ed_user_access_id IS NOT NULL THEN 1 ELSE 0 END as has_access
-     FROM eduall_system_accounts esa
-     LEFT JOIN eduall_employees ea ON ea.ed_employee_id = esa.ed_system_account_employee
-     LEFT JOIN eduall_user_accounts ua ON ua.ed_user_account_id = esa.ed_system_account_userid
-     LEFT JOIN eduall_user_access uac ON CAST(esa.ed_system_account_id AS CHAR) = uac.ed_user_access_usercode
-     WHERE esa.ed_system_account_institute_code = ?
-     AND esa.ed_system_account_app_type = 'library'
-     AND esa.ed_system_account_deleted = 0
-     AND ua.ed_user_account_deleted = 0
-     ORDER BY ua.ed_user_account_name ASC`;
- 
-    const libraryUsers = await ExecuteQuery(res, queryGetUsers, [institute_code], true, {
-      db: "eduall_school_access",
-      type: "select",
-      data: req
-    });
- 
-    if (!libraryUsers) return;
- 
-    console.log(`📊 Total de users encontrados: ${libraryUsers.length}`);
- 
-    // ════════════════════════════════════════════════════════════════════════
-    // PASSO 2: Processar cada user e criar acessos
-    // ════════════════════════════════════════════════════════════════════════
- 
-    let createdCount = 0;
-    let alreadyExistCount = 0;
-    const usersList = [];
- 
-    for (const user of libraryUsers) {
-      const systemAccountId = user.ed_system_account_id;
-      const userName = user.ed_user_account_name || user.ed_employee_name || 'Unknown';
-      const userEmail = user.ed_user_account_email || '';
- 
-      console.log(`👤 ${userName}`);
- 
-      if (user.has_access === 1) {
-        // User já tem acesso
-        console.log(`   ✅ Já tem acesso`);
-        alreadyExistCount++;
- 
-        usersList.push({
-          user_id: user.ed_system_account_userid,
-          system_account_id: systemAccountId,
-          system_account_name: user.ed_system_account_name,
-          user_name: userName,
-          user_email: userEmail,
-          employee_name: user.ed_employee_name,
-          has_access: true,
-          access_id: user.ed_user_access_id,
-          status: "already_has_access"
-        });
- 
-      } else {
-        // User NÃO tem acesso → criar
-        console.log(`   ⚙️  Criando acesso...`);
- 
-        const insertQuery = `INSERT INTO eduall_user_access (
-          ed_user_access_usercode, ed_user_access_pedagogicalarea, ed_user_access_myinstitute,
-          ed_user_access_portal, ed_user_access_secretary, ed_user_access_configuration,
-          ed_user_access_finances, ed_user_access_administration, ed_user_access_library,
-          ed_user_access_transportation, ed_user_access_others, ed_user_access_apps,
-          ed_user_access_system, ed_user_access_institute_code, ed_user_access_registerDate
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
- 
-        // Executar INSERT usando ExecuteQuery
-        await ExecuteQuery(res, insertQuery, [
-          String(systemAccountId),
-          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-          1, // ed_user_access_system = 1
-          institute_code
-        ], false, {
-          db: "eduall_school_access",
-          type: "insert",
-          data: req
-        });
- 
-        createdCount++;
-        console.log(`   ✅ Acesso criado`);
- 
-        usersList.push({
-          user_id: user.ed_system_account_userid,
-          system_account_id: systemAccountId,
-          system_account_name: user.ed_system_account_name,
-          user_name: userName,
-          user_email: userEmail,
-          employee_name: user.ed_employee_name,
-          has_access: true,
-          status: "access_created"
-        });
-      }
-    }
- 
-    console.log(`\n✅ Sucesso: ${createdCount} criados, ${alreadyExistCount} já existiam\n`);
- 
-    // ════════════════════════════════════════════════════════════════════════
-    // PASSO 3: Buscar dados finais
-    // ════════════════════════════════════════════════════════════════════════
- 
-    const queryFinalUsers = `SELECT 
-      esa.ed_system_account_id,
-      esa.ed_system_account_name,
-      ua.ed_user_account_name,
-      ua.ed_user_account_email,
-      ea.ed_employee_name,
-      uac.ed_user_access_id,
-      uac.ed_user_access_pedagogicalarea,
-      uac.ed_user_access_myinstitute,
-      uac.ed_user_access_portal,
-      uac.ed_user_access_secretary,
-      uac.ed_user_access_configuration,
-      uac.ed_user_access_finances,
-      uac.ed_user_access_administration,
-      uac.ed_user_access_library,
-      uac.ed_user_access_transportation,
-      uac.ed_user_access_others,
-      uac.ed_user_access_apps,
-      uac.ed_user_access_system
-     FROM eduall_system_accounts esa
-     LEFT JOIN eduall_employees ea ON ea.ed_employee_id = esa.ed_system_account_employee
-     LEFT JOIN eduall_user_accounts ua ON ua.ed_user_account_id = esa.ed_system_account_userid
-     LEFT JOIN eduall_user_access uac ON CAST(esa.ed_system_account_id AS CHAR) = uac.ed_user_access_usercode
-     WHERE esa.ed_system_account_institute_code = ?
-     AND esa.ed_system_account_app_type = 'library'
-     AND esa.ed_system_account_deleted = 0
-     AND ua.ed_user_account_deleted = 0
-     ORDER BY ua.ed_user_account_name ASC`;
- 
-    const finalUsers = await ExecuteQuery(res, queryFinalUsers, [institute_code], true, {
-      db: "eduall_school_access",
-      type: "select",
-      data: req
-    });
- 
-    if (!finalUsers) return;
- 
-    // ════════════════════════════════════════════════════════════════════════
-    // Formatar resposta
-    // ════════════════════════════════════════════════════════════════════════
- 
-    const formattedUsers = finalUsers.map(user => {
-      const permissions = {
-        pedagogicalarea: user.ed_user_access_pedagogicalarea === 1,
-        myinstitute: user.ed_user_access_myinstitute === 1,
-        portal: user.ed_user_access_portal === 1,
-        secretary: user.ed_user_access_secretary === 1,
-        configuration: user.ed_user_access_configuration === 1,
-        finances: user.ed_user_access_finances === 1,
-        administration: user.ed_user_access_administration === 1,
-        library: user.ed_user_access_library === 1,
-        transportation: user.ed_user_access_transportation === 1,
-        others: user.ed_user_access_others === 1,
-        apps: user.ed_user_access_apps === 1,
-        system: user.ed_user_access_system === 1
-      };
- 
-      const permissionsCount = Object.values(permissions).filter(p => p === true).length;
- 
-      return {
-        user_name: user.ed_user_account_name || user.ed_employee_name || 'Unknown',
-        user_email: user.ed_user_account_email || '',
-        has_system_access: user.ed_user_access_id !== null,
-        permissions: permissions,
-        permissions_count: permissionsCount
-      };
-    });
- 
-    // ════════════════════════════════════════════════════════════════════════
-    // Retornar resposta
-    // ════════════════════════════════════════════════════════════════════════
- 
-    return res.status(200).json({
-      success: true,
-      msg: `✅ ${createdCount} novo(s) acesso(s) criado(s)!`,
-      institute_code: institute_code,
-      statistics: {
-        total_users: libraryUsers.length,
-        access_created: createdCount,
-        already_existed: alreadyExistCount
-      },
-      users: formattedUsers
-    });
- 
-  } catch (error) {
-    console.error("❌ Erro ao atualizar acessos:", error);
-    return res.status(500).json({
-      success: false,
-      msg: "Erro ao atualizar acessos de sistema",
-      error: error.message
-    });
-  }
-});
- 
- 
+
+
+// ── ROTAS DE AVALIAÇÃO PEDAGÓGICA ──────────────────────────────────────────
+
+router.get("/eduallgetevaluations/get/", VerifyToken, GetEvaluations);
+router.get("/eduallgetsingleevaluation/get/:ID", VerifyToken, GetSingleEvaluation);
+router.get("/eduallevaluationbyprofessor/get/:CODE", VerifyToken, GetEvaluationsByProfessor);
+router.get("/eduallevaluationbyperiod/get/:PERIODO", VerifyToken, GetEvaluationsByPeriod);
+router.get("/eduallevaluationdashboard/get/", VerifyToken, GetEvaluationsDashboard);
+router.post("/eduallregisterevaluation/post/", VerifyToken, RegisterEvaluation);
+router.put("/eduallevaluationupdate/update/:ID", VerifyToken, EvaluationUpdate);
+router.delete("/eduallevaluationdelete/delete/:ID", VerifyToken, EvaluationDelete);
+
+
+
+// ═════════════════════════════════════════════════════════════════
+// ALERTAS AUTOMÁTICOS DE PROPINAS/TRANSPORTE
+// ═════════════════════════════════════════════════════════════════
+
+router.get   ("/eduallfeealertsconfig/get",              VerifyToken, FeeAlerts.GetFeeAlertConfig);
+router.put   ("/eduallfeealertsconfig/put",               VerifyToken, FeeAlerts.UpdateFeeAlertConfig);
+
+router.get   ("/eduallfeealertscontacts/get/:STUDENTID",  VerifyToken, FeeAlerts.GetStudentAlertContacts);
+router.post  ("/eduallfeealertscontacts/post",             VerifyToken, FeeAlerts.SaveExtraContact);
+router.put   ("/eduallfeealertscontacts/update/:ID",       VerifyToken, FeeAlerts.UpdateExtraContact);
+router.delete("/eduallfeealertscontacts/delete/:ID",       VerifyToken, FeeAlerts.DeleteExtraContact);
+
+router.get   ("/eduallfeealertshistory/get",               VerifyToken, FeeAlerts.GetNotificationHistory);
+router.get   ("/eduallfeealertsupcoming/get",               VerifyToken, FeeAlerts.GetUpcomingAlerts);
+router.get   ("/eduallfeealertsfailures/get",               VerifyToken, FeeAlerts.GetFailedNotifications);
+router.post  ("/eduallfeealertsretry/post",                 VerifyToken, FeeAlerts.RetryFailedNotification);
+router.get   ("/eduallfeealertsindicators/get",             VerifyToken, FeeAlerts.GetAlertIndicators);
+
+router.post  ("/eduallfeealertsrunnow/post",                VerifyToken, FeeAlerts.ManualRunProcessing);
 
 
 
 
 
 
+ 
+
+ 
+ 
 
 
-
-
-
+ 
 
 
 module.exports =  router; 

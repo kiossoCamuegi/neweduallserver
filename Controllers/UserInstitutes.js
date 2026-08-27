@@ -9,12 +9,53 @@ const CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234
 const INTERNAL_APPS = {
   library:  { id: "library",  label: "Biblioteca",       route: "/libraryapp/dashboard",  licenceType: 10 },
   hr:       { id: "hr",       label: "Recursos Humanos", route: "/hr/home",               licenceType: 11 },
+  principal_portal: { id: "principal_portal", label: "Portal da Direção", route: "/principal-portal", licenceType: 13 },
   security: { id: "security", label: "Segurança / CCTV", route: "/monitoring_dashboard",  licenceType: 12 },
 };
 
 const VALID_APP_TYPES     = Object.keys(INTERNAL_APPS);
 const VALID_ACCOUNT_TYPES = ["teacher", "user", "dashboard", "user_dashboard", "user_dashboard_teacher"];
 const LIBRARY_ACCOUNT_TYPES = ["admin", "reader"];
+const DEFAULT_APP_END_DATE = "2099-12-31 23:59:59";
+
+const ensureDefaultInstituteApps = async (instituteCode, req, res) => {
+  for (const appType of VALID_APP_TYPES) {
+    const existing = await ExecuteQuery(
+      res,
+      `SELECT ed_institute_app_id FROM eduall_institute_apps
+       WHERE ed_institute_app_instituteCode = ?
+         AND ed_institute_app_type = ?
+       ORDER BY ed_institute_app_id DESC LIMIT 1`,
+      [instituteCode, appType],
+      true,
+      { db: "eduall_institute_apps", type: "select", data: req }
+    );
+
+    if (existing?.length) {
+      await ExecuteQuery(
+        res,
+        `UPDATE eduall_institute_apps
+         SET ed_institute_app_startDate = COALESCE(ed_institute_app_startDate, NOW()),
+             ed_institute_app_endDate = ?,
+             ed_institute_app_deleted = 0
+         WHERE ed_institute_app_id = ?`,
+        [DEFAULT_APP_END_DATE, existing[0].ed_institute_app_id],
+        false,
+        { db: "eduall_institute_apps", type: "update", data: req }
+      );
+    } else {
+      await ExecuteQuery(
+        res,
+        `INSERT INTO eduall_institute_apps
+          (ed_institute_app_instituteCode, ed_institute_app_type, ed_institute_app_startDate, ed_institute_app_endDate, ed_institute_app_deleted)
+         VALUES (?, ?, NOW(), ?, 0)`,
+        [instituteCode, appType, DEFAULT_APP_END_DATE],
+        false,
+        { db: "eduall_institute_apps", type: "insert", data: req }
+      );
+    }
+  }
+};
 
 // ─── Logger colorido ──────────────────────────────────────────────────────────
 const C = {
@@ -284,6 +325,8 @@ const ensureDashboardAccount = async (userId, employeeId, employeeName, institut
 const ensureAppAccount = async (userId, employeeId, employeeName, instituteCode, appType, req, res, libraryMenuAccess = null) => {
   const appMeta = INTERNAL_APPS[appType];
 
+  await ensureDefaultInstituteApps(instituteCode, req, res);
+
   log.section(`ATRIBUIR APP — ${appMeta?.label || appType}`);
   log.step("appType",       appType);
   log.step("employeeId",    employeeId);
@@ -348,6 +391,22 @@ const ensureAppAccount = async (userId, employeeId, employeeName, instituteCode,
       accountId:      existing[0].ed_system_account_id,
       alreadyExisted: true,
     };
+  }
+
+  if (appType === "principal_portal") {
+    const limitRows = await ExecuteQuery(
+      res,
+      `SELECT COUNT(*) AS total FROM eduall_system_accounts
+       WHERE ed_system_account_institute_code = ?
+         AND ed_system_account_app_type = 'principal_portal'
+         AND ed_system_account_deleted = 0`,
+      [instituteCode],
+      true,
+      { db: "eduall_system_accounts", type: "select", data: req }
+    );
+    if (Number(limitRows?.[0]?.total || 0) >= 2) {
+      throw new Error("Esta escola já possui os 2 utilizadores permitidos no Portal da Direção. Remova um acesso existente antes de atribuir outro.");
+    }
   }
 
   log.ok("Nenhuma conta existente — prosseguir para inserção.");
@@ -550,6 +609,41 @@ const UnifiedAccountRegister = async (req, res) => {
     if (invalidApps.length) {
       log.error(`Validação falhou: apps inválidas → ${invalidApps.join(", ")}`);
       return res.status(400).json({ success: false, msg: `Apps inválidas: ${invalidApps.join(", ")}` });
+    }
+
+    if (apps.includes("principal_portal")) {
+      const existingPortalAccess = await ExecuteQuery(
+        res,
+        `SELECT ed_system_account_id FROM eduall_system_accounts
+         WHERE ed_system_account_employee = ?
+           AND ed_system_account_institute_code = ?
+           AND ed_system_account_app_type = 'principal_portal'
+           AND ed_system_account_deleted = 0
+         LIMIT 1`,
+        [employeeId, instituteCode],
+        true,
+        { db: "eduall_system_accounts", type: "select", data: req }
+      );
+
+      if (!existingPortalAccess?.length) {
+        const portalAccessCount = await ExecuteQuery(
+          res,
+          `SELECT COUNT(*) AS total FROM eduall_system_accounts
+           WHERE ed_system_account_institute_code = ?
+             AND ed_system_account_app_type = 'principal_portal'
+             AND ed_system_account_deleted = 0`,
+          [instituteCode],
+          true,
+          { db: "eduall_system_accounts", type: "select", data: req }
+        );
+        if (Number(portalAccessCount?.[0]?.total || 0) >= 2) {
+          return res.status(409).json({
+            success: false,
+            code: "PRINCIPAL_PORTAL_LIMIT_REACHED",
+            msg: "Esta escola já possui os 2 utilizadores permitidos no Portal da Direção. Remova um acesso existente antes de atribuir outro."
+          });
+        }
+      }
     }
 
     // ── Validação de biblioteca ────────────────────────────────────────────────
@@ -1168,6 +1262,8 @@ const GetAvailableApps = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
+    await ensureDefaultInstituteApps(instituteCode, req, res);
+
     const licences = await ExecuteQuery(
       res,
       `SELECT ed_institute_app_type, ed_institute_app_endDate
@@ -1181,11 +1277,24 @@ const GetAvailableApps = async (req, res) => {
     );
 
     const licencedTypes = new Set((licences || []).map(l => l.ed_institute_app_type));
+    const portalAccessRows = await ExecuteQuery(
+      res,
+      `SELECT COUNT(*) AS total FROM eduall_system_accounts
+       WHERE ed_system_account_institute_code = ?
+         AND ed_system_account_app_type = 'principal_portal'
+         AND ed_system_account_deleted = 0`,
+      [instituteCode],
+      true,
+      { db: "eduall_system_accounts", type: "select", data: req }
+    );
+    const principalPortalAssigned = Number(portalAccessRows?.[0]?.total || 0);
 
     const data = Object.values(INTERNAL_APPS).map(app => ({
       ...app,
       hasLicence: licencedTypes.has(app.id),
       expireDate: licences.find(l => l.ed_institute_app_type === app.id)?.ed_institute_app_endDate || null,
+      assignedCount: app.id === "principal_portal" ? principalPortalAssigned : null,
+      assignmentLimit: app.id === "principal_portal" ? 2 : null,
     }));
 
     return res.status(200).json({ success: true, data });
@@ -1198,6 +1307,12 @@ const GetInstituteApps = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
+    try {
+      await ensureDefaultInstituteApps(instituteCode, req, res);
+    } catch (installError) {
+      console.error("Não foi possível persistir as apps padrão:", installError.message);
+    }
+
     const rows = await ExecuteQuery(
       res,
       `SELECT * FROM eduall_institute_apps
@@ -1208,12 +1323,22 @@ const GetInstituteApps = async (req, res) => {
       { db: "eduall_institute_apps", type: "select", data: req }
     );
 
-    const enriched = (rows || []).map(row => ({
-      ...row,
-      appLabel:  INTERNAL_APPS[row.ed_institute_app_type]?.label || row.ed_institute_app_type,
-      appRoute:  INTERNAL_APPS[row.ed_institute_app_type]?.route || "/",
-      isExpired: new Date(row.ed_institute_app_endDate) <= new Date(),
-    }));
+    const rowsByType = new Map((rows || []).map(row => [row.ed_institute_app_type, row]));
+    const enriched = Object.values(INTERNAL_APPS).map(app => {
+      const row = rowsByType.get(app.id);
+      const endDate = row?.ed_institute_app_endDate || DEFAULT_APP_END_DATE;
+      return {
+        ed_institute_app_id: row?.ed_institute_app_id || `default-${app.id}`,
+        ed_institute_app_instituteCode: instituteCode,
+        ed_institute_app_type: app.id,
+        ed_institute_app_startDate: row?.ed_institute_app_startDate || new Date().toISOString(),
+        ed_institute_app_endDate: endDate,
+        ed_institute_app_deleted: 0,
+        appLabel: app.label,
+        appRoute: app.route,
+        isExpired: new Date(endDate) <= new Date(),
+      };
+    });
 
     return res.status(200).json({ success: true, data: enriched });
   } catch (error) {

@@ -7,6 +7,7 @@ const { GetCurrentUserData } = require("./GetCurrentUserData");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const { RegisterAuditAction } = require("./Auditory");
 const Cache = require("../Functions/CacheRoutes");
+const { checkClassCapacity } = require("./ServicePayments");
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  MULTER CONFIGURATION - SEGURO COM VALIDACOES
@@ -133,7 +134,7 @@ const RefreshStudentCache = async (req, res, instituteCode) => {
   const duration = Date.now() - startTime;
   console.log(`🗄️🧹 CACHE CLEAR (Students) demorou ${duration}ms para institute ${instituteCode}`);
 };
-
+ 
 // ──────────────────────────────────────────────────────────────
 // ── GET STUDENTS (Lista completa)
 // ──────────────────────────────────────────────────────────────
@@ -231,13 +232,85 @@ const GetStudents = async (req, res) => {
       db: "eduall_students", type: "select", data: req
     });
 
+    // ──────────────────────────────────────────────────────────
+    // ── Histórico de matrículas (eduall_enrollment) ──
+    // Feito numa segunda consulta (agrupada em JS por aluno) em vez
+    // de um JOIN direto na query principal, porque um aluno pode ter
+    // várias matrículas/confirmações ao longo do tempo — um JOIN
+    // 1-para-muitos duplicaria as linhas da listagem principal.
+    // ──────────────────────────────────────────────────────────
+    const enrollmentQuery = `
+      SELECT
+        e.ed_enrollment_id,
+        e.ed_enrollment_student,
+        e.ed_enrollment_service,
+        e.ed_enrollment_class,
+        e.ed_enrollment_academic_year,
+        e.ed_enrollment_invoice_code,
+        e.ed_enrollment_invoice_file,
+        e.ed_enrollment_registerDate,
+        e.ed_enrollment_paid_value,
+        e.ed_enrollment_currency,
+        e.ed_enrollment_payment_method_id,
+        e.ed_enrollment_payment_bank,
+        e.ed_enrollment_payment_place,
+        e.ed_enrollment_bordereau,
+        e.ed_enrollment_bordereau_amount,
+        e.ed_enrollment_balance_used,
+        ay.ed_academic_year_title,
+        cl.ed_class_title AS ed_enrollment_class_title
+
+      FROM eduall_enrollment e
+
+      LEFT JOIN eduall_academic_year ay
+        ON ay.ed_academic_year_id = e.ed_enrollment_academic_year
+       AND ay.ed_academic_year_deleted = 0
+
+      LEFT JOIN eduall_class cl
+        ON cl.ed_class_id = e.ed_enrollment_class
+       AND cl.ed_class_deleted = 0
+
+      WHERE e.ed_enrollment_deleted        = 0
+        AND e.ed_enrollment_institute_code = ?
+
+      ORDER BY e.ed_enrollment_registerDate DESC
+    `;
+
+    const enrollmentRows = await ExecuteQuery(res, enrollmentQuery, [instituteCode], true, {
+      db: "eduall_enrollment", type: "select", data: req
+    });
+
+    // Agrupa o histórico de matrículas por aluno
+    const enrollmentsByStudent = new Map();
+    (enrollmentRows || []).forEach(e => {
+      const studentId = e.ed_enrollment_student;
+      if (!enrollmentsByStudent.has(studentId)) enrollmentsByStudent.set(studentId, []);
+      enrollmentsByStudent.get(studentId).push(e);
+    });
+
+    // Anexa o histórico completo + o estado "matriculado" a cada
+    // aluno da listagem principal, sem alterar os campos já
+    // devolvidos anteriormente (apenas adiciona os novos).
+    const rowsWithEnrollment = rows.map(student => {
+      const history = enrollmentsByStudent.get(student.ed_student_id) || [];
+      return {
+        ...student,
+        // histórico completo de matrículas/confirmações do aluno
+        ed_student_enrollments: history,
+        // 1 quando existe pelo menos um registo em eduall_enrollment
+        ed_student_is_enrolled: history.length > 0 ? 1 : 0,
+        // registo mais recente, para acesso rápido sem percorrer o array
+        ed_student_last_enrollment: history[0] || null,
+      };
+    });
+
     // ── Set cache ──
-    await Cache.eduallSet(cacheKey, rows, STUDENTS_CACHE_TTL);
+    await Cache.eduallSet(cacheKey, rowsWithEnrollment, STUDENTS_CACHE_TTL);
 
     const duration = Date.now() - startTime;
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetStudents demorou ${duration}ms (${cacheKey})`);
 
-    res.status(200).json(rows);
+    res.status(200).json(rowsWithEnrollment);
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -1043,7 +1116,7 @@ const BackendErrorLogger = {
     if (status === 403) return 'Você não tem permissão para esta ação.';
     if (status === 404) return 'Recurso não encontrado.';
     if (status === 409) return 'Conflito de dados. Este registro pode já existir.';
-    if (status === 500) return 'Erro no servidor. Tente novamente mais tarde.';
+    if (status === 500) return 'Lamentamos mas não foi possivel executar está operação . Tente novamente mais tarde.';
  
     // Connection errors
     if (message.includes('ECONNREFUSED')) return 'Base de dados indisponível.';
@@ -1059,13 +1132,18 @@ const BackendErrorLogger = {
 //  REGISTER STUDENT COM ERRORLOGGER
 // ═════════════════════════════════════════════════════════════════════════════════
   
+ 
 
+ 
 const RegisterStudent = async (req, res) => {
   const startTime = Date.now();
-  
-  try { 
-    // ── Session validation ──
-    const instituteCode = req.session?.user?.eduall_user_session_curentinstitute;
+  let inTransaction = false;
+ 
+   
+ 
+  try {
+    // ── Session validation ──────────────────────────────────────────────
+    const instituteCode = req.session?.user?.eduall_user_session_curentinstitute; 
  
     if (!instituteCode) {
       return res.status(401).json({
@@ -1074,7 +1152,7 @@ const RegisterStudent = async (req, res) => {
       });
     }
  
-    // ── Extract all fields ──
+    // ── Extract all fields ──────────────────────────────────────────────
     const {
       student_name,
       student_address,
@@ -1105,25 +1183,25 @@ const RegisterStudent = async (req, res) => {
       guardion_email,
       guardion_job,
       guardion_degree_of_kinship,
+      // ── Campos de matrícula (opcionais) ──
+      student_enrollment_service,   // se vier preenchido, activa a matrícula
       // ... outros campos que tem
     } = req.body;
  
-    // ── VALIDAÇÕES ────────────────────────────────────────────────────────
+    const wantsEnrollment = !!student_enrollment_service;
+ 
+    // Turma agora é OPCIONAL no registo do aluno.
+    // '0' ou vazio conta como "sem turma atribuída".
+    const hasClass = !!student_class && student_class !== '0';
+ 
+    // ── VALIDAÇÕES ───────────────────────────────────────────────────────
     const errors = {};
  
-    // Campos obrigatórios
-    if (!student_name?.trim()) {
-      errors.student_name = 'Nome obrigatório';
-    }
-    if (!student_address?.trim()) {
-      errors.student_address = 'Endereço obrigatório';
-    }
-    if (!student_nacionality?.trim()) {
-      errors.student_nacionality = 'Nacionalidade obrigatória';
-    }
-    if (!student_gender?.trim()) {
-      errors.student_gender = 'Género obrigatório';
-    }
+    if (!student_name?.trim())          errors.student_name = 'Nome obrigatório';
+    if (!student_address?.trim())       errors.student_address = 'Endereço obrigatório';
+    if (!student_nacionality?.trim())   errors.student_nacionality = 'Nacionalidade obrigatória';
+    if (!student_gender?.trim())        errors.student_gender = 'Género obrigatório';
+ 
     if (!student_birthday?.trim()) {
       errors.student_birthday = 'Data de nascimento obrigatória';
     } else {
@@ -1135,17 +1213,16 @@ const RegisterStudent = async (req, res) => {
         errors.student_birthday = 'Data não pode ser futuro';
       }
     }
-    if (!student_phone?.trim()) {
-      errors.student_phone = 'Telefone obrigatório';
-    }
-    if (!student_identityCard?.trim()) {
-      errors.student_identityCard = 'BI obrigatório';
-    }
-    if (!student_class || student_class === '0') {
-      errors.student_class = 'Turma obrigatória';
+ 
+    if (!student_phone?.trim())         errors.student_phone = 'Telefone obrigatório';
+    if (!student_identityCard?.trim())  errors.student_identityCard = 'BI obrigatório';
+ 
+    // ✅ Turma deixou de ser obrigatória para registar o aluno.
+    // Mas se o utilizador pedir matrícula (wantsEnrollment), aí sim precisa de turma.
+    if (!hasClass && wantsEnrollment) {
+      errors.student_class = 'Turma obrigatória para efectuar a matrícula';
     }
  
-    // Se houver erros
     if (Object.keys(errors).length > 0) {
       console.error('VALIDACAO_FALHOU:', errors);
       return res.status(400).json({
@@ -1157,49 +1234,38 @@ const RegisterStudent = async (req, res) => {
  
     console.log('VALIDACOES_PASSARAM: OK');
  
-    // ── VALIDAÇÃO 2: Arquivo (Multer) ────────────────────────────────────────
-    console.log('\n2️⃣  VALIDANDO ARQUIVO...');
-    
+    // ── VALIDAÇÃO 2: Arquivo (Multer) ───────────────────────────────────
     let picturePath = null;
     if (req.file) {
-      console.log(`  ✅ Arquivo recebido: ${req.file.filename}`);
-      console.log(`  ✅ Tipo: ${req.file.mimetype}`);
-      console.log(`  ✅ Tamanho: ${(req.file.size / 1024).toFixed(2)}KB`);
-      
-      // Validar tipo de ficheiro (dupla verificação)
       const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
       if (!allowedMimes.includes(req.file.mimetype)) {
         console.error('ARQUIVO_TIPO_INVALIDO:', req.file.mimetype);
-        if (req.file) fs.unlink(req.file.path, (err) => {});
+        fs.unlink(req.file.path, () => {});
         return res.status(400).json({
           success: false,
           msg: 'Tipo de ficheiro inválido. Apenas JPG, PNG, GIF e WebP.',
         });
       }
-
-      // Validar tamanho (máx 5MB)
+ 
       const maxSize = 5 * 1024 * 1024;
       if (req.file.size > maxSize) {
         console.error('ARQUIVO_TAMANHO_INVALIDO:', req.file.size);
-        if (req.file) fs.unlink(req.file.path, (err) => {});
+        fs.unlink(req.file.path, () => {});
         return res.status(400).json({
           success: false,
           msg: 'Ficheiro muito grande. Máximo 5MB.',
         });
       }
-
+ 
       picturePath = "images/students/" + req.file.filename;
-      console.log(`  ✅ Path final: ${picturePath}`);
-    } else {
-      console.log(`  ⚠️  Nenhuma imagem foi enviada (opcional)`);
     }
  
-    // ── Verificar duplicate BI ──────────────────────────────────────────────
+    // ── Verificar duplicate BI ──────────────────────────────────────────
     const duplicateBI = await ExecuteQuery(
       res,
-      `SELECT ed_student_id FROM eduall_students 
-       WHERE ed_student_identityCard = ? 
-       AND ed_student_institute_code = ? 
+      `SELECT ed_student_id FROM eduall_students
+       WHERE ed_student_identityCard = ?
+       AND ed_student_institute_code = ?
        LIMIT 1`,
       [student_identityCard.trim(), instituteCode],
       true
@@ -1211,37 +1277,157 @@ const RegisterStudent = async (req, res) => {
         msg: `Bilhete de identidade ${student_identityCard} já existe no sistema.`,
       });
     }
+  
+    // ── Se turma foi indicada (com ou sem matrícula), validar ANTES de
+    //    tocar na base de dados de escrita: existência da turma + vagas
+    //    disponíveis (via checkClassCapacity). Se for pedida matrícula,
+    //    validar também o serviço. ──
+    let classInfo = null;
+    let serviceInfo = null;
  
-    // ── Generate student code ──────────────────────────────────────────────
-    let finalCode = String(student_code || "").trim();
-    
-    if (!finalCode) {
-      // Auto-generate (seu padrão)
-      const counter = await ExecuteQuery(
+    if (hasClass) {
+      const classRows = await ExecuteQuery(
         res,
-        `SELECT ed_lastest_student_code FROM eduall_institute_counters 
+        `SELECT ed_class_id, ed_class_title, ed_class_year, ed_class_student_limit
+         FROM eduall_class
+         WHERE ed_class_id = ? AND ed_class_institute_code = ?`,
+        [student_class, instituteCode],
+        true
+      );
+ 
+      if (!classRows || classRows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          msg: "Turma selecionada não existe ou não pertence ao seu instituto!",
+          code: "INVALID_CLASS",
+        });
+      }
+      classInfo = classRows[0];
+ 
+      // ── ✅ Validar limite máximo de alunos na turma (via helper) ──────
+      // Aluno é novo (ainda não tem ed_student_id), por isso não há
+      // excludeStudentId a passar.
+      const capacity = await checkClassCapacity(res, student_class, instituteCode);
+ 
+      if (capacity.isFull) {
+        console.error(`❌ TURMA LOTADA: ${capacity.title || student_class} | ${capacity.current}/${capacity.limit}`);
+        return res.status(409).json({
+          success: false,
+          msg: `A turma "${capacity.title || classInfo.ed_class_title}" já atingiu o limite máximo de ${capacity.limit} aluno(s).`,
+          code: "CLASS_FULL",
+          classId: classInfo.ed_class_id,
+          maxStudents: capacity.limit,
+          currentOccupancy: capacity.current,
+        });
+      }
+ 
+      if (wantsEnrollment) {
+        const serviceRows = await ExecuteQuery(
+          res,
+          `SELECT ed_service_id, ed_service_title
+           FROM eduall_services
+           WHERE ed_service_id = ? AND ed_service_institute_code = ?`,
+          [student_enrollment_service, instituteCode],
+          true
+        );
+ 
+        if (!serviceRows || serviceRows.length === 0) {
+          return res.status(404).json({
+            success: false,
+            msg: "Serviço de matrícula selecionado não existe ou não pertence ao seu instituto!",
+            code: "INVALID_SERVICE",
+          });
+        }
+        serviceInfo = serviceRows[0];
+      }
+    }
+ 
+    // ── A partir daqui: escrita na BD → usar transação ───────────────────
+    await ExecuteQuery(res, "START TRANSACTION", [], false);
+    inTransaction = true;
+ 
+    // ── ✅ Reconfirmar capacidade DENTRO da transação ─────────────────────
+    // Protege contra pedidos concorrentes que possam ter preenchido a
+    // última vaga entre a validação inicial (acima) e este ponto.
+    if (hasClass) {
+      const capacityRecheck = await checkClassCapacity(res, student_class, instituteCode);
+      if (capacityRecheck.isFull) {
+        throw Object.assign(
+          new Error(`A turma "${capacityRecheck.title || classInfo.ed_class_title}" ficou lotada enquanto este registo era processado (${capacityRecheck.current}/${capacityRecheck.limit}). Aluno NAO foi registado.`),
+          { code: "CLASS_FULL", status: 409 }
+        );
+      }
+    }
+ 
+    // ── Generate student code ────────────────────────────────────────────
+    let finalCode = String(student_code || "").trim();
+ 
+    if (!finalCode) {
+      let counter = await ExecuteQuery(
+        res,
+        `SELECT ed_lastest_student_code FROM eduall_institute_counters
          WHERE ed_institute_code = ? FOR UPDATE`,
         [instituteCode],
         true
       );
  
+      // ── Self-healing: se o instituto ainda não tem contador criado
+      //    (ex: escola nova), cria-se automaticamente com valor 0 em vez
+      //    de falhar o registo do aluno. ──────────────────────────────
       if (!counter || !counter.length) {
-        throw new Error('Contador não encontrado');
+        console.warn(`⚠️ Contador não encontrado para instituto ${instituteCode} — a criar automaticamente.`);
+ 
+        await ExecuteQuery(
+          res,
+          `INSERT INTO eduall_institute_counters (ed_institute_code, ed_lastest_student_code)
+           VALUES (?, 0)
+           ON DUPLICATE KEY UPDATE ed_lastest_student_code = ed_lastest_student_code`,
+          [instituteCode],
+          false
+        );
+ 
+        counter = await ExecuteQuery(
+          res,
+          `SELECT ed_lastest_student_code FROM eduall_institute_counters
+           WHERE ed_institute_code = ? FOR UPDATE`,
+          [instituteCode],
+          true
+        );
+ 
+        if (!counter || !counter.length) {
+          // Só acontece se a própria criação falhar (ex: problema de permissões/BD)
+          throw new Error('Contador não encontrado e não foi possível criá-lo automaticamente');
+        }
       }
  
-      let next = ((counter[0]?.ed_lastest_student_code ?? 0) * 1) + 1;
+      const next = ((counter[0]?.ed_lastest_student_code ?? 0) * 1) + 1;
       finalCode = String(next).padStart(6, "0");
  
       await ExecuteQuery(
         res,
-        `UPDATE eduall_institute_counters SET ed_lastest_student_code = ? 
+        `UPDATE eduall_institute_counters SET ed_lastest_student_code = ?
          WHERE ed_institute_code = ?`,
         [next, instituteCode],
         false
       );
+    } else {
+      // Código veio explícito no payload — garantir que não colide
+      const dupCode = await ExecuteQuery(
+        res,
+        `SELECT ed_student_id FROM eduall_students
+         WHERE ed_student_code = ? AND ed_student_institute_code = ? LIMIT 1`,
+        [finalCode, instituteCode],
+        true
+      );
+      if (dupCode && dupCode.length > 0) {
+        throw Object.assign(
+          new Error(`Já existe um estudante com a matrícula ${finalCode} neste instituto.`),
+          { code: 'ER_DUP_ENTRY', status: 409 }
+        );
+      }
     }
  
-    // ── INSERT STUDENT (COM IMAGEM!) ───────────────────────────────────────
+    // ── INSERT STUDENT ────────────────────────────────────────────────────
     const insertResult = await ExecuteQuery(
       res,
       `INSERT INTO eduall_students(
@@ -1288,8 +1474,8 @@ const RegisterStudent = async (req, res) => {
         student_phone,
         student_phone2,
         student_email,
-        student_class,
-        student_code,
+        hasClass ? student_class : null,  
+        finalCode,
         student_identityCard,
         student_health_problems,
         student_health_problems_description,
@@ -1310,70 +1496,102 @@ const RegisterStudent = async (req, res) => {
         guardion_phone,
         guardion_email,
         guardion_job,
-        guardion_degree_of_kinship
+        guardion_degree_of_kinship,
       ],
       false,
       {
         db: "eduall_students",
         type: "insert",
-        data: {
-          student_name: student_name,
-          student_code: student_code,
-          student_identityCard: student_identityCard
-        }
+        data: { student_name, student_code: finalCode, student_identityCard },
       }
     );
  
     const studentId = insertResult.insertId;
  
-    // ── Audit log ──
+    // ── MATRÍCULA (se pedida) ────────────────────────────────────────────
+    let enrollmentId = null;
+    let enrollmentServiceTitle = null;
+ 
+    if (wantsEnrollment) {
+      const insertEnrollment = await ExecuteQuery(
+        res,
+        `INSERT INTO eduall_student_enrollment
+         (ed_student_enrollment_studentcode, ed_student_enrollment_service,
+          ed_student_enrollment_class, ed_enrollment_institute_code)
+         VALUES (?, ?, ?, ?)`,
+        [finalCode, student_enrollment_service, student_class, instituteCode],
+        false,
+        { db: "eduall_student_enrollment", type: "insert", data: req }
+      );
+ 
+      enrollmentId = insertEnrollment.insertId;
+      enrollmentServiceTitle = serviceInfo.ed_service_title;
+ 
+      // Marcar o aluno como matriculado (mesmo padrão usado noutros
+      // endpoints de matrícula do sistema)
+      await ExecuteQuery(
+        res,
+        `UPDATE eduall_students SET ed_student_enrolled = 1
+         WHERE ed_student_id = ? AND ed_student_institute_code = ?`,
+        [studentId, instituteCode],
+        false
+      );
+    }
+ 
+    // ── Audit log ─────────────────────────────────────────────────────────
     await RegisterAuditAction({
       session: req.session,
       action: 1,
       form: "Estudantes",
-      description: `Registou novo estudante "${student_name}" (matrícula: ${finalCode})${picturePath ? ' com imagem' : ''}`,
+      description: wantsEnrollment
+        ? `Registou novo estudante "${student_name}" (matrícula: ${finalCode}) e efectuou matrícula no serviço "${enrollmentServiceTitle}"${picturePath ? ' com imagem' : ''}`
+        : `Registou novo estudante "${student_name}" (matrícula: ${finalCode})${picturePath ? ' com imagem' : ''}`,
     });
  
-    // ── Refresh cache ──
+    // ── Commit ────────────────────────────────────────────────────────────
+    await ExecuteQuery(res, "COMMIT", [], false);
+    inTransaction = false;
+ 
+    // ── Refresh cache (fora da transação, não é crítico) ────────────────
     await RefreshStudentCache(req, res, instituteCode);
- 
-    // ── Check enrollment ──
-    const enrollmentRows = await ExecuteQuery(
-      res,
-      `SELECT ed_student_id, ed_student_enrolled FROM eduall_students 
-       WHERE ed_student_code = ? LIMIT 1`,
-      [finalCode],
-      true
-    );
- 
-    const enrolled = enrollmentRows?.length > 0 && enrollmentRows[0].ed_student_enrolled > 0;
-    const enrollmentId = enrollmentRows?.length > 0 ? enrollmentRows[0].ed_student_id : null;
  
     const duration = Date.now() - startTime;
  
     console.log('REGISTRO_SUCESSO:', {
       studentCode: finalCode,
       studentName: student_name,
-      studentId: studentId,
+      studentId,
+      hasClass,
+      enrolled: wantsEnrollment,
+      enrollmentId,
       temImagem: !!picturePath,
-      imagemPath: picturePath,
       duration: `${duration}ms`,
     });
  
     return res.status(201).json({
       success: true,
-      msg: picturePath 
-        ? "Estudante registado com sucesso! Imagem enviada." 
-        : "Estudante registado com sucesso!",
+      msg: wantsEnrollment
+        ? "Estudante registado e matriculado com sucesso!"
+        : (picturePath
+            ? "Estudante registado com sucesso! Imagem enviada."
+            : "Estudante registado com sucesso!"),
       student_code: finalCode,
       student_id: studentId,
       student_identity_card: student_identityCard,
       picture_path: picturePath,
-      enrolled: enrolled,
+      class_assigned: hasClass,
+      class_title: hasClass ? classInfo.ed_class_title : null,
+      enrolled: wantsEnrollment,
       enrollment_id: enrollmentId,
+      enrollment_service: enrollmentServiceTitle,
+      enrollment_class: wantsEnrollment ? classInfo.ed_class_title : null,
     });
  
   } catch (error) {
+    if (inTransaction) {
+      try { await ExecuteQuery(res, "ROLLBACK", [], false); } catch (_) {}
+    }
+ 
     const duration = Date.now() - startTime;
  
     console.error('REGISTRO_ERRO:', {
@@ -1383,15 +1601,21 @@ const RegisterStudent = async (req, res) => {
       duration: `${duration}ms`,
     });
  
-    return res.status(500).json({
+    const status = error.status || (error.code === 'ER_DUP_ENTRY' ? 409 : 500);
+ 
+    return res.status(status).json({
       success: false,
-      msg: 'Erro ao registar estudante. Tente novamente.',
+      msg: error.code === 'ER_DUP_ENTRY' || error.code === 'CLASS_FULL'
+        ? error.message
+        : 'Erro ao registar estudante. Tente novamente.',
       error_code: error.code || 'UNKNOWN_ERROR',
     });
   }
 };
+ 
 
  
+
  
 // ─── Helper: Email validation ──
 function isValidEmail(email) {
@@ -1498,7 +1722,7 @@ const ExampleGetUserMessage = () => {
  
 
 // ──────────────────────────────────────────────────────────────
-// ── STUDENT UPDATE (Dados completos)
+// ── STUDENT UPDATE  
 // ──────────────────────────────────────────────────────────────
 const StudentUpdate = async (req, res) => {
   try {
@@ -1525,9 +1749,9 @@ const StudentUpdate = async (req, res) => {
       guardion_emergency_phone, guardion_address,
       guardion_gender, guardion_degree_of_kinship, guardion_is_guardion,
     } = req.body;
-
+ 
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-
+ 
     // ── Validação de data ────────────────────────────────────────
     const birthday = new Date(student_birthday);
     const today = new Date();
@@ -1537,7 +1761,7 @@ const StudentUpdate = async (req, res) => {
     if ((today - birthday) / 86400000 < 4) {
       return res.status(400).json({ success: false, msg: "A data de nascimento deve ter pelo menos 4 dias." });
     }
-
+ 
     // ── Buscar estudante atual ───────────────────────────────────
     const existing = await ExecuteQuery(
       res,
@@ -1552,12 +1776,44 @@ const StudentUpdate = async (req, res) => {
     if (existing.length === 0) {
       return res.status(404).json({ success: false, msg: "Estudante não encontrado." });
     }
-
+ 
     const oldClass    = existing[0].ed_student_class;
     const currentCode = String(existing[0].ed_student_code || "").trim();
     let   newCode     = String(student_code || "").trim();
-
-    // ── Verificar mudança de turma ───────────────────────────────
+ 
+    // Turma efetivamente a mudar? (comparação solta porque um dos lados
+    // pode vir como string do body e o outro como número da BD)
+    const hasNewClass = !!student_class && student_class !== '0';
+    const isClassChanging = hasNewClass && (!oldClass || String(oldClass) !== String(student_class));
+ 
+    // ── ✅ NOVO — Validar existência + capacidade da turma de destino ────
+    // Só faz sentido verificar quando a turma está de facto a mudar: se
+    // o aluno já está nesta turma, ele já ocupa essa vaga e não há
+    // necessidade (nem seria correto) reavaliar a capacidade.
+    if (isClassChanging) {
+      const capacity = await checkClassCapacity(res, student_class, instituteCode, ID);
+ 
+      if (!capacity.exists) {
+        return res.status(404).json({
+          success: false,
+          msg: "Turma selecionada não existe ou não pertence ao seu instituto!",
+          code: "INVALID_CLASS",
+        });
+      }
+ 
+      if (capacity.isFull) {
+        console.error(`❌ TURMA LOTADA (update): ${capacity.title || student_class} | ${capacity.current}/${capacity.limit}`);
+        return res.status(409).json({
+          success: false,
+          msg: `A turma "${capacity.title}" já atingiu o limite máximo de ${capacity.limit} aluno(s).`,
+          code: "CLASS_FULL",
+          maxStudents: capacity.limit,
+          currentOccupancy: capacity.current,
+        });
+      }
+    }
+ 
+    // ── Verificar mudança de turma (histórico por ano lectivo) ─────
     if (oldClass && student_class && oldClass != student_class) {
       const [oldYear] = await ExecuteQuery(res,
         `SELECT ed_class_year FROM eduall_class WHERE ed_class_id = ?`, [oldClass], true);
@@ -1569,7 +1825,7 @@ const StudentUpdate = async (req, res) => {
           [ID, oldClass], false);
       }
     }
-
+ 
     // ── Gerar código se necessário ───────────────────────────────
     if (!newCode) {
       const counter = await ExecuteQuery(res,
@@ -1581,7 +1837,7 @@ const StudentUpdate = async (req, res) => {
         `UPDATE eduall_institute_counters SET ed_lastest_student_code = ? WHERE ed_institute_code = ?`,
         [next, instituteCode], false);
     }
-
+ 
     // ── Verificar duplicação de matrícula ────────────────────────
     if (newCode !== currentCode) {
       const dup = await ExecuteQuery(res,
@@ -1592,7 +1848,7 @@ const StudentUpdate = async (req, res) => {
         return res.status(409).json({ success: false, msg: `Já existe outro estudante com o número ${newCode}.` });
       }
     }
-
+ 
     // ── VALIDAÇÃO 3: Arquivo (Multer) ────────────────────────────────────────
     console.log('\n3️⃣  VALIDANDO ARQUIVO...');
     
@@ -1612,7 +1868,7 @@ const StudentUpdate = async (req, res) => {
           msg: 'Tipo de ficheiro inválido. Apenas JPG, PNG, GIF e WebP.',
         });
       }
-
+ 
       // Validar tamanho (máx 5MB)
       const maxSize = 5 * 1024 * 1024;
       if (req.file.size > maxSize) {
@@ -1623,13 +1879,13 @@ const StudentUpdate = async (req, res) => {
           msg: 'Ficheiro muito grande. Máximo 5MB.',
         });
       }
-
+ 
       picturePath = "images/students/" + req.file.filename;
       console.log(`  ✅ Path final: ${picturePath}`);
     } else {
       console.log(`  ⚠️  Nenhuma imagem foi enviada`);
     }
-
+ 
     const updateQuery = `
       UPDATE eduall_students SET
         ed_student_lastclass                   = ?,
@@ -1678,7 +1934,7 @@ const StudentUpdate = async (req, res) => {
       WHERE ed_student_id = ?
         AND ed_student_deleted = 0
         AND ed_student_institute_code = ?`;
-
+ 
     await ExecuteQuery(res, updateQuery, [
       // Dados do aluno
       student_lastclass            ?? '',
@@ -1732,7 +1988,7 @@ const StudentUpdate = async (req, res) => {
       ID,
       instituteCode
     ], false, { db: "eduall_students", type: "update", data: req });
-
+ 
     // ── Upsert detalhes — eduall_students_details ────────────────
     await ExecuteQuery(res,
       `INSERT INTO eduall_students_details (
@@ -1766,27 +2022,36 @@ const StudentUpdate = async (req, res) => {
         student_workplace      ?? null,
         student_worktitle      ?? null
       ], false, { db: "eduall_students_details", type: "update", data: req });
-
+ 
     // ── Auditoria ────────────────────────────────────────────────
     await RegisterAuditAction({
       session: req.session, action: 2, form: "Estudantes",
       description: `Atualizou dados do estudante #${ID} (matrícula: ${newCode})`
     });
-
+ 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> StudentUpdate: registo ${ID} atualizado`);
     await RefreshStudentCache(req, res, instituteCode);
-
+ 
     return res.status(200).json({
       success: true,
       msg: "Estudante atualizado com sucesso!",
       student_code: newCode
     });
-
+ 
   } catch (err) {
     console.error("Erro ao atualizar estudante:", err);
     return res.status(500).json({ success: false, msg: err.message });
   }
 };
+
+
+
+
+
+
+
+
+
 
 // ──────────────────────────────────────────────────────────────
 // ── STUDENT DELETE
