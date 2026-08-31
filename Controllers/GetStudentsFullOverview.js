@@ -1,7 +1,6 @@
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 
-const { RegisterAuditAction } = require("./Auditory");
-const Cache                   = require("../Functions/CacheRoutes");
+const { RegisterAuditAction } = require("./Auditory"); 
 const {
   VENDUS_CreateInvoiceCodeAndDoc,
   getPaymentMethods,
@@ -2574,10 +2573,307 @@ const GetEnrollmentConfirmationReport = async (req, res) => {
   }
 };
 
+
+
+
+
+// ── Cores ANSI para o console (sem dependências externas) ──────────────────
+const CONSOLE_COLORS = {
+  reset:   "\x1b[0m",
+  bright:  "\x1b[1m",
+  red:     "\x1b[31m",
+  green:   "\x1b[32m",
+  yellow:  "\x1b[33m",
+  blue:    "\x1b[34m",
+  magenta: "\x1b[35m",
+  cyan:    "\x1b[36m",
+  gray:    "\x1b[90m",
+};
+
+/**
+ * Log colorido genérico.
+ * @param {"success"|"error"|"warn"|"info"} type
+ * @param {string} label   - título curto do evento (ex: "ConfirmEnrollmentPayment")
+ * @param {string} message - mensagem descritiva
+ * @param {object} [extra] - dados adicionais (payload, erro, etc.)
+ */
+function logColored(type, label, message, extra) {
+  const c = CONSOLE_COLORS;
+  const styles = {
+    success: { color: c.green,   icon: "✅" },
+    error:   { color: c.red,     icon: "❌" },
+    warn:    { color: c.yellow,  icon: "⚠️ " },
+    info:    { color: c.cyan,    icon: "ℹ️ " },
+  };
+  const style = styles[type] || styles.info;
+  const timestamp = new Date().toISOString();
+
+  console.log(
+    `${style.color}${style.icon} ${c.bright}[${label}]${c.reset}${style.color} ${message}${c.reset} ${c.gray}(${timestamp})${c.reset}`
+  );
+
+  if (extra !== undefined) {
+    console.log(`${c.gray}   ↳`, extra, c.reset);
+  }
+}
+
+const ConfirmEnrollmentPayment = async (req, res) => {
+  const startTime = Date.now();
+  let inTransaction = false;
+  const LABEL = "ConfirmEnrollmentPayment";
+
+  try {
+    const { ID } = req.params;
+    const instituteCode = req.session?.user?.eduall_user_session_curentinstitute;
+
+    if (!instituteCode) {
+      logColored("error", LABEL, "Instituição não encontrada na sessão.", { studentId: ID });
+      return res.status(401).json({ success: false, msg: "Instituição não encontrada na sessão." });
+    }
+
+    // ── O frontend só envia estes dois campos: a turma escolhida
+    //    e o nº de recibo/fatura. Todos os outros campos da tabela
+    //    eduall_enrollment (serviço, ficheiro, valor pago, moeda,
+    //    método/banco/local de pagamento) não são preenchidos por
+    //    este formulário e vão gravados como null/0. ──
+    const { student_class, invoice_code } = req.body;
+
+    // ── Só faz sentido se o modelo activo da escola for o de
+    //    confirmação financeira. ──
+    const enrollmentModel = await getInstituteEnrollmentModel(res, instituteCode);
+    if (!usesFinancialConfirmation(enrollmentModel)) {
+      logColored("warn", LABEL, "Escola não utiliza o modelo de confirmação financeira.", {
+        studentId: ID,
+        instituteCode,
+        enrollmentModel,
+      });
+      return res.status(409).json({
+        success: false,
+        msg: "Esta escola não utiliza o modelo de matrícula com confirmação financeira.",
+        code: "WRONG_ENROLLMENT_MODEL",
+      });
+    }
+
+    if (!student_class) {
+      logColored("warn", LABEL, "Turma não informada no pedido.", { studentId: ID, instituteCode });
+      return res.status(400).json({ success: false, msg: "Turma obrigatória para activar o aluno." });
+    }
+
+    // ── Confirmar que o aluno existe, pertence ao instituto e está
+    //    de facto "Aguarda Pagamento".
+    //    NOTA: a fonte da verdade passou a ser ed_student_status (0 = aguarda
+    //    pagamento / inactivo, 1 = activo), alinhado com o frontend.
+    //    ed_student_awaiting_payment é legado e já não é usado para decidir. ──
+    const studentRows = await ExecuteQuery(
+      res,
+      `SELECT ed_student_id, ed_student_name, ed_student_code, ed_student_status, ed_student_awaiting_payment
+       FROM eduall_students
+       WHERE ed_student_id = ? AND ed_student_institute_code = ? AND ed_student_deleted = 0`,
+      [ID, instituteCode],
+      true
+    );
+
+    if (!studentRows.length) {
+      logColored("error", LABEL, "Estudante não encontrado.", { studentId: ID, instituteCode });
+      return res.status(404).json({ success: false, msg: "Estudante não encontrado." });
+    }
+
+    const student = studentRows[0];
+
+    if (student.ed_student_status * 1 !== 0) {
+      logColored("warn", LABEL, "Aluno já não está a aguardar confirmação de pagamento.", {
+        studentId: ID,
+        studentName: student.ed_student_name,
+        status: student.ed_student_status,
+      });
+      return res.status(409).json({
+        success: false,
+        msg: "Este aluno já não está a aguardar confirmação de pagamento.",
+        code: "NOT_AWAITING_PAYMENT",
+      });
+    }
+
+    // ── Validar turma + capacidade ──
+    const classRows = await ExecuteQuery(
+      res,
+      `SELECT ed_class_id, ed_class_title, ed_class_year
+       FROM eduall_class
+       WHERE ed_class_id = ? AND ed_class_institute_code = ?`,
+      [student_class, instituteCode],
+      true
+    );
+
+    if (!classRows.length) {
+      logColored("error", LABEL, "Turma seleccionada não existe ou não pertence ao instituto.", {
+        studentId: ID,
+        student_class,
+        instituteCode,
+      });
+      return res.status(404).json({
+        success: false,
+        msg: "Turma selecionada não existe ou não pertence ao seu instituto!",
+        code: "INVALID_CLASS",
+      });
+    }
+    const classInfo = classRows[0];
+
+    const capacity = await checkClassCapacity(res, student_class, instituteCode);
+    if (capacity.isFull) {
+      logColored("warn", LABEL, `Turma "${capacity.title || classInfo.ed_class_title}" está lotada.`, {
+        studentId: ID,
+        limit: capacity.limit,
+        current: capacity.current,
+      });
+      return res.status(409).json({
+        success: false,
+        msg: `A turma "${capacity.title || classInfo.ed_class_title}" já atingiu o limite máximo de ${capacity.limit} aluno(s).`,
+        code: "CLASS_FULL",
+        maxStudents: capacity.limit,
+        currentOccupancy: capacity.current,
+      });
+    }
+
+    // ── Escrita — usar transação ──
+    await ExecuteQuery(res, "START TRANSACTION", [], false);
+    inTransaction = true;
+
+    // Reconfirmar capacidade dentro da transação (protege contra concorrência)
+    const capacityRecheck = await checkClassCapacity(res, student_class, instituteCode);
+    if (capacityRecheck.isFull) {
+      throw Object.assign(
+        new Error(`A turma "${capacityRecheck.title || classInfo.ed_class_title}" ficou lotada enquanto este pagamento era confirmado (${capacityRecheck.current}/${capacityRecheck.limit}).`),
+        { code: "CLASS_FULL", status: 409 }
+      );
+    }
+
+    // ── O aluno já tem registo de matrícula em eduall_enrollment
+    //    (criado quando ficou "Aguarda Pagamento"). Aqui não se cria
+    //    um novo registo — apenas se localiza o existente e:
+    //      • actualiza-se sempre a turma para a seleccionada agora;
+    //      • actualiza-se o nº de recibo/fatura só se ainda estiver
+    //        NULL na BD e tiver sido enviado pelo frontend. ──
+    const enrollmentRows = await ExecuteQuery(
+      res,
+      `SELECT ed_enrollment_id, ed_enrollment_invoice_code
+       FROM eduall_enrollment
+       WHERE ed_enrollment_student = ? AND ed_enrollment_institute_code = ?
+       ORDER BY ed_enrollment_id DESC
+       LIMIT 1`,
+      [ID, instituteCode],
+      true
+    );
+
+    if (!enrollmentRows.length) {
+      throw Object.assign(
+        new Error("Não foi encontrado nenhum registo de matrícula para este aluno."),
+        { code: "ENROLLMENT_NOT_FOUND", status: 404 }
+      );
+    }
+
+    const enrollment = enrollmentRows[0];
+    const shouldUpdateInvoice = !enrollment.ed_enrollment_invoice_code && !!invoice_code;
+
+    await ExecuteQuery(
+      res,
+      shouldUpdateInvoice
+        ? `UPDATE eduall_enrollment
+           SET ed_enrollment_class = ?, ed_enrollment_invoice_code = ?
+           WHERE ed_enrollment_id = ?`
+        : `UPDATE eduall_enrollment
+           SET ed_enrollment_class = ?
+           WHERE ed_enrollment_id = ?`,
+      shouldUpdateInvoice
+        ? [student_class, invoice_code, enrollment.ed_enrollment_id]
+        : [student_class, enrollment.ed_enrollment_id],
+      false,
+      { db: "eduall_enrollment", type: "update", data: req }
+    );
+
+    // ── Activa o aluno: sai de "Aguarda Pagamento" e recebe turma.
+    //    Actualiza tanto o campo novo (ed_student_status) como o legado
+    //    (ed_student_awaiting_payment), para manter os dois sincronizados
+    //    enquanto o campo antigo não for removido definitivamente. ──
+    await ExecuteQuery(
+      res,
+      `UPDATE eduall_students
+       SET ed_student_awaiting_payment = 0,
+           ed_student_status           = 1,
+           ed_student_class            = ?,
+           ed_student_enrolled         = 1
+       WHERE ed_student_id = ? AND ed_student_institute_code = ? AND ed_student_deleted = 0`,
+      [student_class, ID, instituteCode],
+      false,
+      { db: "eduall_students", type: "update", data: req }
+    );
+
+    await RegisterAuditAction({
+      session: req.session,
+      action: 2,
+      form: "Estudantes",
+      description: `Confirmou pagamento de matrícula do estudante "${student.ed_student_name}" (#${student.ed_student_code}) — turma: "${classInfo.ed_class_title}"`
+        + (invoice_code ? ` | recibo/fatura: ${invoice_code}` : ""),
+    });
+
+    await ExecuteQuery(res, "COMMIT", [], false);
+    inTransaction = false;
+ 
+
+    const duration = Date.now() - startTime;
+
+    logColored(
+      "success",
+      LABEL,
+      `Aluno "${student.ed_student_name}" (#${student.ed_student_code}) activado e colocado na turma "${classInfo.ed_class_title}" (${duration}ms)`,
+      {
+        studentId: Number(ID),
+        classId: classInfo.ed_class_id,
+        enrollmentId: enrollment.ed_enrollment_id,
+        invoiceUpdated: shouldUpdateInvoice,
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      msg: "Pagamento confirmado! Aluno activado e colocado na turma.",
+      student_id: Number(ID),
+      class_id: classInfo.ed_class_id,
+      class_title: classInfo.ed_class_title,
+      enrollment_id: enrollment.ed_enrollment_id,
+    });
+
+  } catch (error) {
+    if (inTransaction) {
+      try {
+        await ExecuteQuery(res, "ROLLBACK", [], false);
+        logColored("warn", LABEL, "Transacção revertida (ROLLBACK) após erro.");
+      } catch (rollbackError) {
+        logColored("error", LABEL, "Falha ao reverter a transacção (ROLLBACK).", rollbackError);
+      }
+    }
+
+    const duration = Date.now() - startTime;
+    const status = error.status || 500;
+
+    logColored(
+      "error",
+      LABEL,
+      `Erro ao confirmar pagamento de matrícula (status ${status}, ${duration}ms): ${error.message}`,
+      error
+    );
+
+    return res.status(status).json({
+      success: false,
+      msg: error.code === "CLASS_FULL" ? error.message : "Erro ao confirmar pagamento de matrícula. Tente novamente.",
+      error_code: error.code || "UNKNOWN_ERROR",
+    });
+  }
+};
+
  
 
 module.exports = {
   GetStudentsFullOverview,
   GetEnrollmentConfirmationReport,
   RegisterUnifiedEnrollmentOrConfirmation,
+  ConfirmEnrollmentPayment
 };

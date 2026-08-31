@@ -10,7 +10,7 @@ const ENROLLMENT_MODEL = {
  * Garante que as colunas necessárias existem (auto-migração, mesmo padrão
  * usado em InstituteUpdate para ed_logo_urlcloudinary). Chamado de forma
  * "preguiçosa" (lazy) — só corre o ALTER TABLE se a coluna não existir.
- */
+ */ 
 async function ensureEnrollmentModelColumns(res) {
   const checks = [
     {

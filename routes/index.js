@@ -292,9 +292,24 @@ const {
 } = require('../Controllers/LibraryReservations');
  
  const { GetFinalPautas, GetSingleFinalPauta, RegisterFinalPauta, UpdateFinalPauta, DeleteFinalPauta } = require("../Controllers/FinalPautasController");
+const multer = require("multer");
+const { setTenantCode, syncUploadSingleTable, syncDownloadSingleTable } = require("../Controllers/syncEngine");
+const { GetDocuments, GetSingleDocument, RegisterDocumentsFromArray } = require("../Controllers/DocumentsCenter");
+const { GenerateFrequencyTerm, GeneratePerformanceMap, GenerateCertificate, GenerateQualificationsStatement, GenerateIndividualBulletin, GenerateAnnualBulletin, GenerateMiniPautaBySubject, GenerateMiniPautaByClass, GenerateFinalPauta, GenerateFinalPautaExam, GenerateTeacherMiniPauta, GenerateClassGrades } = require("../Controllers/DocumentCenterGenerate");
+const { RegisterLessonPlan, GetLessonPlans, GetAllLessonPlansAdmin, GetSingleLessonPlan, UpdateLessonPlan, UpdateSchoolNotes, DeleteLessonPlan } = require("../Controllers/Lessonplancontroller");
+const { RegisterReferral, GetAllReferrals, GetSingleReferral, UpdateReferralStatus, DeleteReferral } = require("../Controllers/Referralcontroller");
+ const { uploadExpenses, UpdateExpenseStatus, GetExpenses, GetSingleExpense, GetExpensesSummary, RegisterExpense, UpdateExpense, DeleteExpense } = require("../Controllers/schoolExpenses");
+const { GetEnrollmentTemplates, GetSingleEnrollmentTemplate, GetActiveTemplateByModel, RegisterEnrollmentTemplate, UpdateEnrollmentTemplate, DeleteEnrollmentTemplate } = require("../Controllers/Enrollmenttemplates");
+const { GetAllCashOutflows, GetSingleCashOutflow, RegisterCashOutflow, UpdateCashOutflow, DeleteCashOutflow, GetCashOutflowReport } = require("../Controllers/Saidasdecaixa");
+const { GetFrequenciaHistorico, GetAllResponsaveisByStudent, SearchResponsavel, RegistrarFrequencia, RegistrarResponsavelTemporario, GetFrequenciaGeral, GetStudentForPortaria, SearchStudent, uploadResponsavelPortaria, RegisterResponsavelPortaria } = require("../Controllers/ParentsPickup");
+const { initFineCron, GetFineRules, CreateFineRule, UpdateFineRule, ToggleFineRule, DeleteFineRule, ConflictCheck, GetExclusions, AddExclusion, RemoveExclusion, GetFineLogs, GetFineLogsByStudent,   CalculateStudentFine, RunFineEngine, SendSMSToResponsibles, GetSMSCredits, GetClassDebtors, GetClassListForFines, CalculateStudentFineByRule } = require("../Controllers/FinesController");
+const { RegisterAppManager, GetLibraryAccess, UpdateLibraryAccountType, GetLibraryUsers, EduallResetLibraryReaderPassword, EduallResetLibraryReaderPasswordByEmail } = require("../Controllers/AppManager");
+const { GetAllBulletinHistory, GetBulletinHistoryById, RegisterBulletinHistory, UpdateBulletinHistory, DeleteBulletinHistory } = require("../Controllers/BulletinHistoryController");
+const { GetRacks, GetSingleRack, RegisterRack, RackUpdate, RackDelete, ReorderRacks, MoveRack } = require("../Controllers/Racks");
+const { GetBookcases, RegisterBookcase, GetSingleBookcase, BookcaseUpdate, BookcaseDelete, ReorderBookcases } = require("../Controllers/Shelves");
+const { GetStudentsFullOverview, RegisterUnifiedEnrollmentOrConfirmation, GetEnrollmentConfirmationReport, ConfirmEnrollmentPayment } = require("../Controllers/GetStudentsFullOverview");
+const { GetEvaluations, GetSingleEvaluation, GetEvaluationsByProfessor, GetEvaluationsByPeriod, GetEvaluationsDashboard, RegisterEvaluation, EvaluationUpdate, EvaluationDelete } = require("../Controllers/PedagogicalEvaluationControllers");
 
-
- 
 
    const {
      GetGradeHistory, CreateGradeHistory,
@@ -500,15 +515,8 @@ router.post('/edualluseraccountverificationcode/post', CheckUserAccountVerificat
 router.put('/eduallchangecurrentuserpassword', VerifyToken, ChangeCurrentUserPassword);
 
 
-
-
-
-//// contas do sistema e aceso a apps
+router.put("/eduallstudentconfirmenrollmentpayment/put/:ID", VerifyToken, ConfirmEnrollmentPayment); 
 router.post('/eduallinstituteuseraccountregister/post', RegisterInstituteUserAccount);
-
-
-
-
 
 
 
@@ -1207,24 +1215,7 @@ router.put("/edualllessoncontent/reorder/:parent_type/:parent_code", VerifyToken
 router.post("/edualllessoncontent/upload/video", VerifyToken, (req, res) => UploadLessonVideo);
 router.post("/edualllessoncontent/upload/poster", VerifyToken, (req, res) => UploadLessonVideoPoster);
 
-const multer = require("multer");
-const { setTenantCode, syncUploadSingleTable, syncDownloadSingleTable } = require("../Controllers/syncEngine");
-const { GetDocuments, GetSingleDocument, RegisterDocumentsFromArray } = require("../Controllers/DocumentsCenter");
-const { GenerateFrequencyTerm, GeneratePerformanceMap, GenerateCertificate, GenerateQualificationsStatement, GenerateIndividualBulletin, GenerateAnnualBulletin, GenerateMiniPautaBySubject, GenerateMiniPautaByClass, GenerateFinalPauta, GenerateFinalPautaExam, GenerateTeacherMiniPauta, GenerateClassGrades } = require("../Controllers/DocumentCenterGenerate");
-const { RegisterLessonPlan, GetLessonPlans, GetAllLessonPlansAdmin, GetSingleLessonPlan, UpdateLessonPlan, UpdateSchoolNotes, DeleteLessonPlan } = require("../Controllers/Lessonplancontroller");
-const { RegisterReferral, GetAllReferrals, GetSingleReferral, UpdateReferralStatus, DeleteReferral } = require("../Controllers/Referralcontroller");
- const { uploadExpenses, UpdateExpenseStatus, GetExpenses, GetSingleExpense, GetExpensesSummary, RegisterExpense, UpdateExpense, DeleteExpense } = require("../Controllers/schoolExpenses");
-const { GetEnrollmentTemplates, GetSingleEnrollmentTemplate, GetActiveTemplateByModel, RegisterEnrollmentTemplate, UpdateEnrollmentTemplate, DeleteEnrollmentTemplate } = require("../Controllers/Enrollmenttemplates");
-const { GetAllCashOutflows, GetSingleCashOutflow, RegisterCashOutflow, UpdateCashOutflow, DeleteCashOutflow, GetCashOutflowReport } = require("../Controllers/Saidasdecaixa");
-const { GetFrequenciaHistorico, GetAllResponsaveisByStudent, SearchResponsavel, RegistrarFrequencia, RegistrarResponsavelTemporario, GetFrequenciaGeral, GetStudentForPortaria, SearchStudent, uploadResponsavelPortaria, RegisterResponsavelPortaria } = require("../Controllers/ParentsPickup");
-const { initFineCron, GetFineRules, CreateFineRule, UpdateFineRule, ToggleFineRule, DeleteFineRule, ConflictCheck, GetExclusions, AddExclusion, RemoveExclusion, GetFineLogs, GetFineLogsByStudent,   CalculateStudentFine, RunFineEngine, SendSMSToResponsibles, GetSMSCredits, GetClassDebtors, GetClassListForFines, CalculateStudentFineByRule } = require("../Controllers/FinesController");
-const { RegisterAppManager, GetLibraryAccess, UpdateLibraryAccountType, GetLibraryUsers, EduallResetLibraryReaderPassword, EduallResetLibraryReaderPasswordByEmail } = require("../Controllers/AppManager");
-const { GetAllBulletinHistory, GetBulletinHistoryById, RegisterBulletinHistory, UpdateBulletinHistory, DeleteBulletinHistory } = require("../Controllers/BulletinHistoryController");
-const { GetRacks, GetSingleRack, RegisterRack, RackUpdate, RackDelete, ReorderRacks, MoveRack } = require("../Controllers/Racks");
-const { GetBookcases, RegisterBookcase, GetSingleBookcase, BookcaseUpdate, BookcaseDelete, ReorderBookcases } = require("../Controllers/Shelves");
-const { GetStudentsFullOverview, RegisterUnifiedEnrollmentOrConfirmation, GetEnrollmentConfirmationReport } = require("../Controllers/GetStudentsFullOverview");
-const { GetEvaluations, GetSingleEvaluation, GetEvaluationsByProfessor, GetEvaluationsByPeriod, GetEvaluationsDashboard, RegisterEvaluation, EvaluationUpdate, EvaluationDelete } = require("../Controllers/PedagogicalEvaluationControllers");
-
+ 
 
 const upload = multer({ storage: multer.memoryStorage() });
 router.post("/edualllessoncontent/files/register", VerifyToken,  upload.array("files"),  RegisterLessonFiles);
