@@ -563,71 +563,124 @@ const isOriginBlocked = (req) => {
  
 // ─── 2. CONTROLLER DE LOGIN COMPLETO ──────────────────────────────────────────
  
+
+const SQL_EMPLOYEE = `
+  SELECT
+    e.ed_employee_id,
+    e.ed_employee_code,
+    e.ed_employee_name,
+    e.ed_employee_address,
+    e.ed_employee_email,
+    e.ed_employee_birthday,
+    e.ed_employee_nacionality,
+    e.ed_employee_naturalness,
+    e.ed_employee_phone,
+    e.ed_employee_avatar_color,
+    e.ed_employee_phone2,
+    e.ed_employee_religion,
+    e.ed_employee_civil_state,
+    e.ed_employee_identityCard,
+    e.ed_employee_gender,
+    e.ed_employee_rfid_code,
+    e.ed_employee_nif,
+    e.ed_employee_status,
+    e.ed_employee_picture,
+    e.ed_employee_institute_code,
+    e.ed_employee_charge,
+    e.ed_employee_department,
+    e.ed_employee_subjects,
+    e.ed_employee_registerDate
+  FROM eduall_employees e
+  WHERE e.ed_employee_id = ?
+    AND e.ed_employee_deleted = 0
+  LIMIT 1
+`;
+
  
+
+ // ─── Helper: menus do dashboard, legíveis a partir do accessRow bruto ────────
+const DASHBOARD_MENUS = [
+  { key: "ed_user_access_myinstitute",     id: "myinstitute",     label: "A Minha Instituição" },
+  { key: "ed_user_access_secretary",       id: "secretary",       label: "Secretaria" },
+  { key: "ed_user_access_administration",  id: "administration",  label: "Administração" },
+  { key: "ed_user_access_finances",        id: "finances",        label: "Finanças" },
+  { key: "ed_user_access_pedagogicalarea", id: "pedagogicalarea", label: "Área Pedagógica" },
+  { key: "ed_user_access_transportation",  id: "transportation",  label: "Transportes" },
+  { key: "ed_user_access_library",         id: "library",         label: "Biblioteca" },
+  { key: "ed_user_access_system",          id: "system",          label: "Sistema" },
+  { key: "ed_user_access_configuration",   id: "configuration",   label: "Configurações" },
+  { key: "ed_user_access_portal",          id: "portal",          label: "Portal" },
+];
+
+const buildDashboardMenus = (accessRow) => {
+  if (!accessRow) return [];
+  return DASHBOARD_MENUS
+    .filter(m => Number(accessRow[m.key]) === 1)
+    .map(m => ({ id: m.id, label: m.label }));
+};
+
+// ─── Controller de Login ──────────────────────────────────────────────────────
+
 const Login = async (req, res) => {
   try {
     // ──────────────────────────────────────────────────────────────────────────
     // STEP 1: Validar campos obrigatórios
     // ──────────────────────────────────────────────────────────────────────────
-    
+
     const identifier = (req.body?.ed_user_account_email ?? req.body?.identifier ?? "").trim();
     const password   =  req.body?.ed_user_account_password ?? req.body?.password;
- 
+
     if (!identifier || !password) {
-      return res.status(400).json({ 
-        msg: "Preencha correctamente os campos!", 
-        errorCode: "FIELDS_MISSING" 
+      return res.status(400).json({
+        msg: "Preencha correctamente os campos!",
+        errorCode: "FIELDS_MISSING"
       });
     }
- 
+
     // ──────────────────────────────────────────────────────────────────────────
     // STEP 2: Detectar tipo de login (email ou username)
     // ──────────────────────────────────────────────────────────────────────────
-    
+
     const isEmailLogin = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(identifier);
- 
+
     // ──────────────────────────────────────────────────────────────────────────
-    // STEP 3: LOGIN VIA EMAIL
+    // STEP 3: LOGIN VIA EMAIL (mantido exactamente como no original)
     // ──────────────────────────────────────────────────────────────────────────
-    
+
     if (isEmailLogin) {
-      
-      // ✅ VALIDAÇÃO: Verificar se o domínio de origem está bloqueado
+
       if (isOriginBlocked(req)) {
         return res.status(403).json({
           msg: "Acesso não autorizado!",
           errorCode: "INVALID_CREDENTIALS"
         });
       }
- 
-      // Buscar utilizador por email
+
       const rows = await ExecuteQuery(res, SQL_EMAIL, [identifier], true, {
         db: "eduall_user_accounts",
         type: "select",
         data: req
       });
- 
+
       const user = rows?.[0];
       if (!user) {
-        return res.status(400).json({ 
-          msg: "Conta nao encontrada!", 
-          errorCode: "USER_NOT_FOUND" 
+        return res.status(400).json({
+          msg: "Conta nao encontrada!",
+          errorCode: "USER_NOT_FOUND"
         });
       }
- 
-      // Validar password
+
       const passwordMatch = user.ed_user_account_password
         ? await bcrypt.compare(password, user.ed_user_account_password)
         : false;
-      
+
       if (!passwordMatch) {
-        return res.status(400).json({ 
-          msg: "Credenciais invalidas!", 
-          errorCode: "INVALID_CREDENTIALS" 
+        return res.status(400).json({
+          msg: "Credenciais invalidas!",
+          errorCode: "INVALID_CREDENTIALS"
         });
       }
- 
-      // Criar payload do token
+
       const payload = {
         cr_usercode:       user.ed_user_account_id,
         cr_user_largecode: user.ed_user_account_code,
@@ -635,80 +688,75 @@ const Login = async (req, res) => {
         cr_useremail:      user.ed_user_account_email,
         cr_usertype:       1,
       };
- 
-      // Gerar tokens
+
       const { accessToken, refreshToken } = issueTokens(payload);
       if (!refreshToken) {
-        return res.status(500).json({ 
-          msg: "Erro ao gerar refresh token!", 
-          errorCode: "TOKEN_GENERATION_ERROR" 
+        return res.status(500).json({
+          msg: "Erro ao gerar refresh token!",
+          errorCode: "TOKEN_GENERATION_ERROR"
         });
       }
- 
-      // Persistir refresh token
+
       const persisted = await persistRefreshToken(payload.cr_usercode, refreshToken);
       if (!persisted) {
-        return res.status(400).json({ 
-          msg: "Erro ao actualizar o token.", 
-          errorCode: "TOKEN_UPDATE_ERROR" 
+        return res.status(400).json({
+          msg: "Erro ao actualizar o token.",
+          errorCode: "TOKEN_UPDATE_ERROR"
         });
       }
- 
-      // Log de login
+
       await logLogin(payload.cr_usercode, "email");
- 
-      // Definir sessão
+
       setSession(req, {
         eduall_user_session_refreshToken: refreshToken,
         eduall_user_session_ID:           payload.cr_usercode,
         accessToken,
       });
- 
-      // Login por email → sempre portal (type 1), sem dashboard nem apps
-      return res.status(200).json({ 
-        accessToken, 
-        redirectTo: null 
+
+      return res.status(200).json({
+        accessToken,
+        redirectTo: null
       });
     }
- 
+
     // ──────────────────────────────────────────────────────────────────────────
     // STEP 4: LOGIN VIA USERNAME
     // ──────────────────────────────────────────────────────────────────────────
-    
+
     const username = identifier.toLowerCase();
- 
+
     const rows = await ExecuteQuery(res, SQL_USERNAME, [username], true, {
       db: "eduall_user_accounts",
       type: "select",
       data: req
     });
- 
+
     const u = rows?.[0];
     if (!u) {
-      return res.status(400).json({ 
-        msg: "Credenciais invalidas!", 
-        errorCode: "INVALID_CREDENTIALS" 
+      return res.status(400).json({
+        msg: "Credenciais invalidas!",
+        errorCode: "INVALID_CREDENTIALS"
       });
     }
- 
+
     // ──────────────────────────────────────────────────────────────────────────
     // STEP 5: LOG VENDUS (Opcional)
     // ──────────────────────────────────────────────────────────────────────────
-    
+
     try {
       const vendusRows = await ExecuteQuery(null, SQL_VENDUS,
         [u.ed_system_account_institute_code], true,
         { db: "eduall_institutes", type: "select", data: {} }
       );
- 
+
       if (vendusRows?.length) {
         const { api_key_encrypted, country, register_id } = vendusRows[0];
-        
+
         if (!api_key_encrypted) {
           console.log("[Vendus] Instituto sem chave configurada.");
         } else {
           const apiKey = safeDecrypt(api_key_encrypted);
-          
+
           if (!apiKey) {
             console.warn(`[Vendus] Chave ilegivel para instituto: ${u.ed_system_account_institute_code} — use POST /vendus/reencrypt`);
           } else {
@@ -731,62 +779,132 @@ const Login = async (req, res) => {
     } catch (vendusErr) {
       console.warn("\x1b[33m[Vendus]\x1b[0m Nao foi possivel ler config no login:", vendusErr.message);
     }
- 
+
     // ──────────────────────────────────────────────────────────────────────────
     // STEP 6: VALIDAÇÕES DE USERNAME
     // ──────────────────────────────────────────────────────────────────────────
-    
+
     if (!u.ed_user_account_password) {
-      return res.status(400).json({ 
-        msg: "Esta conta nao tem senha associada!", 
-        errorCode: "NO_PASSWORD" 
+      return res.status(400).json({
+        msg: "Esta conta nao tem senha associada!",
+        errorCode: "NO_PASSWORD"
       });
     }
- 
-    // Validar password
+
     const passwordMatch = await bcrypt.compare(password, u.ed_user_account_password);
     if (!passwordMatch) {
-      return res.status(400).json({ 
-        msg: "Credenciais invalidas!", 
-        errorCode: "INVALID_CREDENTIALS" 
+      return res.status(400).json({
+        msg: "Credenciais invalidas!",
+        errorCode: "INVALID_CREDENTIALS"
       });
     }
- 
-    // Validar se conta está desactivada
+
     if (u.ed_system_account_status === 1) {
-      return res.status(403).json({ 
-        msg: "Conta desactivada por um administrador!", 
-        errorCode: "ACCOUNT_DEACTIVATED" 
+      return res.status(403).json({
+        msg: "Conta desactivada por um administrador!",
+        errorCode: "ACCOUNT_DEACTIVATED"
       });
     }
- 
-    // Validar se licença expirou
+
     const remainingDays = Math.floor(
       (new Date(u.ed_institute_licence_endDate) - new Date(u.ed_institute_licence_startDate)) / 86_400_000
     );
     if (remainingDays <= 0) {
-      return res.status(403).json({ 
-        msg: "Acesso bloqueado, renove a sua licenca!", 
-        errorCode: "LICENSE_EXPIRED" 
+      return res.status(403).json({
+        msg: "Acesso bloqueado, renove a sua licenca!",
+        errorCode: "LICENSE_EXPIRED"
       });
     }
- 
+
     // ──────────────────────────────────────────────────────────────────────────
     // STEP 7: BUSCAR ACESSOS + APPS + REDIRECTTO
     // ──────────────────────────────────────────────────────────────────────────
-    
+
     const { accessRow, apps, appTypes, redirectTo } = await fetchUserAccessAndApps(
       u.ed_system_account_id,
       u.ed_system_account_employee,
       u.ed_system_account_institute_code
     );
- 
+
+    // Estrutura de menus combinando dashboard + apps, pronta para o frontend.
+    const menus = {
+      dashboard: buildDashboardMenus(accessRow),
+      apps,
+    };
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // STEP 7.1: BUSCAR DADOS DO FUNCIONÁRIO ASSOCIADO À CONTA
+    // ──────────────────────────────────────────────────────────────────────────
+    // SQL_EMPLOYEE já está definido no ficheiro (schema eduall_employees confirmado).
+
+    let employee = null;
+
+    if (u.ed_system_account_employee) {
+      try {
+        const employeeRows = await ExecuteQuery(res, SQL_EMPLOYEE, [u.ed_system_account_employee], true, {
+          db: "eduall_institutes",
+          type: "select",
+          data: req
+        });
+
+        const e = employeeRows?.[0];
+        if (e) {
+          employee = { ...e };
+        }
+      } catch (employeeErr) {
+        console.warn("[Login] Nao foi possivel buscar dados do funcionario:", employeeErr.message);
+      }
+    }
+
+    // Dados do sistema/instituto
+    const system = {
+      instituteCode:    u.ed_system_account_institute_code,
+      instituteType:    u.ed_institute_type ?? null,
+      accountStatus:    u.ed_system_account_status ?? null,
+      accountId:        u.ed_system_account_id,
+      accountEmployee:  u.ed_system_account_employee ?? null,
+      accountUsername:  u.ed_system_account_name,
+      licenceStartDate: u.ed_institute_licence_startDate ?? null,
+      licenceEndDate:   u.ed_institute_licence_endDate ?? null,
+    };
+
+    // Dados da conta
+    const account = {
+      id:            u.ed_user_account_id,
+      code:          u.ed_user_account_code,
+      name:          u.ed_user_account_name,
+      email:         u.ed_user_account_email,
+      username:      u.ed_system_account_name,
+      instituteCode: u.ed_system_account_institute_code,
+      raw: { ...u, ed_user_account_password: undefined },
+    };
+
+    const instituteCode = getValidTenant(u.ed_system_account_institute_code);
+
+    // fullcode: identificador único combinando instituto + código da conta.
+    const fullcode = `${instituteCode}-${u.ed_user_account_code ?? u.ed_user_account_id}`;
+
+    // ✅ CORRIGIDO: redirectTo já reflecte dashboard OU apps (ver resolveRedirectTo).
+    // Antes exigíamos também apps.length > 0, o que bloqueava utilizadores com
+    // acesso válido ao dashboard (ex: Secretaria) mas sem nenhuma app interna
+    // (Biblioteca/RH/Segurança) atribuída — como era o caso do Paulo.
+    if (redirectTo === null) {
+      return res.status(403).json({
+        msg: "A sua conta não possui acesso a nenhum módulo ou aplicativo. Contacte o administrador.",
+        errorCode: "NO_ACCESS",
+        fullcode,
+        account,
+        system,
+        employee,
+        menus,
+        apps: apps ?? [],
+      });
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // STEP 8: GERAR TOKENS + SESSÃO
     // ──────────────────────────────────────────────────────────────────────────
-    
-    const instituteCode = getValidTenant(u.ed_system_account_institute_code);
- 
+
     const payload = {
       cr_usercode:       u.ed_user_account_id,
       cr_user_largecode: u.ed_user_account_code,
@@ -794,68 +912,61 @@ const Login = async (req, res) => {
       cr_useremail:      u.ed_user_account_email,
       cr_institutecode:  instituteCode,
       cr_usertype:       0,
+      cr_fullcode:       fullcode,
     };
- 
+
     const { accessToken, refreshToken } = issueTokens(payload);
     if (!refreshToken) {
-      return res.status(500).json({ 
-        msg: "Erro ao gerar refresh token!", 
-        errorCode: "TOKEN_GENERATION_ERROR" 
+      return res.status(500).json({
+        msg: "Erro ao gerar refresh token!",
+        errorCode: "TOKEN_GENERATION_ERROR"
       });
     }
- 
+
     const persisted = await persistRefreshToken(payload.cr_usercode, refreshToken);
     if (!persisted) {
-      return res.status(400).json({ 
-        msg: "Erro ao actualizar o token.", 
-        errorCode: "TOKEN_UPDATE_ERROR" 
+      return res.status(400).json({
+        msg: "Erro ao actualizar o token.",
+        errorCode: "TOKEN_UPDATE_ERROR"
       });
     }
- 
-    // Log de login
+
     await logLogin(payload.cr_usercode, "username");
- 
-    // Definir sessão
+
     setSession(req, {
       eduall_user_session_refreshToken:         refreshToken,
       eduall_user_session_username:             u.ed_system_account_name,
       eduall_user_session_curentinstitute:      u.ed_system_account_institute_code,
       eduall_user_session_curentinstitute_type: u.ed_institute_type * 1,
       eduall_user_session_ID:                   payload.cr_usercode,
+      eduall_user_session_fullcode:              fullcode,
       accessToken,
     });
- 
+
     // ──────────────────────────────────────────────────────────────────────────
-    // STEP 9: VALIDAÇÃO FINAL - SEM NENHUM ACESSO
+    // STEP 9: SUCESSO — RETORNAR RESPOSTA (com dados de conta + funcionário)
     // ──────────────────────────────────────────────────────────────────────────
-    
-    if (redirectTo === null) {
-      return res.status(403).json({
-        msg: "A sua conta não possui acesso a nenhum módulo ou aplicativo. Contacte o administrador.",
-        errorCode: "NO_ACCESS",
-      });
-    }
- 
-    // ──────────────────────────────────────────────────────────────────────────
-    // STEP 10: SUCESSO - RETORNAR RESPOSTA
-    // ──────────────────────────────────────────────────────────────────────────
-    
+
     return res.status(200).json({
       accessToken,
       sessions:    req.session,
       redirectTo,
       apps,
+      menus,
+      fullcode,
+      account,
+      system,
+      employee,
     });
- 
+
   } catch (err) {
     console.error("[Login]", err.message || err);
-    return res.status(500).json({ 
-      msg: "Erro interno no servidor!", 
-      errorCode: "SERVER_ERROR" 
+    return res.status(500).json({
+      msg: "Erro interno no servidor!",
+      errorCode: "SERVER_ERROR"
     });
   }
 };
- 
 
 
 /** Registo de nova conta — O(1) */

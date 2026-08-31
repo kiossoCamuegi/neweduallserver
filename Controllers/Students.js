@@ -9,13 +9,21 @@ const { RegisterAuditAction } = require("./Auditory");
 const Cache = require("../Functions/CacheRoutes");
 const { checkClassCapacity } = require("./ServicePayments");
 
+// ── NOVO: Modelo de Processo de Matrícula configurável por escola ─────────
+// Ver PATCH_modelo_matricula_configuravel.md
+const {
+  getInstituteEnrollmentModel,
+  usesFinancialConfirmation,
+  assertStudentCanReceiveClass,
+} = require("../Functions/EnrollmentModel");
+
 // ═════════════════════════════════════════════════════════════════════════════
 //  MULTER CONFIGURATION - SEGURO COM VALIDACOES
 // ═════════════════════════════════════════════════════════════════════════════
-
+ 
 // 1. Storage: Nomes únicos + pasta segura
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (req, file, cb) => { 
     const dir = 'uploads/students/';
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -301,6 +309,9 @@ const GetStudents = async (req, res) => {
         ed_student_is_enrolled: history.length > 0 ? 1 : 0,
         // registo mais recente, para acesso rápido sem percorrer o array
         ed_student_last_enrollment: history[0] || null,
+        // ed_student_awaiting_payment já vem incluído via `s.*` — não
+        // precisa de nenhum tratamento adicional aqui (ver
+        // PATCH_modelo_matricula_configuravel.md, secção 7).
       };
     });
 
@@ -1151,6 +1162,15 @@ const RegisterStudent = async (req, res) => {
         msg: "Instituição não encontrada na sessão.",
       });
     }
+
+    // ── NOVO: Modelo de Processo de Matrícula da escola ──────────────────
+    // Ver PATCH_modelo_matricula_configuravel.md, secção 3.
+    // No modelo "matricula_confirmacao_financeira" o aluno NUNCA nasce com
+    // turma nem com pagamento processado — fica "Aguarda Pagamento" até a
+    // Secretaria confirmar o pagamento (ver EnrollmentUnified.js →
+    // processPaymentConfirmation).
+    const enrollmentModel = await getInstituteEnrollmentModel(res, instituteCode);
+    const financialConfirmationMode = usesFinancialConfirmation(enrollmentModel);
  
     // ── Extract all fields ──────────────────────────────────────────────
     const {
@@ -1188,11 +1208,23 @@ const RegisterStudent = async (req, res) => {
       // ... outros campos que tem
     } = req.body;
  
-    const wantsEnrollment = !!student_enrollment_service;
+    // FIX: no modelo "matrícula + confirmação financeira" a matrícula
+    // inicial nunca processa pagamento — isso só acontece na confirmação
+    // financeira feita pela Secretaria. Ignora-se silenciosamente
+    // qualquer serviço vindo no payload para este modelo.
+    const wantsEnrollment = financialConfirmationMode
+      ? false
+      : !!student_enrollment_service;
  
     // Turma agora é OPCIONAL no registo do aluno.
     // '0' ou vazio conta como "sem turma atribuída".
-    const hasClass = !!student_class && student_class !== '0';
+    // FIX: no modelo "matrícula + confirmação financeira" o aluno NUNCA
+    // nasce com turma, independentemente do que vier no payload — só
+    // recebe turma depois da confirmação do pagamento (ver
+    // StudentClassUpdate/StudentUpdateClass, que bloqueiam isto também).
+    const hasClass = financialConfirmationMode
+      ? false
+      : (!!student_class && student_class !== '0');
  
     // ── VALIDAÇÕES ───────────────────────────────────────────────────────
     const errors = {};
@@ -1450,6 +1482,7 @@ const RegisterStudent = async (req, res) => {
         ed_student_picture,
         ed_student_institute_code,
         ed_student_type,
+        ed_student_awaiting_payment,
         ed_student_father_name,
         ed_student_father_phone,
         ed_student_father_email,
@@ -1463,7 +1496,7 @@ const RegisterStudent = async (req, res) => {
         ed_student_guardion_email,
         ed_student_guardion_job,
         ed_student_guardion_degree
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         student_name,
         student_address,
@@ -1484,6 +1517,7 @@ const RegisterStudent = async (req, res) => {
         picturePath,
         instituteCode,
         req.session.user.eduall_user_session_curentinstitute_type || 0,
+        financialConfirmationMode ? 1 : 0,   // ed_student_awaiting_payment (NOVO)
         father_name,
         father_phone,
         father_email,
@@ -1543,9 +1577,11 @@ const RegisterStudent = async (req, res) => {
       session: req.session,
       action: 1,
       form: "Estudantes",
-      description: wantsEnrollment
-        ? `Registou novo estudante "${student_name}" (matrícula: ${finalCode}) e efectuou matrícula no serviço "${enrollmentServiceTitle}"${picturePath ? ' com imagem' : ''}`
-        : `Registou novo estudante "${student_name}" (matrícula: ${finalCode})${picturePath ? ' com imagem' : ''}`,
+      description: financialConfirmationMode
+        ? `Registou novo estudante "${student_name}" (matrícula: ${finalCode}) — aguarda confirmação de pagamento (modelo: matrícula + confirmação financeira)${picturePath ? ' com imagem' : ''}`
+        : wantsEnrollment
+          ? `Registou novo estudante "${student_name}" (matrícula: ${finalCode}) e efectuou matrícula no serviço "${enrollmentServiceTitle}"${picturePath ? ' com imagem' : ''}`
+          : `Registou novo estudante "${student_name}" (matrícula: ${finalCode})${picturePath ? ' com imagem' : ''}`,
     });
  
     // ── Commit ────────────────────────────────────────────────────────────
@@ -1564,23 +1600,28 @@ const RegisterStudent = async (req, res) => {
       hasClass,
       enrolled: wantsEnrollment,
       enrollmentId,
+      awaitingPayment: financialConfirmationMode,
       temImagem: !!picturePath,
       duration: `${duration}ms`,
     });
  
     return res.status(201).json({
       success: true,
-      msg: wantsEnrollment
-        ? "Estudante registado e matriculado com sucesso!"
-        : (picturePath
-            ? "Estudante registado com sucesso! Imagem enviada."
-            : "Estudante registado com sucesso!"),
+      msg: financialConfirmationMode
+        ? "Estudante registado com sucesso! Aguarda confirmação de pagamento da matrícula."
+        : (wantsEnrollment
+            ? "Estudante registado e matriculado com sucesso!"
+            : (picturePath
+                ? "Estudante registado com sucesso! Imagem enviada."
+                : "Estudante registado com sucesso!")),
       student_code: finalCode,
       student_id: studentId,
       student_identity_card: student_identityCard,
       picture_path: picturePath,
       class_assigned: hasClass,
       class_title: hasClass ? classInfo.ed_class_title : null,
+      awaiting_payment: financialConfirmationMode,   // NOVO
+      enrollment_model: enrollmentModel,               // NOVO
       enrolled: wantsEnrollment,
       enrollment_id: enrollmentId,
       enrollment_service: enrollmentServiceTitle,
@@ -1785,6 +1826,19 @@ const StudentUpdate = async (req, res) => {
     // pode vir como string do body e o outro como número da BD)
     const hasNewClass = !!student_class && student_class !== '0';
     const isClassChanging = hasNewClass && (!oldClass || String(oldClass) !== String(student_class));
+
+    // ── NOVO: bloqueia a mudança de turma enquanto o aluno estiver com
+    //    o status "Aguarda Pagamento" (modelo de matrícula + confirmação
+    //    financeira). Ver PATCH_modelo_matricula_configuravel.md, secção 4.
+    if (isClassChanging) {
+      try {
+        await assertStudentCanReceiveClass(res, ID, instituteCode);
+      } catch (gateErr) {
+        return res.status(gateErr.status || 409).json({
+          success: false, msg: gateErr.message, code: gateErr.code || "AWAITING_PAYMENT",
+        });
+      }
+    }
  
     // ── ✅ NOVO — Validar existência + capacidade da turma de destino ────
     // Só faz sentido verificar quando a turma está de facto a mudar: se
@@ -1967,7 +2021,7 @@ const StudentUpdate = async (req, res) => {
       // Mãe
       mother_name            ?? null,
       mother_phone           ?? null,
-      mother_email           ?? null,
+      mother_email            ?? null,
       mother_job             ?? null,
       mother_emergency_phone ?? null,
       mother_address         ?? null,
@@ -2104,6 +2158,17 @@ const StudentUpdateClass = async (req, res) => {
     const { student_class } = req.body;
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
+    // ── NOVO: bloqueia atribuição de turma enquanto o aluno estiver
+    //    "Aguarda Pagamento" (modelo de matrícula + confirmação
+    //    financeira). Ver PATCH_modelo_matricula_configuravel.md, secção 4.
+    try {
+      await assertStudentCanReceiveClass(res, ID, instituteCode);
+    } catch (gateErr) {
+      return res.status(gateErr.status || 409).json({
+        success: false, msg: gateErr.message, code: gateErr.code || "AWAITING_PAYMENT",
+      });
+    }
+
     const query = `UPDATE eduall_students SET ed_student_class = ?
     WHERE ed_student_deleted = 0 AND ed_student_id = ?  AND ed_student_institute_code = ?`;
     const PARAMS = [student_class, ID, instituteCode];
@@ -2138,6 +2203,16 @@ const StudentUpdateEnrollment = async (req, res) => {
     const { ID } = req.params;
     const { enrollment_service, enrollment_class } = req.body;
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
+
+    // ── NOVO: também bloqueado enquanto "Aguarda Pagamento", já que esta
+    //    rota atribui turma directamente (ed_student_class).
+    try {
+      await assertStudentCanReceiveClass(res, ID, instituteCode);
+    } catch (gateErr) {
+      return res.status(gateErr.status || 409).json({
+        success: false, msg: gateErr.message, code: gateErr.code || "AWAITING_PAYMENT",
+      });
+    }
 
     const query = `UPDATE eduall_students SET ed_student_enrolled_service = ?, 
      ed_student_class = ?, ed_student_enrolled = 1
@@ -2384,8 +2459,9 @@ const DuplicateStudent = async (req, res) => {
         ed_student_religion, ed_student_birthday, ed_student_phone, ed_student_email,
         ed_student_class, ed_student_code, ed_student_picture, ed_student_identityCard,
         ed_student_health_problems, ed_student_health_problems_description, ed_student_status,
-        ed_student_naturalness, ed_student_institute_code, ed_student_type
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        ed_student_naturalness, ed_student_institute_code, ed_student_type,
+        ed_student_awaiting_payment
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         base.ed_student_lastclass,
         base.ed_student_lastschool,
@@ -2407,6 +2483,10 @@ const DuplicateStudent = async (req, res) => {
         base.ed_student_naturalness,
         instituteCode,
         instituteType,
+        // FIX: um aluno duplicado herda o estado "Aguarda Pagamento" do
+        // original — se o original ainda não pagou, o duplicado também
+        // não deve poder receber turma sem confirmação própria.
+        base.ed_student_awaiting_payment ?? 0,
       ],
       false,
       { db: "eduall_students", type: "insert", data: req }
@@ -2499,6 +2579,17 @@ const StudentClassUpdate = async (req, res) => {
       return res.status(404).json({ success: false, msg: "Estudante não encontrado." });
     }
 
+    // ── NOVO: bloqueia atribuição de turma enquanto o aluno estiver
+    //    "Aguarda Pagamento" (modelo de matrícula + confirmação
+    //    financeira). Ver PATCH_modelo_matricula_configuravel.md, secção 4.
+    try {
+      await assertStudentCanReceiveClass(res, ID, instituteCode);
+    } catch (gateErr) {
+      return res.status(gateErr.status || 409).json({
+        success: false, msg: gateErr.message, code: gateErr.code || "AWAITING_PAYMENT",
+      });
+    }
+
     const oldClass = existing[0].ed_student_class;
 
     // Verificar mudança de ano letivo
@@ -2574,7 +2665,9 @@ const StudentBulkUpdate = async (req, res) => {
     }
 
     // Garantir que os IDs são números inteiros válidos
-    const safeIds = student_ids
+    // FIX: deixa de ser `const` para permitir remover (splice) alunos
+    // "Aguarda Pagamento" do lote quando se tenta atribuir turma em massa.
+    let safeIds = student_ids
       .map((id) => parseInt(id, 10))
       .filter((id) => !isNaN(id) && id > 0);
 
@@ -2583,12 +2676,38 @@ const StudentBulkUpdate = async (req, res) => {
     }
 
     // ── Verificar turma (se fornecida) ─────────────────────
+    let skippedAwaitingPayment = [];
     if (student_class !== undefined) {
       const classExists = await ExecuteQuery(res,
         `SELECT ed_class_id FROM eduall_class WHERE ed_class_id = ? LIMIT 1`,
         [student_class], true);
       if (!classExists || classExists.length === 0) {
         return res.status(400).json({ success: false, msg: "Turma selecionada não encontrada." });
+      }
+
+      // ── NOVO: remove do lote quaisquer alunos "Aguarda Pagamento" —
+      //    não podem receber turma em massa até confirmação financeira.
+      //    Ver PATCH_modelo_matricula_configuravel.md, secção 4.
+      const awaitingRows = await ExecuteQuery(res,
+        `SELECT ed_student_id FROM eduall_students
+         WHERE ed_student_id IN (${safeIds.map(() => "?").join(",")})
+           AND ed_student_institute_code = ?
+           AND ed_student_awaiting_payment = 1`,
+        [...safeIds, instituteCode], true);
+
+      const awaitingIds = new Set((awaitingRows || []).map(r => r.ed_student_id));
+      if (awaitingIds.size > 0) {
+        skippedAwaitingPayment = [...awaitingIds];
+        safeIds = safeIds.filter((id) => !awaitingIds.has(id));
+      }
+
+      if (safeIds.length === 0) {
+        return res.status(409).json({
+          success: false,
+          msg: "Todos os alunos selecionados estão a aguardar confirmação de pagamento e não podem receber turma.",
+          code: "AWAITING_PAYMENT",
+          skipped: skippedAwaitingPayment,
+        });
       }
     }
 
@@ -2671,6 +2790,7 @@ const StudentBulkUpdate = async (req, res) => {
       action: 2,
       form: "Estudantes",
       description: `Atualização em massa de ${safeIds.length} aluno(s): ${fieldsChanged.join(", ")} | IDs: [${safeIds.join(", ")}]`
+        + (skippedAwaitingPayment.length ? ` | Ignorados (Aguarda Pagamento): [${skippedAwaitingPayment.join(", ")}]` : "")
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> StudentBulkUpdate: ${safeIds.length} registos atualizados`);
@@ -2678,8 +2798,10 @@ const StudentBulkUpdate = async (req, res) => {
 
     return res.status(200).json({
       success:  true,
-      msg:      `${safeIds.length} aluno(s) atualizado(s) com sucesso!`,
+      msg:      `${safeIds.length} aluno(s) atualizado(s) com sucesso!`
+        + (skippedAwaitingPayment.length ? ` ${skippedAwaitingPayment.length} aluno(s) ignorado(s) por aguardarem confirmação de pagamento.` : ""),
       updated:  safeIds.length,
+      skipped_awaiting_payment: skippedAwaitingPayment,   // NOVO
     });
 
   } catch (err) {

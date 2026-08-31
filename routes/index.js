@@ -21,8 +21,7 @@ const { CheckExistentEmail, getSingleUserData, GetUserAccounAccess, getUsers, Lo
      uploadUserAccountBackgroundPicture, UPDATEProfileCoverImage, SearchUsers, ChangeCurrentUserPassword,
      UpdateUserAccountWhileLoggedin,
      ResetUserPasswordWhileLoggedin,   GoogleAuth} = require("../Controllers/Users");
-const VerifyToken  = require("../middleware/VerifyToken");
-const authRateLimit = require("../middleware/authRateLimit");
+const VerifyToken  = require("../middleware/VerifyToken"); 
 const { ClassDelete, ClassUpdate, GetClass, GetSingleClass, RegisterClass, GetClassInformation, GetClassOfExams, UpdateAllClassesTransport, ConfirmClassWizard, PreviewClassWizard, ConfirmAiClassModelsSelection, SuggestClassModelsAI } = require("../Controllers/Class");
 const { CourseDelete, CourseUpdate, GetCourse, GetsingleCourse, RegisterCourse } = require("../Controllers/Courses");
 const { AcademicyearDelete, AcademicyearUpdate, GetAcademicYear, GetSingleAcademicYear, RegisterAcademicYear } = require("../Controllers/AcademicYear");
@@ -341,7 +340,7 @@ router.get("/" ,  (req, res)=>{
    res.send("Hello my greatest friennds !");
 })
 
-router.get("/token", authRateLimit, RefreshToken);
+router.get("/token",  RefreshToken);
 
 const CacheLimitTime_one = 300;
 const CacheLimitTime_two = 60;
@@ -485,10 +484,10 @@ router.delete('/filemanager/delete',             VerifyToken, DeleteItems);
 
   
 // Rotas POST, PUT, DELETE (sem cache)
-router.post('/eduallusersaccountsignup/post', authRateLimit, RegisterUserAccount);
-router.post('/login', authRateLimit, Login);
-router.post('/google-auth', authRateLimit, GoogleAuth);
-router.post('/eduallpasswordupdate', authRateLimit, UpdateUserPassword);
+router.post('/eduallusersaccountsignup/post', RegisterUserAccount);
+router.post('/login', Login);
+router.post('/google-auth', GoogleAuth);
+router.post('/eduallpasswordupdate', UpdateUserPassword);
 router.put('/eduallchnagecurrentuserpassword/update', VerifyToken, ResetUserPasswordWhileLoggedin);
 router.put('/eduallchangecurrentuserinformation/update', VerifyToken, uploadUserAccountPicture, UpdateUserAccountWhileLoggedin);
 router.put('/edualluseraccountupdate/update/:ID', VerifyToken, UpdateUserAccount);
@@ -496,8 +495,8 @@ router.put('/edualluserinstituteaccountdelete/delete/:ID', VerifyToken, DeleteUs
 router.put('/edualluserinstituteaccountupdate/update/:ID', VerifyToken, UpdateInstituteUserAccount);
 router.put('/eduallprofilepictureupdate/update/', VerifyToken, uploadUserAccountPicture, UPDATEProfilePicture);
 router.put('/eduallprofilecoverimageupdate/update/', VerifyToken, uploadUserAccountBackgroundPicture, UPDATEProfileCoverImage);
-router.post('/eduallpasswordreset', authRateLimit, UserPasswordReset);
-router.post('/edualluseraccountverificationcode/post', authRateLimit, CheckUserAccountVerificationCode);
+router.post('/eduallpasswordreset', UserPasswordReset);
+router.post('/edualluseraccountverificationcode/post', CheckUserAccountVerificationCode);
 router.put('/eduallchangecurrentuserpassword', VerifyToken, ChangeCurrentUserPassword);
 
 

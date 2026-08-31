@@ -8,6 +8,19 @@ const ExecuteQuery = require("../Functions/ExecuteQuery");
 const { RegisterAuditAction } = require('./Auditory');
 const cloudinary = require('cloudinary').v2;
 
+// ── NOVO: Modelo de Processo de Matrícula configurável por escola ─────────
+// Agora gerido diretamente dentro do InstituteUpdate (ver secção mais abaixo).
+// Mantemos apenas o enum de valores válidos para validação.
+const { ENROLLMENT_MODEL } = require("../Functions/EnrollmentModel");
+
+// ── Proteção: descobre um valor default válido para o modelo de matrícula
+// sem nunca cair em 'undefined' (o que estava a acontecer antes, porque
+// ENROLLMENT_MODEL.actual não existe no módulo importado).
+const ENROLLMENT_MODEL_VALUES = Object.values(ENROLLMENT_MODEL || {});
+const DEFAULT_ENROLLMENT_MODEL =
+  (ENROLLMENT_MODEL && typeof ENROLLMENT_MODEL.actual === "string" && ENROLLMENT_MODEL.actual)
+    ? ENROLLMENT_MODEL.actual
+    : (ENROLLMENT_MODEL_VALUES[0] || "padrao");
 
 cloudinary.config({
   cloud_name:"dqkcchd89",
@@ -142,7 +155,9 @@ const InstituteUpdate = async (req, res) => {
       institute_state, institute_pedagogical_director, institute_bank1_account_number,
       institute_bank2_name, institute_bank1_recipient, institute_iva,
       institute_language, institute_bank2_recipient, institute_type,
-      institute_website, institute_bank1_name
+      institute_website, institute_bank1_name,
+      // ── NOVO: Modelo de Processo de Matrícula ──
+      institute_enrollment_model
     } = req.body;
 
     if (institute_iva * 1 !== 14) {
@@ -152,7 +167,19 @@ const InstituteUpdate = async (req, res) => {
       });
     }
 
- 
+    // ── Valida o modelo de matrícula, se enviado ──
+    // Campo opcional: se não vier no body, mantém o valor já gravado (não altera).
+    const enrollmentModelProvided = typeof institute_enrollment_model !== "undefined" && institute_enrollment_model !== null && institute_enrollment_model !== "";
+    if (enrollmentModelProvided && ENROLLMENT_MODEL_VALUES.length && !ENROLLMENT_MODEL_VALUES.includes(institute_enrollment_model)) {
+      return res.status(400).json({
+        success: false,
+        msg: `Modelo de matrícula inválido. Valores aceites: ${ENROLLMENT_MODEL_VALUES.join(", ")}`,
+      });
+    }
+
+    // ============================
+    // 1. Migração: coluna do logo Cloudinary
+    // ============================
     const checkColumn = `SELECT COUNT(*) AS exist 
                          FROM INFORMATION_SCHEMA.COLUMNS 
                          WHERE TABLE_SCHEMA = DATABASE() 
@@ -161,14 +188,55 @@ const InstituteUpdate = async (req, res) => {
 
     const [colResult] = await ExecuteQuery(res, checkColumn, [], true);
     if (colResult && colResult.exist === 0) {
-      const alterTable = `ALTER TABLE eduall_institutes 
-                          ADD COLUMN ed_logo_urlcloudinary TEXT NULL 
-                          AFTER ed_institute_logo`;
-      await ExecuteQuery(res, alterTable, [], true);
-      console.log("Coluna 'ed_logo_urlcloudinary' criada automaticamente.");
+      try {
+        const alterTable = `ALTER TABLE eduall_institutes 
+                            ADD COLUMN ed_logo_urlcloudinary TEXT NULL 
+                            AFTER ed_institute_logo`;
+        await ExecuteQuery(res, alterTable, [], true);
+        console.log("Coluna 'ed_logo_urlcloudinary' criada automaticamente.");
+      } catch (alterErr) {
+        console.error("⚠️ Não foi possível criar 'ed_logo_urlcloudinary':", alterErr.message);
+      }
     }
 
-   
+    // ============================
+    // 2. Migração: coluna do modelo de matrícula
+    // ============================
+    // IMPORTANTE: usamos TEXT (não VARCHAR) porque a tabela eduall_institutes
+    // já está perto/no limite de 65535 bytes por linha (limite físico do InnoDB
+    // para colunas não-BLOB). Colunas TEXT/BLOB não contam da mesma forma nesse
+    // limite fixo, tal como já acontece com 'ed_logo_urlcloudinary' acima.
+    // TEXT/BLOB não aceitam DEFAULT literal em MySQL, por isso o valor default
+    // é aplicado via UPDATE logo a seguir, apenas nas linhas que ainda estão a NULL.
+    const checkEnrollmentModelColumn = `SELECT COUNT(*) AS exist 
+                         FROM INFORMATION_SCHEMA.COLUMNS 
+                         WHERE TABLE_SCHEMA = DATABASE() 
+                           AND TABLE_NAME = 'eduall_institutes' 
+                           AND COLUMN_NAME = 'ed_institute_enrollment_model'`;
+
+    const [enrollmentColResult] = await ExecuteQuery(res, checkEnrollmentModelColumn, [], true);
+    if (enrollmentColResult && enrollmentColResult.exist === 0) {
+      try {
+        const alterEnrollmentTable = `ALTER TABLE eduall_institutes 
+                            ADD COLUMN ed_institute_enrollment_model TEXT NULL 
+                            AFTER ed_logo_urlcloudinary`;
+        await ExecuteQuery(res, alterEnrollmentTable, [], true);
+        console.log("Coluna 'ed_institute_enrollment_model' criada automaticamente (TEXT).");
+
+        // Backfill: define o valor default só onde ainda está NULL
+        const backfillQuery = `UPDATE eduall_institutes 
+                                SET ed_institute_enrollment_model = ? 
+                                WHERE ed_institute_enrollment_model IS NULL`;
+        await ExecuteQuery(res, backfillQuery, [DEFAULT_ENROLLMENT_MODEL], true);
+        console.log(`Backfill de 'ed_institute_enrollment_model' com valor default '${DEFAULT_ENROLLMENT_MODEL}' concluído.`);
+      } catch (alterErr) {
+        // Não deixamos isto derrubar o pedido inteiro: registamos o erro e seguimos,
+        // já que a coluna pode não existir ainda mas o resto do UPDATE pode falhar
+        // de forma isolada mais abaixo (nesse caso o catch geral trata).
+        console.error("⚠️ Não foi possível criar/preencher 'ed_institute_enrollment_model':", alterErr.message);
+      }
+    }
+
     let cloudinaryUrl = null;
     if (req.file) {
       try {
@@ -181,9 +249,15 @@ const InstituteUpdate = async (req, res) => {
       }
     }
 
+    // Valor a gravar para o modelo de matrícula: usa o enviado, ou mantém o
+    // comportamento anterior de não tocar na coluna se não foi enviado.
+    const enrollmentModelToSave = enrollmentModelProvided ? institute_enrollment_model : null;
+
     // ============================
     // 3. Query de atualização
     // ============================
+    // Nota: o modelo de matrícula só é incluído no SET se tiver sido enviado
+    // no body, para não sobrescrever o valor existente com NULL/undefined.
     const query = req.file
       ? `UPDATE eduall_institutes SET 
           ed_institute_name = ?, ed_institute_state = ?, ed_institute_principal = ?, 
@@ -196,7 +270,7 @@ const InstituteUpdate = async (req, res) => {
           ed_institute_bank2_account_number = ?, ed_institute_bank2_recipient = ?, 
           ed_institute_iva_value = ?, ed_institute_language = ?, ed_institute_website = ?, 
           ed_institute_slogan = ?, ed_institute_docheader = ?, ed_institute_logo = ?, 
-          ed_logo_urlcloudinary = ? 
+          ed_logo_urlcloudinary = ?${enrollmentModelProvided ? ", ed_institute_enrollment_model = ?" : ""} 
         WHERE ed_institute_deleted = 0 AND ed_institute_code = ?`
       : `UPDATE eduall_institutes SET 
           ed_institute_name = ?, ed_institute_state = ?, ed_institute_principal = ?, 
@@ -208,7 +282,7 @@ const InstituteUpdate = async (req, res) => {
           ed_institute_bank1_recipient = ?, ed_institute_bank2 = ?, 
           ed_institute_bank2_account_number = ?, ed_institute_bank2_recipient = ?, 
           ed_institute_iva_value = ?, ed_institute_language = ?, ed_institute_website = ?, 
-          ed_institute_slogan = ?, ed_institute_docheader = ? 
+          ed_institute_slogan = ?, ed_institute_docheader = ?${enrollmentModelProvided ? ", ed_institute_enrollment_model = ?" : ""} 
         WHERE ed_institute_deleted = 0 AND ed_institute_code = ?`;
 
     const PARAMS = req.file
@@ -221,6 +295,7 @@ const InstituteUpdate = async (req, res) => {
           institute_bank2_name, institute_bank2_account_number, institute_bank2_recipient,
           institute_iva, institute_language, institute_website, institute_slogan,
           institute_docheader, req.file.path, cloudinaryUrl,
+          ...(enrollmentModelProvided ? [enrollmentModelToSave] : []),
           req.session.user.eduall_user_session_curentinstitute
         ]
       : [
@@ -231,7 +306,9 @@ const InstituteUpdate = async (req, res) => {
           institute_bank1_name, institute_bank1_account_number, institute_bank1_recipient,
           institute_bank2_name, institute_bank2_account_number, institute_bank2_recipient,
           institute_iva, institute_language, institute_website, institute_slogan,
-          institute_docheader, req.session.user.eduall_user_session_curentinstitute
+          institute_docheader,
+          ...(enrollmentModelProvided ? [enrollmentModelToSave] : []),
+          req.session.user.eduall_user_session_curentinstitute
         ];
 
     const result = await ExecuteQuery(res, query, PARAMS, false, {
@@ -244,7 +321,9 @@ const InstituteUpdate = async (req, res) => {
       session: req.session,
       action: 2,
       form: "Instituição",
-      description: `Atualizou os dados da instituição`,
+      description: enrollmentModelProvided
+        ? `Atualizou os dados da instituição (modelo de matrícula: "${institute_enrollment_model}")`
+        : `Atualizou os dados da instituição`,
     });
 
     res.status(200).json(result);
@@ -257,11 +336,6 @@ const InstituteUpdate = async (req, res) => {
     });
   }
 };
-
-
-
-
-
 
 
 const storage = multer.diskStorage({
@@ -278,5 +352,5 @@ const uploadInstituteLogo = multer({
 module.exports = {
    GetInstitutes, GetSingleInstituteByCode, GetCurentLicence, GetAllRegisteredInstitutes,
    GetCurrentInstituteByCode, GetSingleInstitute, RegisterInstitute, InstituteDelete,
-   InstituteUpdate, InstituteUpdateLicence, uploadInstituteLogo, EduallSearchInstitutes
+   InstituteUpdate, InstituteUpdateLicence, uploadInstituteLogo, EduallSearchInstitutes,
 };

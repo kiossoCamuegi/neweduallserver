@@ -8,6 +8,13 @@ const {
   resolvePaymentMethod,
 } = require("../Functions/VENDUS");
 
+// ── NOVO: Modelo de Processo de Matrícula configurável por escola ─────────
+// Ver PATCH_modelo_matricula_configuravel.md
+const {
+  getInstituteEnrollmentModel,
+  usesFinancialConfirmation,
+} = require("../Functions/EnrollmentModel");
+
 // ══════════════════════════════════════════════════════════════════════════
 // RESUMO DAS CORREÇÕES APLICADAS NESTE FICHEIRO (procura "FIX:" no código)
 // ══════════════════════════════════════════════════════════════════════════
@@ -78,6 +85,20 @@ const {
 //    "Sem Turma" (class_id: 0) que aparece juntamente com as restantes
 //    turmas na resposta, com os mesmos campos (grades vazias, sem plano
 //    curricular, sem limite de vagas).
+//
+// 7) NOVO (Modelo de Processo de Matrícula configurável por escola) —
+//    Ver PATCH_modelo_matricula_configuravel.md. Duas peças novas:
+//      a) processMatricula passa a consultar getInstituteEnrollmentModel()
+//         e, quando a escola usa 'matricula_confirmacao_financeira',
+//         ignora classId/payment vindos do payload — a matrícula nasce
+//         sempre sem turma e sem pagamento, e o aluno fica com
+//         ed_student_awaiting_payment = 1 (ver Students.js).
+//      b) processPaymentConfirmation (nova acção "confirmacao_pagamento"
+//         no endpoint unificado) reaproveita processConfirmacao já
+//         existente para atribuir turma + processar pagamento opcional,
+//         e só acrescenta a transição ed_student_awaiting_payment: 1 → 0.
+//      GetStudentsFullOverview passa a expor awaiting_payment dentro de
+//      school_situation para a Lista Geral poder assinalar o estado.
 // ══════════════════════════════════════════════════════════════════════════
 
 // ──────────────────────────────────────────────────────────────
@@ -548,6 +569,18 @@ async function processMatricula(req, res, entry, ctx) {
     };
   }
 
+  // ── NOVO: Modelo de Processo de Matrícula da escola ─────────────────
+  // Ver PATCH_modelo_matricula_configuravel.md, secção 5.
+  // No modelo "matricula_confirmacao_financeira" a matrícula inicial
+  // NUNCA atribui turma nem processa pagamento — isso só acontece na
+  // confirmação de pagamento (processPaymentConfirmation). Ignoramos
+  // silenciosamente classId/payment vindos do payload para este modelo.
+  const enrollmentModel = await getInstituteEnrollmentModel(res, instituteCode);
+  const financialConfirmationMode = usesFinancialConfirmation(enrollmentModel);
+
+  const effectiveClassId = financialConfirmationMode ? null : classId;
+  const effectivePayment = financialConfirmationMode ? null : payment;
+
   let serviceInfo = null;
   if (serviceId) {
     serviceInfo = await loadServiceInfo(serviceId, instituteCode);
@@ -555,8 +588,8 @@ async function processMatricula(req, res, entry, ctx) {
   }
 
   let classDetails = null;
-  if (classId) {
-    classDetails = await loadClassDetails(classId, instituteCode);
+  if (effectiveClassId) {
+    classDetails = await loadClassDetails(effectiveClassId, instituteCode);
     if (!classDetails) return { studentId, action: "matricula", success: false, code: "INVALID_CLASS", msg: "Turma selecionada não existe ou não pertence ao instituto." };
   }
 
@@ -588,7 +621,7 @@ async function processMatricula(req, res, entry, ctx) {
   let paymentBank = "";
   let paymentPlace = "";
 
-  if (payment?.enabled) {
+  if (effectivePayment?.enabled) {
     if (!serviceId || !serviceInfo) {
       return { studentId, action: "matricula", success: false, code: "MISSING_SERVICE", msg: "É necessário selecionar um serviço para efetuar o pagamento da matrícula." };
     }
@@ -596,16 +629,16 @@ async function processMatricula(req, res, entry, ctx) {
     const paymentMethods = await getPaymentMethods(req);
     if (!paymentMethods?.length) return { studentId, action: "matricula", success: false, code: "NO_PAYMENT_METHODS", msg: "Nenhum método de pagamento configurado." };
 
-    selectedPaymentMethod = resolvePaymentMethod(Number(payment.paymentMethodIndex ?? 0), paymentMethods);
+    selectedPaymentMethod = resolvePaymentMethod(Number(effectivePayment.paymentMethodIndex ?? 0), paymentMethods);
     if (!selectedPaymentMethod) return { studentId, action: "matricula", success: false, code: "INVALID_PAYMENT_METHOD", msg: "Método de pagamento inválido." };
 
-    bordereauNumber = (payment.bordereauNumber || payment.paymentReference || "").trim();
+    bordereauNumber = (effectivePayment.bordereauNumber || effectivePayment.paymentReference || "").trim();
     if (requiresBordereau(selectedPaymentMethod.name) && !bordereauNumber) {
       return { studentId, action: "matricula", success: false, code: "MISSING_BORDEREAU", msg: `O método "${selectedPaymentMethod.name}" requer número de borderô/referência.` };
     }
 
-    bordereauAmountUsed = Math.max(0, parseFloat(payment.bordereauAmountUsed) || 0);
-    balanceUsed = Math.max(0, parseFloat(payment.balanceUsed) || 0);
+    bordereauAmountUsed = Math.max(0, parseFloat(effectivePayment.bordereauAmountUsed) || 0);
+    balanceUsed = Math.max(0, parseFloat(effectivePayment.balanceUsed) || 0);
 
     if (balanceUsed > 0) {
       const { balance: currentBalance, currency } = await getStudentBalancePreview(studentId, instituteCode);
@@ -630,9 +663,9 @@ async function processMatricula(req, res, entry, ctx) {
     const basePrice = serviceInfo.ed_service_price;
     const invoiceLines = buildInvoiceLines({
       baseService: serviceInfo,
-      basePrice: payment.servicePrice ?? basePrice,
+      basePrice: effectivePayment.servicePrice ?? basePrice,
       baseTitle: `Matrícula - ${serviceInfo.ed_service_title}`,
-      extraServices: payment.extraServices || [],
+      extraServices: effectivePayment.extraServices || [],
     });
 
     const totalInvoiceValue = invoiceLines.reduce((acc, l) => acc + l.line_total, 0);
@@ -640,8 +673,8 @@ async function processMatricula(req, res, entry, ctx) {
       return { studentId, action: "matricula", success: false, code: "ZERO_TOTAL_VALUE", msg: "Valor total do pagamento não pode ser zero." };
     }
     paidValue = totalInvoiceValue;
-    paymentBank = payment.paymentBank || "";
-    paymentPlace = payment.paymentPlace || "";
+    paymentBank = effectivePayment.paymentBank || "";
+    paymentPlace = effectivePayment.paymentPlace || "";
 
     const obsParts = [];
     obsParts.push("Matrícula");
@@ -654,12 +687,12 @@ async function processMatricula(req, res, entry, ctx) {
     obsParts.push(`Forma de pagamento: ${selectedPaymentMethod.name}`);
     if (bordereauNumber) {
       obsParts.push(`Nº Borderô/Referência: ${bordereauNumber}`);
-      if (payment.paymentBank) obsParts.push(`Banco: ${payment.paymentBank}`);
-      if (payment.paymentPlace) obsParts.push(`Local: ${payment.paymentPlace}`);
+      if (effectivePayment.paymentBank) obsParts.push(`Banco: ${effectivePayment.paymentBank}`);
+      if (effectivePayment.paymentPlace) obsParts.push(`Local: ${effectivePayment.paymentPlace}`);
       if (bordereauAmountUsed > 0) obsParts.push(`Valor do borderô aplicado: ${bordereauAmountUsed.toFixed(2)} AOA`);
     }
     if (balanceUsed > 0) obsParts.push(`Saldo do aluno utilizado: ${balanceUsed.toFixed(2)} AOA`);
-    if (payment.observations) obsParts.push(payment.observations);
+    if (effectivePayment.observations) obsParts.push(effectivePayment.observations);
     const obs = obsParts.join("\n");
 
     const customer = {
@@ -669,7 +702,7 @@ async function processMatricula(req, res, entry, ctx) {
     };
 
     try {
-      vendus = await VENDUS_CreateInvoiceCodeAndDoc(req, customer, invoiceLines, Number(payment.paymentMethodIndex ?? 0), obs);
+      vendus = await VENDUS_CreateInvoiceCodeAndDoc(req, customer, invoiceLines, Number(effectivePayment.paymentMethodIndex ?? 0), obs);
     } catch (vErr) {
       return { studentId, action: "matricula", success: false, code: "VENDUS_ERROR", msg: `Falha ao criar fatura: ${vErr.message}` };
     }
@@ -710,7 +743,7 @@ async function processMatricula(req, res, entry, ctx) {
           ed_enrollment_bordereau, ed_enrollment_bordereau_amount, ed_enrollment_balance_used)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        studentId, serviceId || null, classId || null, academicYearId || null, instituteCode,
+        studentId, serviceId || null, effectiveClassId || null, academicYearId || null, instituteCode,
         paidValue || 0, paidCurrency,
         selectedPaymentMethod?.vendus_id ?? null, paymentBank || null, paymentPlace || null,
         bordereauNumber || null, bordereauAmountUsed || 0, balanceUsed || 0,
@@ -727,25 +760,30 @@ async function processMatricula(req, res, entry, ctx) {
     );
     if (!enrollmentRow) throw Object.assign(new Error("Matrícula não confirmada na base de dados."), { code: "ENROLLMENT_NOT_CONFIRMED" });
 
-    if (classId && student.ed_student_class && student.ed_student_class != classId) {
+    if (effectiveClassId && student.ed_student_class && student.ed_student_class != effectiveClassId) {
       await ExecuteQuery(
         res,
         `INSERT INTO eduall_student_old_classes(ed_student_old_class_student, ed_student_old_class) VALUES (?, ?)`,
         [studentId, student.ed_student_class], false
       );
     }
-    if (classId && student.ed_student_class != classId) {
-      await ExecuteQuery(res, `UPDATE eduall_students SET ed_student_class = ? WHERE ed_student_id = ?`, [classId, studentId], false);
+    if (effectiveClassId && student.ed_student_class != effectiveClassId) {
+      await ExecuteQuery(res, `UPDATE eduall_students SET ed_student_class = ? WHERE ed_student_id = ?`, [effectiveClassId, studentId], false);
     }
 
     // FIX: a flag ed_student_enrolled deixa de ser a fonte de verdade para
     // "matriculado" (isso agora vive em eduall_enrollment), mas continua a
     // ser actualizada para não quebrar integrações antigas que ainda a
-    // consultem.
+    // consultem. ed_student_awaiting_payment é a NOVA fonte de verdade
+    // para "pode receber turma?" quando a escola usa o modelo de
+    // confirmação financeira.
     await ExecuteQuery(
       res,
-      `UPDATE eduall_students SET ed_student_enrolled = GREATEST(COALESCE(ed_student_enrolled,0), 1) WHERE ed_student_id = ?`,
-      [studentId], false
+      `UPDATE eduall_students
+          SET ed_student_enrolled = GREATEST(COALESCE(ed_student_enrolled,0), 1),
+              ed_student_awaiting_payment = ?
+        WHERE ed_student_id = ?`,
+      [financialConfirmationMode ? 1 : 0, studentId], false
     );
 
     for (const doc of docs) {
@@ -797,14 +835,19 @@ async function processMatricula(req, res, entry, ctx) {
 
     RegisterAuditAction({
       session: req.session, action: 1, form: "Matrículas",
-      description: `Registou matrícula para o estudante #${student.ed_student_code} – ${student.ed_student_name}${classDetails ? ` na turma ${classDetails.ed_class_title}` : " (sem turma)"}${vendus ? ` — Fatura ${vendus.number}` : " (sem pagamento)"}`,
+      description: financialConfirmationMode
+        ? `Registou matrícula para o estudante #${student.ed_student_code} – ${student.ed_student_name} — aguarda confirmação de pagamento (modelo: matrícula + confirmação financeira)`
+        : `Registou matrícula para o estudante #${student.ed_student_code} – ${student.ed_student_name}${classDetails ? ` na turma ${classDetails.ed_class_title}` : " (sem turma)"}${vendus ? ` — Fatura ${vendus.number}` : " (sem pagamento)"}`,
     }).catch((e) => console.error(`${C.red}Erro auditoria: ${e.message}${C.reset}`));
 
     return {
       studentId, action: "matricula", success: true, code: "SUCCESS",
-      msg: `${student.ed_student_name} matriculado com sucesso.`,
+      msg: financialConfirmationMode
+        ? `${student.ed_student_name} matriculado com sucesso — aguarda confirmação de pagamento.`
+        : `${student.ed_student_name} matriculado com sucesso.`,
+      awaitingPayment: financialConfirmationMode,
       enrollmentId: enrollmentRow.ed_enrollment_id,
-      classId: classId || null,
+      classId: effectiveClassId || null,
       serviceId: serviceId || null,
       academicYearId: academicYearId || null,
       invoice: vendus ? { number: vendus.number, id: vendus.id } : null,
@@ -831,6 +874,12 @@ async function processMatricula(req, res, entry, ctx) {
 // A ÚNICA restrição que se mantém é não permitir confirmar para a MESMA
 // turma em que o aluno já está actualmente (ed_student_class) — nesse
 // caso devolve-se o código SAME_CLASS.
+//
+// NOTA (Modelo de Processo de Matrícula): esta função é reaproveitada
+// tal-e-qual por processPaymentConfirmation (abaixo) — é o "motor" que
+// atribui turma + processa pagamento opcional; a única coisa que
+// processPaymentConfirmation acrescenta é a transição de
+// ed_student_awaiting_payment de 1 para 0.
 // ──────────────────────────────────────────────────────────────
 async function processConfirmacao(req, res, entry, ctx) {
   const { instituteCode, operator, instituteName } = ctx;
@@ -1089,9 +1138,70 @@ async function processConfirmacao(req, res, entry, ctx) {
   }
 }
 
+// ──────────────────────────────────────────────────────────────
+// PROCESSAMENTO DE UM ALUNO — CONFIRMAÇÃO DE PAGAMENTO DA MATRÍCULA
+// (Modelo de Processo de Matrícula: "matricula_confirmacao_financeira")
+//
+// NOVO — Ver PATCH_modelo_matricula_configuravel.md, secção 6.
+//
+// Este é o momento em que a Secretaria confirma o pagamento de uma
+// matrícula pendente e o aluno passa "Aguarda Pagamento → Activo",
+// ficando elegível para receber turma. Reaproveita TUDO o que já existe
+// em processConfirmacao (fatura VENDUS, borderô, saldo, capacidade da
+// turma) — só acrescenta a transição de ed_student_awaiting_payment.
+// ──────────────────────────────────────────────────────────────
+async function processPaymentConfirmation(req, res, entry, ctx) {
+  const { instituteCode, operator } = ctx;
+  const { studentId } = entry;
+
+  const [student] = await ExecuteQuery(
+    res,
+    `SELECT ed_student_id, ed_student_code, ed_student_name, ed_student_awaiting_payment
+       FROM eduall_students
+      WHERE ed_student_deleted = 0 AND ed_student_institute_code = ? AND ed_student_id = ?
+      LIMIT 1`,
+    [instituteCode, studentId], true
+  );
+  if (!student) {
+    return { studentId, action: "confirmacao_pagamento", success: false, code: "STUDENT_NOT_FOUND", msg: "Aluno não encontrado." };
+  }
+  if (Number(student.ed_student_awaiting_payment) !== 1) {
+    return {
+      studentId, action: "confirmacao_pagamento", success: false, code: "NOT_AWAITING_PAYMENT",
+      msg: `${student.ed_student_name} não está com o status "Aguarda Pagamento".`,
+    };
+  }
+
+  // Reutiliza o fluxo de confirmação existente (turma + pagamento opcional).
+  const confirmationResult = await processConfirmacao(req, res, entry, ctx);
+  if (!confirmationResult.success) {
+    return { ...confirmationResult, action: "confirmacao_pagamento" };
+  }
+
+  // Activa o aluno — só depois do sucesso da confirmação acima.
+  await ExecuteQuery(
+    res,
+    `UPDATE eduall_students SET ed_student_awaiting_payment = 0
+      WHERE ed_student_id = ? AND ed_student_institute_code = ?`,
+    [studentId, instituteCode], false
+  );
+
+  await RegisterAuditAction({
+    session: req.session, action: 2, form: "Matrículas",
+    description: `Confirmou o pagamento da matrícula de ${student.ed_student_name} (#${student.ed_student_code}) — status alterado para Activo.`,
+  }).catch((e) => console.error(`${C.red}Erro auditoria: ${e.message}${C.reset}`));
+
+  return {
+    ...confirmationResult,
+    action: "confirmacao_pagamento",
+    msg: `Pagamento confirmado. ${student.ed_student_name} está agora Activo e pode ser atribuído a uma turma.`,
+  };
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // ENDPOINT PRINCIPAL — REGISTAR MATRÍCULAS E/OU CONFIRMAÇÕES EM LOTE
-// (sem alterações de estrutura — só beneficia das correções acima)
+// (sem alterações de estrutura — só beneficia das correções acima + a nova
+//  acção "confirmacao_pagamento" do Modelo de Processo de Matrícula)
 // ═════════════════════════════════════════════════════════════════════════════
 const RegisterUnifiedEnrollmentOrConfirmation = async (req, res) => {
   const t0 = Date.now();
@@ -1117,12 +1227,19 @@ const RegisterUnifiedEnrollmentOrConfirmation = async (req, res) => {
 
     const ctx = { instituteCode, operator, instituteName };
 
+    // Acções válidas do endpoint unificado:
+    //   "matricula"            → processMatricula
+    //   "confirmacao"          → processConfirmacao
+    //   "confirmacao_pagamento" → processPaymentConfirmation (NOVO)
+    const VALID_ACTIONS = ["matricula", "confirmacao", "confirmacao_pagamento"];
+
     const results = [];
     for (const entry of entries) {
-      if (!entry || !entry.studentId || !["matricula", "confirmacao"].includes(entry.action)) {
+      if (!entry || !entry.studentId || !VALID_ACTIONS.includes(entry.action)) {
         const invalidResult = {
           studentId: entry?.studentId ?? null, action: entry?.action ?? null,
-          success: false, code: "INVALID_ENTRY", msg: "Entrada inválida: studentId e action ('matricula' | 'confirmacao') são obrigatórios.",
+          success: false, code: "INVALID_ENTRY",
+          msg: `Entrada inválida: studentId e action (${VALID_ACTIONS.map(a => `'${a}'`).join(" | ")}) são obrigatórios.`,
         };
         results.push(invalidResult);
         logEntryResult(invalidResult, entry);
@@ -1132,7 +1249,9 @@ const RegisterUnifiedEnrollmentOrConfirmation = async (req, res) => {
       try {
         const result = entry.action === "matricula"
           ? await processMatricula(req, res, entry, ctx)
-          : await processConfirmacao(req, res, entry, ctx);
+          : entry.action === "confirmacao_pagamento"
+            ? await processPaymentConfirmation(req, res, entry, ctx)
+            : await processConfirmacao(req, res, entry, ctx);
         results.push(result);
         logEntryResult(result, entry);
       } catch (err) {
@@ -1147,7 +1266,7 @@ const RegisterUnifiedEnrollmentOrConfirmation = async (req, res) => {
     const succeeded = results.filter((r) => r.success);
     const failed = results.filter((r) => !r.success);
     const matriculas = results.filter((r) => r.action === "matricula" && r.success).length;
-    const confirmacoes = results.filter((r) => r.action === "confirmacao" && r.success).length;
+    const confirmacoes = results.filter((r) => (r.action === "confirmacao" || r.action === "confirmacao_pagamento") && r.success).length;
 
     if (succeeded.length > 0) {
       await RefreshEnrollmentCaches(instituteCode);
@@ -1362,7 +1481,9 @@ async function loadStudentsOfClasses(res, instituteCode, classIds, search, stude
 // desta correção, estes alunos nunca entravam em loadStudentsOfClasses
 // (que filtra por `ed_student_class IN (classIds)`) e por isso
 // desapareciam completamente da listagem geral, mesmo pedindo "todos os
-// alunos".
+// alunos". No Modelo de Processo de Matrícula "matricula_confirmacao_
+// financeira" é AQUI que os alunos "Aguarda Pagamento" aparecem — já que
+// nascem sempre sem turma.
 async function loadStudentsWithoutClass(res, instituteCode, search, studentIdList) {
   let query = `
     SELECT * FROM eduall_students
@@ -1692,7 +1813,8 @@ const GetStudentsFullOverview = async (req, res) => {
     // nunca entravam em nenhuma query (loadStudentsOfClasses filtra
     // sempre por `ed_student_class IN (classIds)`) e por isso
     // desapareciam por completo da listagem geral. Agora vão também
-    // buscar-se explicitamente.
+    // buscar-se explicitamente. É também aqui que aparecem os alunos
+    // "Aguarda Pagamento" do Modelo de Processo de Matrícula configurável.
     const unclassedStudents = wantsUnclassedGroup
       ? await loadStudentsWithoutClass(res, instituteCode, search, studentIdList)
       : [];
@@ -2008,6 +2130,13 @@ const GetStudentsFullOverview = async (req, res) => {
         const legacyEnrolledFlag = Number(student.ed_student_enrolled || 0) >= 1;
         const isEnrolled = !!enrollmentRecord;
 
+        // NOVO: Modelo de Processo de Matrícula — reflecte se o aluno
+        // está com o status "Aguarda Pagamento". `student` já vem de
+        // `SELECT * FROM eduall_students ...`, logo o campo já está
+        // disponível sem alterar nenhuma query. Ver
+        // PATCH_modelo_matricula_configuravel.md, secção 7.
+        const isAwaitingPayment = Number(student.ed_student_awaiting_payment || 0) === 1;
+
         let payment_status = undefined;
         if (includePaymentStatus) {
           const paidMonthsSet = academicYearIdNum
@@ -2056,6 +2185,11 @@ const GetStudentsFullOverview = async (req, res) => {
             // NÃO usar para decidir nada no frontend.
             is_enrolled_legacy_flag: legacyEnrolledFlag,
             is_confirmed: hasConfirmation,
+            // NOVO — Modelo de Processo de Matrícula configurável por
+            // escola: true quando o aluno já se matriculou mas ainda não
+            // teve o pagamento confirmado pela Secretaria (não pode
+            // receber turma nem ser tratado como activo).
+            awaiting_payment: isAwaitingPayment,
             enrollment: enrollmentRecord
               ? {
                   enrollment_id: enrollmentRecord.ed_enrollment_id,
