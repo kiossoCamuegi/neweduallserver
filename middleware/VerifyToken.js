@@ -1,27 +1,41 @@
- 
-
 const jwt = require("jsonwebtoken");
 const { TokenExpiredError } = jwt;
+const { ensureSessionRefreshToken } = require("../auth/sessionTokens");
 
-const VerifyToken = (req, res, next) => { 
-    const token = req.session.user ? req.session.user.eduall_user_session_refreshToken : null;
- 
+const VerifyToken = async (req, res, next) => {
+    const token = req.session?.user?.eduall_user_session_refreshToken || null;
+
     if (!token) {
-        return res.status(401).json({ msg: "No token provided!" });
+        return res.status(401).json({
+            success: false,
+            code: "REFRESH_TOKEN_MISSING",
+            msg: "A sessão expirou. Inicie sessão novamente.",
+        });
     }
- 
-    jwt.verify(token, process.env.REFRESH_TOKEN_SECRET, (err, decoded) => { 
-        if (err instanceof TokenExpiredError) {
-            return res.status(401).json({ msg: "Unauthorized! Access token has expired!" });
+
+    try {
+        let decoded;
+        try {
+            decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
+        } catch (error) {
+            if (!(error instanceof TokenExpiredError)) throw error;
+            const refreshed = await ensureSessionRefreshToken(req, res);
+            decoded = refreshed.decoded;
         }
- 
-        if (err) {
-            console.error("Token verification failed:", err);  
-            return res.status(401).json({ msg: "Token verification failed!" });
-        } 
-        req.user = decoded;  
-        next();
-    });
+        req.user = decoded;
+        return next();
+    } catch (error) {
+        if (!(error instanceof TokenExpiredError)) {
+            console.error("Token verification failed:", error);
+        }
+        return res.status(401).json({
+            success: false,
+            code: error.code || "TOKEN_INVALID",
+            msg: error.code === "REFRESH_ACCOUNT_INACTIVE"
+                ? error.message
+                : "A sessão já não pode ser renovada. Inicie sessão novamente.",
+        });
+    }
 };
 
 module.exports = VerifyToken;

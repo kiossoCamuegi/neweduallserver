@@ -17,6 +17,7 @@ const jwt  = require("jsonwebtoken");
 const CalculateRemainingDays = require("../config/CalculateRemainingDays");
 const ExecuteQuery           = require("../Functions/ExecuteQuery");
 const { resolveRedirectTo, INTERNAL_APPS } = require("./Users");
+const { ensureSessionRefreshToken } = require("../auth/sessionTokens");
 
 const ACCESS_TTL = process.env.ACCESS_TOKEN_TTL || "15m";
 
@@ -137,15 +138,19 @@ const RefreshToken = async (req, res) => {
     }
 
     const {
-      eduall_user_session_refreshToken:         refreshToken,
+      eduall_user_session_refreshToken:         sessionRefreshToken,
       eduall_user_session_username:             adminUsername,
       eduall_user_session_curentinstitute:      currentInstitute,
       eduall_user_session_curentinstitute_type: instituteType,
     } = req.session.user;
 
-    if (!refreshToken) {
+    if (!sessionRefreshToken) {
       return res.status(401).json({ msg: "Token de sessão em falta." });
     }
+    const refreshedSession = await ensureSessionRefreshToken(req, res, {
+      rotateWithinSeconds: 24 * 60 * 60,
+    });
+    const refreshToken = refreshedSession.token;
 
     // ── Sessão admin / staff ──────────────────────────────────
     if (adminUsername) {

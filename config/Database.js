@@ -76,6 +76,42 @@ async function getDB() {
   return dbReady;
 }
 
+function queryDatabase(...args) {
+  const callback = typeof args[args.length - 1] === "function"
+    ? args.pop()
+    : null;
+  const operation = getDB().then((db) => db.query(...args));
+  if (callback) {
+    operation
+      .then(([rows, fields]) => callback(null, rows, fields))
+      .catch((error) => callback(error));
+  }
+  return operation;
+}
+
+/**
+ * Exportação estável para módulos carregados antes de o pool terminar de
+ * ligar. Mantém a API assíncrona do mysql2 e também aceita callbacks usados
+ * pelas rotas legacy.
+ */
+const DATABASE_EXPORT = {
+  query: queryDatabase,
+  execute: queryDatabase,
+  getConnection: () => getDB().then((db) => db.getConnection()),
+  end: () => getDB().then((db) => db.end()),
+};
+
+async function checkDatabaseConnection() {
+  const db = await getDB();
+  const connection = await db.getConnection();
+  connection.release();
+}
+
+async function closeDatabase() {
+  const db = await getDB();
+  await db.end();
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // IMPORTAÇÃO DE FICHEIRO .sql (CREATE TABLE + INSERT) PARA A BASE DE DADOS
 // ═════════════════════════════════════════════════════════════════════════════
@@ -147,8 +183,10 @@ if (require.main === module) {
 }
 
 module.exports = {
-  DATABASE, // ⚠️ pode ser undefined se lido antes do pool ligar — prefira getDB()
+  DATABASE: DATABASE_EXPORT,
   DB_CONFIG,
   getDB,
-  importSqlFile, 
+  checkDatabaseConnection,
+  closeDatabase,
+  importSqlFile,
 };

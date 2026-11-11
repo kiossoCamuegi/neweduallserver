@@ -2,3 +2,11 @@ config/db.sql
 .env
 .env.*
 !.env.example
+!.env.gorse.example
+storage/university-evidence/
+uploads/.feed-temp/
+uploads/media/
+models/
+moderation/.venv/
+moderation/node_modules/
+moderation/__pycache__/

@@ -161,18 +161,20 @@ const dbConfig = require("./config/DatabaseCredentials");
    }
  
    // Sessão
+   let sessionMiddleware = null;
    if (session && MySQLStoreFactory && pool) {
      try {
        const MySQLStore  = MySQLStoreFactory(session);
        const sessionStore = new MySQLStore({ expiration: expiryDate, clearExpired: true, checkExpirationInterval: 15 * 60 * 1000 }, pool);
        if (cookieParser) app.use(cookieParser());
-       app.use(session({
+       sessionMiddleware = session({
          secret: process.env.SESSION_SECRET || "troque-este-segredo",
          resave: false,
          saveUninitialized: true,
          store: sessionStore,
          cookie: { httpOnly: true, maxAge: expiryDate, secure: false, sameSite: "lax" },
-       }));
+       });
+       app.use(sessionMiddleware);
      } catch(e) { BOOT_ERRORS.push({ label:"session/store", error: e.message }); }
    }
  
@@ -314,6 +316,17 @@ const dbConfig = require("./config/DatabaseCredentials");
        console.log("[BOOT] routes/Auth montado");
      } catch(e) { BOOT_ERRORS.push({ label: "routes/Auth mount", error: e.message, stack: e.stack }); }
    }
+
+   // ================== Workspace de RH ==================
+   const hrWorkspaceRouter = safeRequire("./routes/HrWorkspace", "routes/HrWorkspace");
+   if (hrWorkspaceRouter) {
+     try {
+       app.use("/api/hr", hrWorkspaceRouter);
+       console.log("[BOOT] /api/hr montado");
+     } catch(e) {
+       BOOT_ERRORS.push({ label: "/api/hr mount", error: e.message, stack: e.stack });
+     }
+   }
  
    // ================== GET / — boot status (definido DEPOIS dos routes para capturar erros deles) ==================
    app.get("/", (_req, res) => {
@@ -402,9 +415,35 @@ const dbConfig = require("./config/DatabaseCredentials");
    let io = null;
    if (SocketServer) {
      try {
-       const HTTPApp = http.createServer(app);
-       io = new SocketServer(HTTPApp, { cors: { origin: allowedOrigins.length ? allowedOrigins : true, credentials: true } });
+       emergencyServer.removeAllListeners("request");
+       emergencyServer.on("request", app);
+       io = new SocketServer(emergencyServer, {
+         cors: { origin: allowedOrigins.length ? allowedOrigins : true, credentials: true },
+         transports: ["polling", "websocket"],
+       });
        app.set("io", io);
+       if (sessionMiddleware) io.engine.use(sessionMiddleware);
+
+       const realtime = safeRequire("./realtime/realtime", "realtime/realtime");
+       if (realtime) {
+         try {
+           realtime.registerSocket(io);
+           realtime.startScheduledPostWatcher();
+           console.log("[BOOT] realtime do RH montado");
+         } catch(e) {
+           BOOT_ERRORS.push({ label: "realtime do RH", error: e.message, stack: e.stack });
+         }
+       }
+
+       const domainEvents = safeRequire("./moderation/domainEvents", "moderation/domainEvents");
+       if (domainEvents) {
+         try {
+           domainEvents.startOutboxDispatcher();
+           console.log("[BOOT] outbox de notificações do RH iniciado");
+         } catch(e) {
+           BOOT_ERRORS.push({ label: "moderation/domainEvents", error: e.message, stack: e.stack });
+         }
+       }
  
        // GetSocketIo.init
        if (SOCKET_IO) {
@@ -440,8 +479,6 @@ const dbConfig = require("./config/DatabaseCredentials");
          socket.on("disconnect", () => console.log("Socket off:", socket.id));
        });
  
-       emergencyServer.removeAllListeners("request");
-       emergencyServer.on("request", app);
        console.log("[BOOT] App completa montada com sucesso.");
      } catch(e) { BOOT_ERRORS.push({ label:"socket.io setup", error: e.message, stack: e.stack }); mountExpressOnly(app); }
    } else {

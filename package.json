@@ -4,7 +4,9 @@
   "private": true,
   "bin": "app.js",
   "scripts": {
-    "start": "node --max-old-space-size=4096 app.js"
+    "start": "node --max-old-space-size=4096 app.js",
+    "test:hr": "node --test tests/hrWorkspace.test.js tests/hrRules.test.js",
+    "check:hr": "node scripts/check-hr-routes.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
