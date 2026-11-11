@@ -1,9 +1,11 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const cloudinary = require("cloudinary").v2;
 const path = require("path");
 const fs = require("fs");
 const fsPromises = require("fs").promises;  // ← NOVO: fs.promises para async
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 const { RegisterAuditAction } = require("./Auditory");
 
 cloudinary.config({
@@ -12,13 +14,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_SECRET,
 });
 
-const FEEDBACK_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `feedback:list:${instituteCode}`,
-  single: (id, instituteCode) => `feedback:single:${id}:${instituteCode}`,
-  all: () => "feedback:*",
-};
+const FEEDBACK_CACHE_TTL = 600;
 
 // ─── Validações reutilizáveis ─────────────────────────────────────────────────
 const ValidateFeedbackFields = (body) => {
@@ -82,24 +78,6 @@ const FetchFeedbacks = async (req, res, instituteCode) => {
   return rows;
 };
 
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
-const RefreshFeedbackCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchFeedbacks(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, FEEDBACK_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(
-    `🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`
-  );
-
-  return rows;
-};
-
 /* ===================== GET OPERATIONS (COM CACHE) ===================== */
 
 /**
@@ -108,25 +86,12 @@ const RefreshFeedbackCache = async (req, res, instituteCode) => {
 const GetFeedbacks = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
 
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetFeedbacks demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json({
-        success: true,
-        msg: "Feedbacks carregados com sucesso.",
-        data: cached,
-      });
-    }
-
-    const rows = await FetchFeedbacks(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, FEEDBACK_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetFeedbacks demorou ${duration}ms (${cacheKey})`);
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.feedback.list(instituteCode),
+      FEEDBACK_CACHE_TTL,
+      () => FetchFeedbacks(req, res, instituteCode)
+    );
 
     res.status(200).json({
       success: true,
@@ -148,20 +113,10 @@ const GetFeedbacks = async (req, res) => {
 const GetSingleFeedback = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleFeedback demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json({
-        success: true,
-        msg: "Feedback carregado com sucesso.",
-        data: cached,
-      });
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
     const query = `
       SELECT
@@ -210,12 +165,6 @@ const GetSingleFeedback = async (req, res) => {
     }));
 
     const result = rows[0];
-    await Cache.eduallSet(cacheKey, result, FEEDBACK_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(
-      `🗄️🐢 BASE DE DADOS (lento) -> GetSingleFeedback demorou ${duration}ms (${cacheKey})`
-    );
 
     res.status(200).json({
       success: true,
@@ -323,7 +272,7 @@ const RegisterFeedback = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> RegisterFeedback: ${uploadedFiles.length} ficheiro(s) enviado(s) para Cloudinary`
     );
-    await RefreshFeedbackCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.feedback.list(instituteCode)]);
 
     res.status(201).json({
       success: true,
@@ -393,7 +342,7 @@ const DeleteFeedback = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> DeleteFeedback: feedback ${ID} eliminado`);
-    await RefreshFeedbackCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.feedback.list(instituteCode)]);
 
     res.status(200).json({
       success: true,

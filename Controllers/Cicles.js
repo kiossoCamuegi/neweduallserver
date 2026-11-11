@@ -1,14 +1,10 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 const { RegisterAuditAction } = require("./Auditory");
 
 const CICLE_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `cicle:list:${instituteCode}`,
-  single: (id, instituteCode) => `cicle:single:${id}:${instituteCode}`,
-  all: () => "cicle:*",
-};
 
 // ─── Fetch base (sem cache) ────────────────────────────────────────────────────
 const FetchCicles = async (req, res, instituteCode) => {
@@ -23,22 +19,6 @@ const FetchCicles = async (req, res, instituteCode) => {
     type: "select",
     data: req,
   });
-};
-
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
-const RefreshCicleCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchCicles(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, CICLE_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`);
-
-  return rows;
 };
 
 // ─── Validações reutilizáveis ─────────────────────────────────────────────────
@@ -61,22 +41,11 @@ const ValidateCicleFields = (body) => {
 const GetCicles = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetCicles demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchCicles(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, CICLE_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetCicles demorou ${duration}ms (${cacheKey})`);
-
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.cicle.list(instituteCode),
+      CICLE_CACHE_TTL,
+      () => FetchCicles(req, res, instituteCode)
+    );
     res.status(200).json(rows);
   } catch (error) {
     res
@@ -89,38 +58,22 @@ const GetCicles = async (req, res) => {
 const GetSingleCicle = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleCicle demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
+    const recordId = CacheKeys.parseId(ID);
+    if (recordId === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
-    const query = `
-      SELECT * FROM eduall_cicles
-      WHERE ed_cicle_deleted = 0
-        AND ed_cicle_id = ?
-        AND ed_cicle_institute_code = ?
-    `;
-    const PARAMS = [ID, instituteCode];
-    const rows = await ExecuteQuery(res, query, PARAMS, true, {
-      db: "eduall_cicles",
-      type: "select",
-      data: req,
-    });
-
-    if (!rows || rows.length === 0)
+    // Lista pequena: filtra a partir da lista em cache (uma só chave para invalidar)
+    const list = await Cache.eduallWithCache(
+      CacheKeys.cicle.list(instituteCode),
+      CICLE_CACHE_TTL,
+      () => FetchCicles(req, res, instituteCode)
+    );
+    const rows = (list || []).filter((row) => Number(row.ed_cicle_id) === recordId);
+    if (rows.length === 0) {
       return res.status(404).json({ success: false, message: "Ciclo não encontrado." });
-
-    await Cache.eduallSet(cacheKey, rows, CICLE_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleCicle demorou ${duration}ms (${cacheKey})`);
-
+    }
     res.status(200).json(rows);
   } catch (error) {
     res
@@ -186,7 +139,7 @@ const RegisterCicle = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> RegisterCicle: ciclo "${cicle_title.trim()}" registado`
     );
-    await RefreshCicleCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.cicle.list(instituteCode), CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode)]);
 
     res
       .status(200)
@@ -279,7 +232,7 @@ const CicleUpdate = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> CicleUpdate: ciclo ${ID} atualizado`);
-    await RefreshCicleCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.cicle.list(instituteCode), CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode)]);
 
     res
       .status(200)
@@ -371,7 +324,7 @@ const CicleDelete = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> CicleDelete: ciclo ${ID} eliminado`);
-    await RefreshCicleCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.cicle.list(instituteCode), CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode)]);
 
     res
       .status(200)

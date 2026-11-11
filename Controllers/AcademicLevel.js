@@ -1,15 +1,11 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const { RegisterAuditAction } = require("./Auditory");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 
 const ACADEMIC_LEVEL_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `academic_level:list:${instituteCode}`,
-  single: (id, instituteCode) => `academic_level:single:${id}:${instituteCode}`,
-  studentsSummary: (instituteCode) => `academic_level:students_summary:${instituteCode}`,
-  all: () => "academic_level:*",
-};
+const ACADEMIC_LEVEL_SUMMARY_CACHE_TTL = 120; // agregação: TTL curto
 
 const normalizeTitle = (str) => {
   if (!str) return "";
@@ -30,40 +26,14 @@ const FetchAcademicLevels = async (req, res, instituteCode) => {
   });
 };
 
-const RefreshAcademicLevelCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchAcademicLevels(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, ACADEMIC_LEVEL_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`);
-
-  return rows;
-};
-
 const GetAcademicLevel = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetAcademicLevel demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchAcademicLevels(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, ACADEMIC_LEVEL_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetAcademicLevel demorou ${duration}ms (${cacheKey})`);
-
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.academicLevel.list(instituteCode),
+      ACADEMIC_LEVEL_CACHE_TTL,
+      () => FetchAcademicLevels(req, res, instituteCode)
+    );
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to !", error: error.message });
@@ -73,60 +43,57 @@ const GetAcademicLevel = async (req, res) => {
 const GetStudentsByAcademicLevel = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.studentsSummary(instituteCode);
-    const startTime = Date.now();
 
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetStudentsByAcademicLevel demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
+    const result = await Cache.eduallWithCache(
+      CacheKeys.academicLevel.studentsSummary(instituteCode),
+      ACADEMIC_LEVEL_SUMMARY_CACHE_TTL,
+      async () => {
+        // Duas queries independentes em paralelo (antes: 1 query por nível = N+1)
+        const [academicLevels, studentCounts] = await Promise.all([
+          ExecuteQuery(
+            res,
+            `SELECT ed_academic_level_id, ed_academic_level_name
+             FROM eduall_academic_level
+             WHERE ed_academic_level_deleted = 0
+               AND ed_academic_level_institute_code = ?`,
+            [instituteCode],
+            true,
+            { db: "eduall_academic_level", type: "select", data: req }
+          ),
+          ExecuteQuery(
+            res,
+            `SELECT c.ed_class_academic_level AS ed_academic_level_id,
+                    s.ed_student_gender,
+                    COUNT(*) AS total
+             FROM eduall_students s
+             JOIN eduall_class c ON s.ed_student_class = c.ed_class_id
+             WHERE s.ed_student_deleted = 0
+               AND c.ed_class_deleted = 0
+               AND s.ed_student_institute_code = ?
+             GROUP BY c.ed_class_academic_level, s.ed_student_gender`,
+            [instituteCode],
+            true,
+            { db: "eduall_students", type: "select", data: req }
+          ),
+        ]);
 
-    const academicLevelsQuery = `
-      SELECT ed_academic_level_id, ed_academic_level_name 
-      FROM eduall_academic_level 
-      WHERE ed_academic_level_deleted = 0 
-        AND ed_academic_level_institute_code = ?
-    `;
-    const academicLevels = await ExecuteQuery(res, academicLevelsQuery, [instituteCode], true, {
-      db: "eduall_academic_level",
-      type: "select",
-      data: req,
-    });
+        const countsByLevel = new Map();
+        (studentCounts || []).forEach((item) => {
+          const levelId = Number(item.ed_academic_level_id);
+          if (!countsByLevel.has(levelId)) countsByLevel.set(levelId, []);
+          countsByLevel.get(levelId).push(item);
+        });
 
-    const result = [];
-
-    for (const level of academicLevels) {
-      const studentsQuery = `
-        SELECT s.ed_student_gender, COUNT(*) as total
-        FROM eduall_students s
-        LEFT JOIN eduall_class c ON s.ed_student_class = c.ed_class_id
-        WHERE s.ed_student_deleted = 0
-          AND c.ed_class_deleted = 0
-          AND c.ed_class_academic_level = ?
-          AND s.ed_student_institute_code = ?
-        GROUP BY s.ed_student_gender
-      `;
-      const studentCounts = await ExecuteQuery(res, studentsQuery, [level.ed_academic_level_id, instituteCode], true, {
-        db: "eduall_students",
-        type: "select",
-        data: req,
-      });
-
-      const summary = { academicLevel: level.ed_academic_level_name, male: 0, female: 0 };
-      studentCounts.forEach((item) => {
-        if (item.ed_student_gender === "male") summary.male = item.total;
-        if (item.ed_student_gender === "female") summary.female = item.total;
-      });
-
-      result.push(summary);
-    }
-
-    await Cache.eduallSet(cacheKey, result, ACADEMIC_LEVEL_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetStudentsByAcademicLevel demorou ${duration}ms (${cacheKey})`);
+        return (academicLevels || []).map((level) => {
+          const summary = { academicLevel: level.ed_academic_level_name, male: 0, female: 0 };
+          (countsByLevel.get(Number(level.ed_academic_level_id)) || []).forEach((item) => {
+            if (item.ed_student_gender === "male") summary.male = item.total;
+            if (item.ed_student_gender === "female") summary.female = item.total;
+          });
+          return summary;
+        });
+      }
+    );
 
     res.status(200).json(result);
   } catch (error) {
@@ -137,28 +104,19 @@ const GetStudentsByAcademicLevel = async (req, res) => {
 const GetSingleAcademicLevel = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleAcademicLevel demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
+    const levelId = CacheKeys.parseId(ID);
+    if (levelId === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
-    const query = `SELECT * FROM eduall_academic_level WHERE ed_academic_level_deleted = 0 AND ed_academic_level_id = ? AND ed_academic_level_institute_code = ?`;
-    const rows = await ExecuteQuery(res, query, [ID, instituteCode], true, {
-      db: "eduall_academic_level",
-      type: "select",
-      data: req,
-    });
-
-    await Cache.eduallSet(cacheKey, rows, ACADEMIC_LEVEL_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleAcademicLevel demorou ${duration}ms (${cacheKey})`);
+    // Lista pequena: filtra a partir da lista em cache (uma só chave para invalidar)
+    const list = await Cache.eduallWithCache(
+      CacheKeys.academicLevel.list(instituteCode),
+      ACADEMIC_LEVEL_CACHE_TTL,
+      () => FetchAcademicLevels(req, res, instituteCode)
+    );
+    const rows = (list || []).filter((row) => Number(row.ed_academic_level_id) === levelId);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -204,7 +162,7 @@ const AcademicLevelDelete = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> AcademicLevelDelete: registo ${ID} eliminado`);
-    await RefreshAcademicLevelCache(req, res, institute);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.academicLevel.list(institute), CacheKeys.academicLevel.studentsSummary(institute)]);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -310,7 +268,7 @@ const RegisterAcademicLevel = async (req, res) => {
 
     if (results.success.length > 0) {
       console.log(`🗄️🐢 BASE DE DADOS (lento) -> RegisterAcademicLevel: ${results.success.length} registo(s) gravado(s)`);
-      await RefreshAcademicLevelCache(req, res, instituteCode);
+      await CacheKeys.safeInvalidate(() => [CacheKeys.academicLevel.list(instituteCode), CacheKeys.academicLevel.studentsSummary(instituteCode)]);
     }
 
     return res.status(200).json({
@@ -400,7 +358,7 @@ const AcademicLevelUpdate = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> AcademicLevelUpdate: registo ${ID} atualizado`);
-    await RefreshAcademicLevelCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.academicLevel.list(instituteCode), CacheKeys.academicLevel.studentsSummary(instituteCode)]);
 
     res.status(200).json(rows);
   } catch (error) {

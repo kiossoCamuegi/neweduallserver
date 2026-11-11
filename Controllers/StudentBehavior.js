@@ -1,13 +1,24 @@
+// CACHE-OPT v7 (aplicado por apply_cache_optimizations_v7.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v7: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 const { RegisterAuditAction } = require("./Auditory");
 
 const GetAllStudentBehavior = async (req, res) => {
     try {
+        const _ck = `studentBehavior:${req.session.user.eduall_user_session_curentinstitute}:list`;
+        const _hit = await _cacheGet(_ck);
+        if (_hit !== null) return res.status(200).json(_hit);
         const query = `SELECT * FROM eduall_student_behavior 
                        WHERE ed_student_behavior_deleted = 0 
                        AND ed_student_behavior_instituteCode = ?`; 
         const PARAMS = [req.session.user.eduall_user_session_curentinstitute];
         const rows = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_student_behavior", type: "select", data: req });
+        await _cacheSet(_ck, rows, 120);
         res.status(200).json(rows);
     } catch (error) {
         res.status(500).json({ success: false, message: "Erro ao buscar comportamentos!", error: error.message });
@@ -53,6 +64,7 @@ const RegisterStudentBehavior = async (req, res) => {
             description: `Registrou um novo comportamento para o estudante com o nº de matrícula  #${req.body.student_behavior_code}`,
         });
 
+        await _cacheClear(`studentBehavior:${req.session.user.eduall_user_session_curentinstitute}:*`);
         res.status(200).json({ success: true, msg: "Comportamento registrado com sucesso!" });
     } catch (error) {
         res.status(500).json({ success: false, message: "Erro ao registrar comportamento!", error: error.message });
@@ -93,6 +105,7 @@ const StudentBehaviorDelete = async (req, res) => {
             description: `Eliminou o comportamento do estudante com ID ${ID}`,
         });
 
+        await _cacheClear(`studentBehavior:${req.session.user.eduall_user_session_curentinstitute}:*`);
         res.status(200).json({ success: true, msg: "Comportamento excluído com sucesso!" });
     } catch (error) {
         res.status(500).json({ success: false, message: "Erro ao excluir comportamento!", error: error.message });
@@ -121,6 +134,7 @@ const StudentBehaviorUpdate = async (req, res) => {
             description: `Atualizou o comportamento do estudant. ID do registro -  ${ID}`,
         });
 
+        await _cacheClear(`studentBehavior:${req.session.user.eduall_user_session_curentinstitute}:*`);
         res.status(200).json({ success: true, msg: "Comportamento atualizado com sucesso!" });
     } catch (error) {
         res.status(500).json({ success: false, message: "Erro ao atualizar comportamento!", error: error.message });

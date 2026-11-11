@@ -1,3 +1,4 @@
+// CACHE-OPT v2 (aplicado por apply_cache_optimizations_v2.py)
 // ─────────────────────────────────────────────────────────────────────────────
 //  Faculties.js  (Backend Controller – COM CACHE INTEGRADO)
 //  Handles: Faculty CRUD operations
@@ -7,31 +8,12 @@
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const { RegisterAuditAction } = require("./Auditory");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 
 // ──────────────────────────────────────────────────────────────
 // ── CACHE CONFIGURATION (same pattern as AcademicYear.js) ─────
 // ──────────────────────────────────────────────────────────────
 const FACULTY_CACHE_TTL = 3600; // 1 hour
-
-const CacheKeys = {
-  list: (instituteCode) => `faculty:list:${instituteCode}`,
-  single: (id) => `faculty:single:${id}`,
-  allGlobal: () => "faculty:*",
-};
-
-/**
- * ──────────────────────────────────────────────────────────────
- * REFRESH CACHE FUNCTION — called after writes
- * ──────────────────────────────────────────────────────────────
- */
-const RefreshFacultyCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-  await Cache.eduallClear(CacheKeys.allGlobal());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode} (Faculty)`);
-  
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🧹 CACHE CLEAR (Faculty) demorou ${duration}ms para institute ${instituteCode}`);
-};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── GET ALL FACULTIES
@@ -40,27 +22,17 @@ const RefreshFacultyCache = async (req, res, instituteCode) => {
 const GetFaculties = async (req, res) => {
    try {
       const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-      const cacheKey = CacheKeys.list(instituteCode);
-      const startTime = Date.now();
-
-      // ── Check cache ──
-      const cached = await Cache.eduallGet(cacheKey);
-      if (cached !== null) {
-        const duration = Date.now() - startTime;
-        console.log(`📦⚡ CACHE (rápido) -> GetFaculties demorou ${duration}ms (${cacheKey})`);
-        return res.status(200).json(cached);
-      }
-
-      const query = 'SELECT * FROM eduall_faculty WHERE ed_faculty_deleted = 0 AND ed_faculty_institute_code = ? ORDER BY ed_faculty_title ASC';
-      const PARAMS = [instituteCode];
-      const rows = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_faculty", type: "select", data: req });
-
-      // ── Set cache ──
-      await Cache.eduallSet(cacheKey, rows, FACULTY_CACHE_TTL);
-
-      const duration = Date.now() - startTime;
-      console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetFaculties demorou ${duration}ms (${cacheKey})`);
-
+      const rows = await Cache.eduallWithCache(
+        CacheKeys.faculty.list(instituteCode),
+        FACULTY_CACHE_TTL,
+        () => ExecuteQuery(
+          res,
+          'SELECT * FROM eduall_faculty WHERE ed_faculty_deleted = 0 AND ed_faculty_institute_code = ? ORDER BY ed_faculty_title ASC',
+          [instituteCode],
+          true,
+          { db: "eduall_faculty", type: "select", data: req }
+        )
+      );
       res.status(200).json(rows);
    } catch (error) {
        res.status(500).json({ success: false, message: "Falha ao buscar faculdades!", error: error.message });
@@ -74,26 +46,13 @@ const GetFaculties = async (req, res) => {
 const GetSingleFaculty = async (req, res) => {
    try {
        const { ID } = req.params;
-       const cacheKey = CacheKeys.single(ID);
-       const startTime = Date.now();
-
-       // ── Check cache ──
-       const cached = await Cache.eduallGet(cacheKey);
-       if (cached !== null) {
-         const duration = Date.now() - startTime;
-         console.log(`📦⚡ CACHE (rápido) -> GetSingleFaculty demorou ${duration}ms (${cacheKey})`);
-         return res.status(200).json(cached);
+       if (CacheKeys.parseId(ID) === null) {
+         return res.status(400).json({ success: false, message: "ID inválido." });
        }
 
        const query = 'SELECT * FROM eduall_faculty WHERE ed_faculty_deleted = 0 AND ed_faculty_id = ?';
        const PARAMS = [ID];
        const rows = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_faculty", type: "select", data: req });
-
-       // ── Set cache ──
-       await Cache.eduallSet(cacheKey, rows, FACULTY_CACHE_TTL);
-
-       const duration = Date.now() - startTime;
-       console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleFaculty demorou ${duration}ms (${cacheKey})`);
 
        res.status(200).json(rows);
    } catch (error) {
@@ -145,7 +104,7 @@ const RegisterFaculty = async (req, res) => {
       });
   
       console.log(`🗄️🐢 BASE DE DADOS (lento) -> RegisterFaculty: faculdade "${faculty_title}" criada`);
-      await RefreshFacultyCache(req, res, instituteCode);
+      await CacheKeys.safeInvalidate(() => [CacheKeys.faculty.list(instituteCode), CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode)]);
   
       res.status(200).json(result);
     } catch (error) {
@@ -199,7 +158,7 @@ const FacultyUpdate = async (req, res) => {
       });
   
       console.log(`🗄️🐢 BASE DE DADOS (lento) -> FacultyUpdate: faculdade ID ${ID} atualizada`);
-      await RefreshFacultyCache(req, res, instituteCode);
+      await CacheKeys.safeInvalidate(() => [CacheKeys.faculty.list(instituteCode), CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode)]);
   
       res.status(200).json(rows);
     } catch (error) {
@@ -252,7 +211,7 @@ const FacultyDelete = async (req, res) => {
        });
 
        console.log(`🗄️🐢 BASE DE DADOS (lento) -> FacultyDelete: faculdade ID ${ID} eliminada`);
-       await RefreshFacultyCache(req, res, institute);
+       await CacheKeys.safeInvalidate(() => [CacheKeys.faculty.list(institute), CacheKeys.schoolClass.list(institute), CacheKeys.schoolClass.exams(institute)]);
 
        res.status(200).json(rows);
    } catch (error) {

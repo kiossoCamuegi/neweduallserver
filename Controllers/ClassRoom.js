@@ -1,14 +1,10 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 const { RegisterAuditAction } = require("./Auditory");
 
 const CLASSROOM_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `classroom:list:${instituteCode}`,
-  single: (id, instituteCode) => `classroom:single:${id}:${instituteCode}`,
-  all: () => "classroom:*",
-};
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 const normalizeClassroomTitle = (title) => {
@@ -46,22 +42,6 @@ const FetchClassrooms = async (req, res, instituteCode) => {
   });
 };
 
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
-const RefreshClassroomCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchClassrooms(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, CLASSROOM_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`);
-
-  return rows;
-};
-
 /* ===================== GET OPERATIONS (COM CACHE) ===================== */
 
 /**
@@ -70,31 +50,16 @@ const RefreshClassroomCache = async (req, res, instituteCode) => {
 const GetClassroom = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetClassroom demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchClassrooms(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, CLASSROOM_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetClassroom demorou ${duration}ms (${cacheKey})`);
-
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.classroom.list(instituteCode),
+      CLASSROOM_CACHE_TTL,
+      () => FetchClassrooms(req, res, instituteCode)
+    );
     res.status(200).json(rows);
   } catch (error) {
     res
       .status(500)
-      .json({
-        success: false,
-        message: "Falha ao buscar salas!",
-        error: error.message,
-      });
+      .json({ success: false, message: "Falha ao buscar salas!", error: error.message });
   }
 };
 
@@ -104,49 +69,27 @@ const GetClassroom = async (req, res) => {
 const GetSingleClassroom = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleClassroom demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
+    const recordId = CacheKeys.parseId(ID);
+    if (recordId === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
-    const query = `
-      SELECT * FROM eduall_classrooms
-      WHERE ed_classroom_deleted = 0
-        AND ed_classroom_id = ?
-        AND ed_classroom_institute_code = ?
-    `;
-    const PARAMS = [ID, instituteCode];
-    const rows = await ExecuteQuery(res, query, PARAMS, true, {
-      db: "eduall_classrooms",
-      type: "select",
-      data: req,
-    });
-
-    if (!rows || rows.length === 0)
-      return res
-        .status(404)
-        .json({ success: false, message: "Sala não encontrada." });
-
-    await Cache.eduallSet(cacheKey, rows, CLASSROOM_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleClassroom demorou ${duration}ms (${cacheKey})`);
-
+    // Lista pequena: filtra a partir da lista em cache (uma só chave para invalidar)
+    const list = await Cache.eduallWithCache(
+      CacheKeys.classroom.list(instituteCode),
+      CLASSROOM_CACHE_TTL,
+      () => FetchClassrooms(req, res, instituteCode)
+    );
+    const rows = (list || []).filter((row) => Number(row.ed_classroom_id) === recordId);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Sala não encontrada." });
+    }
     res.status(200).json(rows);
   } catch (error) {
     res
       .status(500)
-      .json({
-        success: false,
-        message: "Falha ao buscar sala!",
-        error: error.message,
-      });
+      .json({ success: false, message: "Falha ao buscar sala!", error: error.message });
   }
 };
 
@@ -253,7 +196,7 @@ const RegisterClassRoom = async (req, res) => {
       console.log(
         `🗄️🐢 BASE DE DADOS (lento) -> RegisterClassRoom: sala "${req.body.title}" registada`
       );
-      await RefreshClassroomCache(req, res, instituteCode);
+      await CacheKeys.safeInvalidate(() => [CacheKeys.classroom.list(instituteCode), CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode)]);
       return res.status(200).json(result.rows);
     }
 
@@ -289,7 +232,7 @@ const RegisterClassRoom = async (req, res) => {
     }
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> RegisterClassRoom (bulk): ${ok} salas registadas`);
-    await RefreshClassroomCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.classroom.list(instituteCode), CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode)]);
 
     return res.status(200).json({
       status: 200,
@@ -393,7 +336,7 @@ const ClassRoomUpdate = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> ClassRoomUpdate: sala ${ID} atualizada`);
-    await RefreshClassroomCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.classroom.list(instituteCode), CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode)]);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -489,7 +432,7 @@ const ClassRoomDelete = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> ClassRoomDelete: sala ${ID} eliminada`);
-    await RefreshClassroomCache(req, res, institute);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.classroom.list(institute), CacheKeys.schoolClass.list(institute), CacheKeys.schoolClass.exams(institute)]);
 
     res.status(200).json(rows);
   } catch (error) {

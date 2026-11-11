@@ -1,9 +1,19 @@
+// CACHE-OPT v5 (aplicado por apply_cache_optimizations.py)
 const { RegisterAuditAction } = require("./Auditory");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v5: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 
 // GET - Todos os pagamentos antigos
 const GetOldPayments = async (req, res) => {
   try {
+      const _ck = `oldPayments:${req.session.user.eduall_user_session_curentinstitute}:list`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.status(200).json(_hit);
     const query = `
       SELECT * FROM eduall_school_old_payments
       WHERE ed_sc_old_pay_deleted = 0
@@ -13,6 +23,7 @@ const GetOldPayments = async (req, res) => {
     const PARAMS = [req.session.user.eduall_user_session_curentinstitute];
     const rows = await ExecuteQuery(res, query, PARAMS, true,
       { db: "eduall_school_old_payments", type: "select", data: req });
+    await _cacheSet(_ck, rows, 300);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar pagamentos antigos!", error: error.message });
@@ -22,6 +33,9 @@ const GetOldPayments = async (req, res) => {
 // GET - Pagamento antigo único
 const GetSingleOldPayment = async (req, res) => {
   try {
+      const _ck = `oldPayments:${req.session.user.eduall_user_session_curentinstitute}:single:${req.params.ID}`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.status(200).json(_hit);
     const { ID } = req.params;
     const query = `
       SELECT * FROM eduall_school_old_payments
@@ -32,6 +46,7 @@ const GetSingleOldPayment = async (req, res) => {
     const PARAMS = [ID, req.session.user.eduall_user_session_curentinstitute];
     const rows = await ExecuteQuery(res, query, PARAMS, true,
       { db: "eduall_school_old_payments", type: "select", data: req });
+    await _cacheSet(_ck, rows, 300);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar o pagamento antigo!", error: error.message });
@@ -84,6 +99,7 @@ const RegisterOldPayment = async (req, res) => {
       description: `Registrou pagamento antigo do cliente "${clientName}"`,
     });
 
+    await _cacheClear(`oldPayments:${req.session.user.eduall_user_session_curentinstitute}:*`);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao registrar pagamento antigo!", error: error.message });
@@ -136,6 +152,7 @@ const UpdateOldPayment = async (req, res) => {
       description: `Atualizou pagamento antigo do cliente "${clientName}" (ID: ${ID})`,
     });
 
+    await _cacheClear(`oldPayments:${req.session.user.eduall_user_session_curentinstitute}:*`);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao atualizar pagamento antigo!", error: error.message });
@@ -164,6 +181,7 @@ const DeleteOldPayment = async (req, res) => {
       description: `Deletou pagamento antigo com ID "${ID}"`,
     });
 
+    await _cacheClear(`oldPayments:${req.session.user.eduall_user_session_curentinstitute}:*`);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao remover pagamento antigo!", error: error.message });

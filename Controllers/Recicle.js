@@ -1,3 +1,4 @@
+// CACHE-OPT v6 (aplicado por apply_cache_optimizations_v6.py)
 // ─────────────────────────────────────────────────────────────────────────────
 // DeletedItemsRecovery.js - CONTROLLER DE ITENS DELETADOS E RESTAURAÇÃO
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,10 +22,10 @@ const Cache = require("../Functions/CacheRoutes");
 const DELETED_ITEMS_CACHE_TTL = 1800; // 30 minutos
 
 const CacheKeys = {
-  deletedList: (instituteCode) => `deleted:list:${instituteCode}`,
-  deletedByType: (type, instituteCode) => `deleted:type:${type}:${instituteCode}`,
-  deletedSingle: (itemId, type, instituteCode) => `deleted:single:${itemId}:${type}:${instituteCode}`,
-  allGlobal: () => "deleted:*",
+  deletedList: (instituteCode) => `deleted:${instituteCode}:list`,
+  deletedByType: (type, instituteCode) => `deleted:${instituteCode}:type:${type}`,
+  deletedSingle: (itemId, type, instituteCode) => `deleted:${instituteCode}:single:${itemId}:${type}`,
+  allGlobal: (instituteCode) => `deleted:${instituteCode}:*`,
 };
 
 /**
@@ -34,7 +35,7 @@ const CacheKeys = {
  */
 const RefreshDeletedItemsCache = async (req, res, instituteCode) => {
   const startTime = Date.now();
-  await Cache.eduallClear(CacheKeys.allGlobal());
+  await Cache.eduallClear(CacheKeys.allGlobal(instituteCode));
   console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode} (DeletedItems)`);
 
   const duration = Date.now() - startTime;

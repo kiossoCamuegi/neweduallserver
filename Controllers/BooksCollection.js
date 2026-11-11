@@ -1,14 +1,10 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const { RegisterAuditAction } = require("./Auditory");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 
 const BOOK_COLLECTION_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `bookCollection:list:${instituteCode}`,
-  single: (id, instituteCode) => `bookCollection:single:${id}:${instituteCode}`,
-  all: () => "bookCollection:*",
-};
 
 // ─── Fetch base (sem cache) ────────────────────────────────────────────────────
 const FetchBookCollections = async (req, res, instituteCode) => {
@@ -25,42 +21,15 @@ const FetchBookCollections = async (req, res, instituteCode) => {
   });
 };
 
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
-const RefreshBookCollectionCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchBookCollections(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, BOOK_COLLECTION_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`);
-
-  return rows;
-};
-
 // ─── GET todas as coleções ───────────────────────────────────────────────────
 const GetBookCollections = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetBookCollections demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchBookCollections(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, BOOK_COLLECTION_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetBookCollections demorou ${duration}ms (${cacheKey})`);
-
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.bookCollection.list(instituteCode),
+      BOOK_COLLECTION_CACHE_TTL,
+      () => FetchBookCollections(req, res, instituteCode)
+    );
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar coleções de livros!", error: error.message });
@@ -71,38 +40,22 @@ const GetBookCollections = async (req, res) => {
 const GetSingleBookCollection = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleBookCollection demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
+    const recordId = CacheKeys.parseId(ID);
+    if (recordId === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
-    const query = `
-      SELECT * FROM eduall_library_collections
-      WHERE ed_library_collection_deleted = 0
-        AND ed_library_collection_id = ?
-        AND ed_library_collection_institute_code = ?
-    `;
-    const PARAMS = [ID, instituteCode];
-    const rows = await ExecuteQuery(res, query, PARAMS, true, {
-      db: "eduall_library_collections",
-      type: "select",
-      data: req,
-    });
-
-    if (!rows || rows.length === 0)
+    // Lista pequena: filtra a partir da lista em cache (uma só chave para invalidar)
+    const list = await Cache.eduallWithCache(
+      CacheKeys.bookCollection.list(instituteCode),
+      BOOK_COLLECTION_CACHE_TTL,
+      () => FetchBookCollections(req, res, instituteCode)
+    );
+    const rows = (list || []).filter((row) => Number(row.ed_library_collection_id) === recordId);
+    if (rows.length === 0) {
       return res.status(404).json({ success: false, message: "Coleção de livros não encontrada." });
-
-    await Cache.eduallSet(cacheKey, rows, BOOK_COLLECTION_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleBookCollection demorou ${duration}ms (${cacheKey})`);
-
+    }
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar coleção de livros!", error: error.message });
@@ -170,7 +123,7 @@ const RegisterBookCollection = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> RegisterBookCollection: coleção "${collection_title.trim()}" registada`);
-    await RefreshBookCollectionCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.bookCollection.list(instituteCode)]);
 
     res.status(200).json({ success: true, message: "Coleção de livros registada com sucesso!", data: rows });
   } catch (error) {
@@ -231,7 +184,7 @@ const BookCollectionUpdate = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> BookCollectionUpdate: registo ${ID} atualizado`);
-    await RefreshBookCollectionCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.bookCollection.list(instituteCode)]);
 
     res.status(200).json({ success: true, message: "Coleção de livros atualizada com sucesso!", data: rows });
   } catch (error) {
@@ -286,7 +239,7 @@ const BookCollectionDelete = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> BookCollectionDelete: registo ${ID} eliminado`);
-    await RefreshBookCollectionCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.bookCollection.list(instituteCode)]);
 
     res.status(200).json({ success: true, message: "Coleção de livros removida com sucesso!", data: rows });
   } catch (error) {

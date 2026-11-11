@@ -1,3 +1,4 @@
+// CACHE-OPT v7 (aplicado por apply_cache_optimizations_v7.py)
  const ExecuteQuery = require("../Functions/ExecuteQuery");
 const { RegisterAuditAction } = require("./Auditory");
 const Cache = require("../Functions/CacheRoutes");
@@ -5,9 +6,9 @@ const Cache = require("../Functions/CacheRoutes");
 const SERVICES_CACHE_TTL = 3600;
 
 const CacheKeys = {
-  list: (instituteCode, userId) => `services:list:${instituteCode}:${userId}`,
-  single: (id, instituteCode, userId) => `services:single:${id}:${instituteCode}:${userId}`,
-  allByInstitute: (instituteCode, userId) => `services:${instituteCode}:${userId}:*`,
+  list: (instituteCode) => `services:${instituteCode}:list`, // CACHE-OPT v7: sem userId (a query só depende da escola)
+  single: (id, instituteCode) => `services:${instituteCode}:single:${id}`,
+  allByInstitute: (instituteCode) => `services:${instituteCode}:*`, // CACHE-OPT v7: apanha list e single de TODOS os utilizadores da escola
 };
 
 // ---------------------------------------------------------------------------

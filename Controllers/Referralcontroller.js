@@ -1,3 +1,4 @@
+// CACHE-OPT v6 (aplicado por apply_cache_optimizations_v6.py)
 const express    = require("express");
 const multer     = require("multer");
 const path       = require("path");
@@ -5,6 +6,12 @@ const fs         = require("fs");
 const fsPromises = require("fs").promises;  // ← NOVO: fs.promises para async
 const cloudinary = require("cloudinary").v2;
 const ExecuteQuery            = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v6: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 const { RegisterAuditAction } = require("./Auditory");  
  
  
@@ -169,6 +176,7 @@ const RegisterReferral = (req, res) => {
         description: `Nova recomendação registada: ${institution_name} — indicado por ${referrer_name}`,
       });
 
+      await _cacheClear("referrals:*");
       return res.status(201).json({
         success: true,
         message: "Recomendação registada com sucesso!",
@@ -189,10 +197,14 @@ const RegisterReferral = (req, res) => {
  
 const GetAllReferrals = async (req, res) => {
   try {
+      const _ck = `referrals:list`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.status(200).json(_hit);
     const query = `SELECT * FROM eduall_referrals ORDER BY ed_referral_created_at DESC`;
     const result = await ExecuteQuery(res, query, [], true, {
       db: "eduall_referrals", type: "select", data: req,
     });
+    await _cacheSet(_ck, result, 120);
     return res.status(200).json(result);
   } catch (error) {
     return res.status(500).json({ success: false, message: "Falha ao buscar recomendações!", error: error.message });
@@ -202,12 +214,16 @@ const GetAllReferrals = async (req, res) => {
  
 const GetSingleReferral = async (req, res) => {
   try {
+      const _ck = `referrals:single:${req.params.ID}`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.status(200).json(_hit);
     const query = `SELECT * FROM eduall_referrals WHERE ed_referral_id = ? LIMIT 1`;
     const result = await ExecuteQuery(res, query, [req.params.ID], true, {
       db: "eduall_referrals", type: "select", data: req,
     });
     if (!result.length)
       return res.status(404).json({ success: false, message: "Recomendação não encontrada." });
+    await _cacheSet(_ck, result, 120);
     return res.status(200).json(result);
   } catch (error) {
     return res.status(500).json({ success: false, message: "Falha ao buscar a recomendação!", error: error.message });
@@ -239,6 +255,7 @@ const UpdateReferralStatus = async (req, res) => {
       description: `Status da recomendação #${req.params.ID} alterado para "${status}"`,
     });
 
+    await _cacheClear("referrals:*");
     return res.status(200).json({ success: true, message: `Status actualizado para "${status}" com sucesso.` });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Lamentamos, não foi possível executar esta acção!", error: error.message });
@@ -257,6 +274,7 @@ const DeleteReferral = async (req, res) => {
     await ExecuteQuery(res, query, [req.params.ID], false, {
       db: "eduall_referrals", type: "update", data: req,
     });
+    await _cacheClear("referrals:*");
     return res.status(200).json({ success: true, message: "Recomendação cancelada com sucesso." });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Lamentamos, não foi possível executar esta acção!", error: error.message });

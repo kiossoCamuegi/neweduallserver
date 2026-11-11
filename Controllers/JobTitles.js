@@ -1,17 +1,25 @@
+// CACHE-OPT v3 (aplicado por apply_cache_optimizations_v3.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
+
+const JOB_TITLE_CACHE_TTL = 3600; // lista global: iguais para todas as escolas
 const { RegisterAuditAction } = require("./Auditory");
 
 // 📘 Buscar todos os cargos
 const GetJobTitles = async (req, res) => {
   try {
-    const query = `SELECT * FROM eduall_job_titles ORDER BY ed_job_title ASC`;
-    const PARAMS = [];
-
-    const rows = await ExecuteQuery(res, query, PARAMS, true, {
-      db: "eduall_job_titles",
-      type: "select",
-      data: req,
-    }); 
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.jobTitle.list(),
+      JOB_TITLE_CACHE_TTL,
+      () => ExecuteQuery(
+        res,
+        `SELECT * FROM eduall_job_titles ORDER BY ed_job_title ASC`,
+        [],
+        true,
+        { db: "eduall_job_titles", type: "select", data: req }
+      )
+    );
 
     res.status(200).json(rows);
   } catch (error) {
@@ -20,13 +28,16 @@ const GetJobTitles = async (req, res) => {
       msg: "Falha ao buscar cargos!",
       error: error.message,
     });
-  } 
+  }
 };
 
 // 📗 Buscar um cargo específico
 const GetSingleJobTitle = async (req, res) => {
   try {
     const { ID } = req.params;
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, msg: "ID inválido." });
+    }
     const query = `SELECT * FROM eduall_job_titles WHERE ed_job_title_id = ?`;
     const PARAMS = [ID];
 
@@ -82,6 +93,8 @@ const RegisterJobTitle = async (req, res) => {
       type: "insert",
       data: req,
     });
+
+    await CacheKeys.safeInvalidate(() => [CacheKeys.jobTitle.list()]);
 
     // Auditoria
     await RegisterAuditAction({
@@ -142,6 +155,8 @@ const UpdateJobTitle = async (req, res) => {
       data: req,
     });
 
+    await CacheKeys.safeInvalidate(() => [CacheKeys.jobTitle.list()]);
+
     // Auditoria
     await RegisterAuditAction({
       session: req.session,
@@ -176,6 +191,8 @@ const DeleteJobTitle = async (req, res) => {
       type: "update",
       data: req,
     });
+
+    await CacheKeys.safeInvalidate(() => [CacheKeys.jobTitle.list()]);
 
     // Auditoria
     await RegisterAuditAction({

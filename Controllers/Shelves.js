@@ -1,4 +1,11 @@
+// CACHE-OPT v7 (aplicado por apply_cache_optimizations_v7.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v7: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 const { RegisterAuditAction } = require("./Auditory");
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -8,11 +15,15 @@ const { RegisterAuditAction } = require("./Auditory");
 // ─── GET todas as estantes ─────────────────────────────────────────────────
 const GetBookcases = async (req, res) => {
     try {
+        const _ck = `bookcases:${req.session.user.eduall_user_session_curentinstitute}:list`;
+        const _hit = await _cacheGet(_ck);
+        if (_hit !== null) return res.status(200).json(_hit);
         const query = `SELECT * FROM eduall_library_bookcases 
       WHERE ed_library_bookcase_deleted = 0 AND ed_library_bookcase_institute_code = ? 
       ORDER BY ed_library_bookcase_order ASC, ed_library_bookcase_id ASC`;
         const PARAMS = [req.session.user.eduall_user_session_curentinstitute];
         const result = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_library_bookcases", type: "select" });
+        await _cacheSet(_ck, result, 600);
         res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ msg: "Falha ao obter as estantes!", success: false, error: error.message });
@@ -22,11 +33,15 @@ const GetBookcases = async (req, res) => {
 // ─── GET uma estante ────────────────────────────────────────────────────────
 const GetSingleBookcase = async (req, res) => {
     try {
+        const _ck = `bookcases:${req.session.user.eduall_user_session_curentinstitute}:single:${req.params.ID}`;
+        const _hit = await _cacheGet(_ck);
+        if (_hit !== null) return res.status(200).json(_hit);
         const { ID } = req.params;
         const query = `SELECT * FROM eduall_library_bookcases 
       WHERE ed_library_bookcase_deleted = 0 AND ed_library_bookcase_id = ? AND ed_library_bookcase_institute_code = ?`;
         const PARAMS = [ID, req.session.user.eduall_user_session_curentinstitute];
         const result = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_library_bookcases", type: "select" });
+        await _cacheSet(_ck, result, 600);
         res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ msg: "Falha ao obter a estante!", success: false, error: error.message });
@@ -63,6 +78,7 @@ const RegisterBookcase = async (req, res) => {
             description: `Registou uma nova estante (${req.body.bookcase_name})`,
         }).catch(() => null);
 
+        await _cacheClear(`bookcases:${req.session.user.eduall_user_session_curentinstitute}:*`);
         res.status(201).json(result);
     } catch (error) {
         res.status(500).json({ msg: "Falha ao registar a estante!", success: false, error: error.message });
@@ -89,6 +105,7 @@ const BookcaseUpdate = async (req, res) => {
             description: `Atualizou a estante (${bookcase_name}) com ID ${ID}`,
         }).catch(() => null);
 
+        await _cacheClear(`bookcases:${req.session.user.eduall_user_session_curentinstitute}:*`);
         res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ msg: "Falha ao atualizar a estante!", success: false, error: error.message });
@@ -119,6 +136,7 @@ const BookcaseDelete = async (req, res) => {
             description: `Eliminou a estante com ID ${ID} (prateleiras ficaram sem estante, nada foi apagado)`,
         }).catch(() => null);
 
+        await _cacheClear(`bookcases:${req.session.user.eduall_user_session_curentinstitute}:*`);
         res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ msg: "Falha ao eliminar a estante!", success: false, error: error.message });
@@ -150,6 +168,7 @@ const ReorderBookcases = async (req, res) => {
             description: `Reordenou ${order.length} estante(s)`,
         }).catch(() => null);
 
+        await _cacheClear(`bookcases:${req.session.user.eduall_user_session_curentinstitute}:*`);
         res.status(200).json({ success: true, msg: "Estantes reordenadas com sucesso!" });
     } catch (error) {
         res.status(500).json({ msg: "Falha ao reordenar as estantes!", success: false, error: error.message });

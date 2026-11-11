@@ -1,6 +1,8 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const { RegisterAuditAction } = require("./Auditory");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 const multer = require("multer");
 const path = require("path");
 const cloudinary = require("cloudinary").v2;
@@ -15,12 +17,6 @@ cloudinary.config({
 });
 
 const BOOK_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `book:list:${instituteCode}`,
-  single: (id, instituteCode) => `book:single:${id}:${instituteCode}`,
-  all: () => "book:*",
-};
 
 // ─── Upload para Cloudinary (staging) ──────────────────────────────────────────
 /**
@@ -75,41 +71,16 @@ const FetchBooks = async (req, res, instituteCode) => {
   });
 };
 
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
-const RefreshBookCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchBooks(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, BOOK_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`);
-
-  return rows;
-};
-
 // ─── GET todos os livros ──────────────────────────────────────────────────────
 const GetBooks = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
 
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetBooks demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchBooks(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, BOOK_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetBooks demorou ${duration}ms (${cacheKey})`);
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.book.list(instituteCode),
+      BOOK_CACHE_TTL,
+      () => FetchBooks(req, res, instituteCode)
+    );
 
     res.status(200).json(rows);
   } catch (error) {
@@ -122,16 +93,10 @@ const GetBooks = async (req, res) => {
 const GetSingleBook = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleBook demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
     const query = 'SELECT * FROM eduall_library_books WHERE ed_library_book_deleted = 0 AND ed_library_book_id = ? AND ed_library_book_institute_code = ?';
     const PARAMS = [ID, instituteCode];
@@ -139,11 +104,6 @@ const GetSingleBook = async (req, res) => {
 
     if (!rows || rows.length === 0)
       return res.status(404).json({ success: false, message: "Livro não encontrado." });
-
-    await Cache.eduallSet(cacheKey, rows, BOOK_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleBook demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -258,7 +218,7 @@ const RegisterBook = async (req, res) => {
     }).catch(() => null);
 
     console.log(`✅ RegisterBook: livro "${book_title}" registado com capa no Cloudinary`);
-    await RefreshBookCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.book.list(instituteCode), CacheKeys.exemplar.list(instituteCode), CacheKeys.borrowedBook.list(instituteCode)]);
 
     res.status(200).json({
       success: true,
@@ -317,7 +277,7 @@ const BookDelete = async (req, res) => {
     }).catch(() => null);
 
     console.log(`✅ BookDelete: registo ${ID} eliminado (capa permanece no Cloudinary para backup)`);
-    await RefreshBookCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.book.list(instituteCode), CacheKeys.exemplar.list(instituteCode), CacheKeys.borrowedBook.list(instituteCode)]);
 
     res.status(200).json({
       success: true,
@@ -498,7 +458,7 @@ const BookUpdate = async (req, res) => {
     console.log(
       `✅ BookUpdate: registo ${ID} atualizado${pictureUrl ? " com nova capa no Cloudinary" : ""}`
     );
-    await RefreshBookCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.book.list(instituteCode), CacheKeys.exemplar.list(instituteCode), CacheKeys.borrowedBook.list(instituteCode)]);
 
     res.status(200).json({
       success: true,
@@ -550,7 +510,7 @@ const MoveBook = async (req, res) => {
     }).catch(() => null);
 
     console.log(`✅ MoveBook: livro ${ID} movido para prateleira ${targetRackId ?? 'nenhuma'}`);
-    await RefreshBookCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.book.list(instituteCode), CacheKeys.exemplar.list(instituteCode), CacheKeys.borrowedBook.list(instituteCode)]);
 
     res.status(200).json({ success: true, message: "Livro movido com sucesso!", data: rows });
   } catch (error) {
@@ -585,7 +545,7 @@ const ReorderBooks = async (req, res) => {
     }).catch(() => null);
 
     console.log(`✅ ReorderBooks: ${order.length} livro(s) reordenados`);
-    await RefreshBookCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.book.list(instituteCode), CacheKeys.exemplar.list(instituteCode), CacheKeys.borrowedBook.list(instituteCode)]);
 
     res.status(200).json({ success: true, message: "Livros reordenados com sucesso!" });
   } catch (error) {

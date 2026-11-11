@@ -1,14 +1,10 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 const { RegisterAuditAction } = require("./Auditory");
 
 const COIN_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `coin:list:${instituteCode}`,
-  single: (id, instituteCode) => `coin:single:${id}:${instituteCode}`,
-  all: () => "coin:*",
-};
 
 // ─── Validações reutilizáveis ─────────────────────────────────────────────────
 const ValidateCoinFields = (body) => {
@@ -43,22 +39,6 @@ const FetchCoins = async (req, res, instituteCode) => {
   });
 };
 
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
-const RefreshCoinCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchCoins(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, COIN_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`);
-
-  return rows;
-};
-
 /* ===================== GET OPERATIONS (COM CACHE) ===================== */
 
 /**
@@ -67,31 +47,16 @@ const RefreshCoinCache = async (req, res, instituteCode) => {
 const GetCoins = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetCoins demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchCoins(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, COIN_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetCoins demorou ${duration}ms (${cacheKey})`);
-
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.coin.list(instituteCode),
+      COIN_CACHE_TTL,
+      () => FetchCoins(req, res, instituteCode)
+    );
     res.status(200).json(rows);
   } catch (error) {
     res
       .status(500)
-      .json({
-        success: false,
-        message: "Falha ao buscar moedas!",
-        error: error.message,
-      });
+      .json({ success: false, message: "Falha ao buscar moedas!", error: error.message });
   }
 };
 
@@ -101,49 +66,27 @@ const GetCoins = async (req, res) => {
 const GetSingleCoin = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleCoin demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
+    const recordId = CacheKeys.parseId(ID);
+    if (recordId === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
-    const query = `
-      SELECT * FROM eduall_coins
-      WHERE ed_coin_deleted = 0
-        AND ed_coin_id = ?
-        AND ed_coin_institute_code = ?
-    `;
-    const PARAMS = [ID, instituteCode];
-    const rows = await ExecuteQuery(res, query, PARAMS, true, {
-      db: "eduall_coins",
-      type: "select",
-      data: req,
-    });
-
-    if (!rows || rows.length === 0)
-      return res
-        .status(404)
-        .json({ success: false, message: "Moeda não encontrada." });
-
-    await Cache.eduallSet(cacheKey, rows, COIN_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleCoin demorou ${duration}ms (${cacheKey})`);
-
+    // Lista pequena: filtra a partir da lista em cache (uma só chave para invalidar)
+    const list = await Cache.eduallWithCache(
+      CacheKeys.coin.list(instituteCode),
+      COIN_CACHE_TTL,
+      () => FetchCoins(req, res, instituteCode)
+    );
+    const rows = (list || []).filter((row) => Number(row.ed_coin_id) === recordId);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Moeda não encontrada." });
+    }
     res.status(200).json(rows);
   } catch (error) {
     res
       .status(500)
-      .json({
-        success: false,
-        message: "Falha ao buscar moeda!",
-        error: error.message,
-      });
+      .json({ success: false, message: "Falha ao buscar moeda!", error: error.message });
   }
 };
 
@@ -208,7 +151,7 @@ const RegisterCoin = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> RegisterCoin: moeda "${coin_title.trim()}" registada`
     );
-    await RefreshCoinCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.coin.list(instituteCode)]);
 
     res
       .status(200)
@@ -285,7 +228,7 @@ const CoinUpdate = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> CoinUpdate: moeda ${ID} atualizada`);
-    await RefreshCoinCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.coin.list(instituteCode)]);
 
     res
       .status(200)
@@ -358,7 +301,7 @@ const CoinDelete = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> CoinDelete: moeda ${ID} eliminada`);
-    await RefreshCoinCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.coin.list(instituteCode)]);
 
     res
       .status(200)

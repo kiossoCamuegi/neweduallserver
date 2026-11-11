@@ -1,3 +1,4 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Controller — Exemplares (Cópias Físicas de Livros)
 //  Suporta: código de barras, QR Code e RFID (únicos por exemplar)
@@ -6,23 +7,17 @@
 const { RegisterAuditAction } = require("./Auditory");
 const ExecuteQuery             = require("../Functions/ExecuteQuery");
 const Cache                    = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 const QRCode                   = require("qrcode");   // npm install qrcode
 const crypto                   = require("crypto");   // nativo do Node — sem dependência externa
 
-const EXEMPLAR_CACHE_TTL = 3600;
+const EXEMPLAR_CACHE_TTL = 600; // estado (disponível/emprestado) muda com frequência
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Nota: GetExemplarByScan (leitura no balcão de empréstimo) NÃO é cacheado
 //  de propósito — o estado (disponível/emprestado) muda com frequência e uma
 //  leitura desatualizada poderia levar a emprestar um exemplar já emprestado.
 // ─────────────────────────────────────────────────────────────────────────────
-const CacheKeys = {
-  list:      (instituteCode)          => `exemplar:list:${instituteCode}`,
-  byBook:    (bookId, instituteCode)  => `exemplar:byBook:${bookId}:${instituteCode}`,
-  single:    (id, instituteCode)      => `exemplar:single:${id}:${instituteCode}`,
-  all:       ()                       => "exemplar:*",
-};
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  Helper — Gerador de UUID v4 em JS puro
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,44 +64,17 @@ const FetchExemplares = async (req, res, instituteCode) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Refrescar cache (limpa tudo e repõe a lista geral)
-// ─────────────────────────────────────────────────────────────────────────────
-const RefreshExemplarCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchExemplares(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, EXEMPLAR_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`);
-
-  return rows;
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
 //  GET — Todos os Exemplares
 // ─────────────────────────────────────────────────────────────────────────────
 const GetExemplares = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
 
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetExemplares demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchExemplares(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, EXEMPLAR_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetExemplares demorou ${duration}ms (${cacheKey})`);
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.exemplar.list(instituteCode),
+      EXEMPLAR_CACHE_TTL,
+      () => FetchExemplares(req, res, instituteCode)
+    );
 
     res.status(200).json(rows);
   } catch (error) {
@@ -120,16 +88,10 @@ const GetExemplares = async (req, res) => {
 const GetExemplaresByBook = async (req, res) => {
   try {
     const { BOOK_ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.byBook(BOOK_ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetExemplaresByBook demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
+    if (CacheKeys.parseId(BOOK_ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
     const query = `
       SELECT
@@ -152,11 +114,6 @@ const GetExemplaresByBook = async (req, res) => {
       db: "eduall_library_exemplares", type: "select", data: req,
     });
 
-    await Cache.eduallSet(cacheKey, rows, EXEMPLAR_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetExemplaresByBook demorou ${duration}ms (${cacheKey})`);
-
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar exemplares do livro!", error: error.message });
@@ -169,16 +126,10 @@ const GetExemplaresByBook = async (req, res) => {
 const GetSingleExemplar = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleExemplar demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
     const query = `
       SELECT
@@ -201,11 +152,6 @@ const GetSingleExemplar = async (req, res) => {
     const rows   = await ExecuteQuery(res, query, PARAMS, true, {
       db: "eduall_library_exemplares", type: "select", data: req,
     });
-
-    await Cache.eduallSet(cacheKey, rows, EXEMPLAR_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleExemplar demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -370,7 +316,7 @@ const RegisterExemplar = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> RegisterExemplar: exemplar "${exemplar_code}" registado`);
-    await RefreshExemplarCache(req, res, institute);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.exemplar.list(institute), CacheKeys.borrowedBook.list(institute)]);
 
     res.status(200).json({ ...rows, exemplar_code, qr_token, qr_image });
   } catch (error) {
@@ -465,7 +411,7 @@ const UpdateExemplar = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> UpdateExemplar: registo ${ID} atualizado`);
-    await RefreshExemplarCache(req, res, institute);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.exemplar.list(institute), CacheKeys.borrowedBook.list(institute)]);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -515,7 +461,7 @@ const AssignRFID = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> AssignRFID: exemplar ${ID} atualizado`);
-    await RefreshExemplarCache(req, res, institute);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.exemplar.list(institute), CacheKeys.borrowedBook.list(institute)]);
 
     res.status(200).json({ ...rows, msg: "RFID atribuído com sucesso!" });
   } catch (error) {
@@ -550,7 +496,7 @@ const DeleteExemplar = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> DeleteExemplar: registo ${ID} eliminado`);
-    await RefreshExemplarCache(req, res, institute);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.exemplar.list(institute), CacheKeys.borrowedBook.list(institute)]);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -589,7 +535,7 @@ const RegenerateQR = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> RegenerateQR: exemplar ${ID} atualizado`);
-    await RefreshExemplarCache(req, res, institute);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.exemplar.list(institute), CacheKeys.borrowedBook.list(institute)]);
 
     res.status(200).json({ success: true, qr_token: newToken, qr_image: newImage });
   } catch (error) {

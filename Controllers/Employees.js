@@ -1,18 +1,12 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const multer = require("multer");
 const path = require("path");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 const { RegisterAuditAction } = require("./Auditory");
 
-const EMPLOYEE_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `employee:list:${instituteCode}`,
-  single: (id, instituteCode) => `employee:single:${id}:${instituteCode}`,
-  byJobTitle: (jobTitleId) => `employee:byJobTitle:${jobTitleId}`,
-  byUser: (userId, instituteCode) => `employee:byUser:${userId}:${instituteCode}`,
-  all: () => "employee:*",
-};
+const EMPLOYEE_CACHE_TTL = 600; // inclui has_active_account (conta de utilizador)
 
 // ─── Validações reutilizáveis ─────────────────────────────────────────────────
 const ValidateEmployeeFields = (body) => {
@@ -127,24 +121,6 @@ const FetchSingleEmployee = async (res, req, id, instituteCode) => {
   return rows && rows[0] ? rows[0] : null;
 };
 
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
-const RefreshEmployeeCache = async (res, req, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchEmployees(res, req, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, EMPLOYEE_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(
-    `🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`
-  );
-
-  return rows;
-};
-
 /* ===================== GET OPERATIONS (COM CACHE) ===================== */
 
 /**
@@ -153,21 +129,12 @@ const RefreshEmployeeCache = async (res, req, instituteCode) => {
 const Getemployees = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
 
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> Getemployees demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchEmployees(res, req, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, EMPLOYEE_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> Getemployees demorou ${duration}ms (${cacheKey})`);
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.employee.list(instituteCode),
+      EMPLOYEE_CACHE_TTL,
+      () => FetchEmployees(res, req, instituteCode)
+    );
 
     res.status(200).json(rows);
   } catch (error) {
@@ -185,18 +152,10 @@ const Getemployees = async (req, res) => {
 const GetSingleEmployee = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(
-        `📦⚡ CACHE (rápido) -> GetSingleEmployee demorou ${duration}ms (${cacheKey})`
-      );
-      return res.status(200).json(cached);
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
     const query = `
       SELECT
@@ -223,12 +182,6 @@ const GetSingleEmployee = async (req, res) => {
         .json({ success: false, message: "Funcionário não encontrado." });
 
     const result = rows[0];
-    await Cache.eduallSet(cacheKey, result, EMPLOYEE_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(
-      `🗄️🐢 BASE DE DADOS (lento) -> GetSingleEmployee demorou ${duration}ms (${cacheKey})`
-    );
 
     res.status(200).json(result);
   } catch (error) {
@@ -246,17 +199,6 @@ const GetSingleEmployee = async (req, res) => {
 const GetEmployeeByJobTitle = async (req, res) => {
   try {
     const { CODE } = req.params;
-    const cacheKey = CacheKeys.byJobTitle(CODE);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(
-        `📦⚡ CACHE (rápido) -> GetEmployeeByJobTitle demorou ${duration}ms (${cacheKey})`
-      );
-      return res.status(200).json(cached);
-    }
 
     const query = `
       SELECT * FROM eduall_employees
@@ -270,13 +212,6 @@ const GetEmployeeByJobTitle = async (req, res) => {
       type: "select",
       data: req,
     });
-
-    await Cache.eduallSet(cacheKey, rows, EMPLOYEE_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(
-      `🗄️🐢 BASE DE DADOS (lento) -> GetEmployeeByJobTitle demorou ${duration}ms (${cacheKey})`
-    );
 
     res.status(200).json(rows);
   } catch (error) {
@@ -295,17 +230,6 @@ const GetEmployeeDataByUser = async (req, res) => {
   try {
     const userId = req.session.user.eduall_user_session_ID;
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.byUser(userId, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(
-        `📦⚡ CACHE (rápido) -> GetEmployeeDataByUser demorou ${duration}ms (${cacheKey})`
-      );
-      return res.status(200).json(cached);
-    }
 
     const query = `
       SELECT
@@ -339,13 +263,6 @@ const GetEmployeeDataByUser = async (req, res) => {
       type: "select",
       data: req,
     });
-
-    await Cache.eduallSet(cacheKey, rows, EMPLOYEE_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(
-      `🗄️🐢 BASE DE DADOS (lento) -> GetEmployeeDataByUser demorou ${duration}ms (${cacheKey})`
-    );
 
     res.status(200).json(rows);
   } catch (error) {
@@ -505,7 +422,7 @@ const RegisterEmployee = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> RegisterEmployee: funcionário "${employee_name.trim()}" registado`
     );
-    await RefreshEmployeeCache(res, req, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.employee.list(instituteCode), CacheKeys.employeeAttendance.list(instituteCode)]);
 
     // Buscar o registo completo recém-criado (com job_title incluído)
     const insertedId = rows && rows.insertId ? rows.insertId : null;
@@ -678,7 +595,7 @@ const EmployeeUpdate = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> EmployeeUpdate: funcionário ${ID} atualizado`);
-    await RefreshEmployeeCache(res, req, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.employee.list(instituteCode), CacheKeys.employeeAttendance.list(instituteCode)]);
 
     // Buscar o registo completo e atualizado (código mantido, job_title incluído)
     const fullEmployee = await FetchSingleEmployee(res, req, ID, instituteCode);
@@ -753,7 +670,7 @@ const EmployeeDelete = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> EmployeeDelete: funcionário ${ID} eliminado`);
-    await RefreshEmployeeCache(res, req, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.employee.list(instituteCode), CacheKeys.employeeAttendance.list(instituteCode)]);
 
     res.status(200).json({
       success: true,

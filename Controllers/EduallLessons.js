@@ -1,13 +1,9 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 
 const LESSON_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: () => `lesson:list:global`,
-  single: (id) => `lesson:single:${id}`,
-  all: () => "lesson:*",
-};
 
 // ─── Validações reutilizáveis ─────────────────────────────────────────────────
 const ValidateLessonFields = (body) => {
@@ -28,7 +24,9 @@ const ValidateLessonFields = (body) => {
 // ═══════════════════════════════════════════════════════════════════════════
 // === [Garantir existência da tabela e colunas] ===
 // ═══════════════════════════════════════════════════════════════════════════
+let _lessonsTableReady = false; // CACHE-OPT: CREATE TABLE / verificação de coluna só uma vez por processo
 async function EnsureLessonsTable(res, req) {
+  if (_lessonsTableReady) return;
   try {
     // Criar tabela se não existir
     const createTableSql = `
@@ -88,6 +86,7 @@ async function EnsureLessonsTable(res, req) {
       
       console.log(" Coluna 'deleted' adicionada com sucesso!");
     }
+    _lessonsTableReady = true;
   } catch (error) {
     console.error("Erro ao garantir tabela de aulas:", error);
     // Não lançar erro - deixar continuar
@@ -108,22 +107,6 @@ const FetchLessons = async (res, req) => {
   });
 };
 
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────
-const RefreshLessonCache = async (res, req) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para lições`);
-
-  const rows = await FetchLessons(res, req);
-  await Cache.eduallSet(CacheKeys.list(), rows, LESSON_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms`);
-
-  return rows;
-};
-
 /* ═════════════════════════════════════════════════════════════════════════════
    GET OPERATIONS (COM CACHE)
 ═════════════════════════════════════════════════════════════════════════════ */
@@ -135,24 +118,10 @@ const GetLessons_ED = async (req, res) => {
   try {
     await EnsureLessonsTable(res, req);
 
-    const cacheKey = CacheKeys.list();
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(
-        `📦⚡ CACHE (rápido) -> GetLessons_ED demorou ${duration}ms (${cacheKey})`
-      );
-      return res.status(200).json({ success: true, data: cached });
-    }
-
-    const rows = await FetchLessons(res, req);
-    await Cache.eduallSet(cacheKey, rows, LESSON_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(
-      `🗄️🐢 BASE DE DADOS (lento) -> GetLessons_ED demorou ${duration}ms (${cacheKey})`
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.lesson.list(),
+      LESSON_CACHE_TTL,
+      () => FetchLessons(res, req)
     );
 
     res.status(200).json({ success: true, data: rows });
@@ -173,17 +142,8 @@ const GetSingleLesson_ED = async (req, res) => {
   try {
     await EnsureLessonsTable(res, req);
     const { ID } = req.params;
-
-    const cacheKey = CacheKeys.single(ID);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(
-        `📦⚡ CACHE (rápido) -> GetSingleLesson_ED demorou ${duration}ms (${cacheKey})`
-      );
-      return res.status(200).json({ success: true, data: cached });
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
 
     const query =
@@ -202,12 +162,6 @@ const GetSingleLesson_ED = async (req, res) => {
     }
 
     const result = rows[0];
-    await Cache.eduallSet(cacheKey, result, LESSON_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(
-      `🗄️🐢 BASE DE DADOS (lento) -> GetSingleLesson_ED demorou ${duration}ms (${cacheKey})`
-    );
 
     res.status(200).json({ success: true, data: result });
   } catch (error) {
@@ -276,7 +230,7 @@ const RegisterLesson_ED = async (req, res) => {
       `🗄️🐢 BASE DE DADOS (lento) -> RegisterLesson_ED: aula "${ed_video_title.trim()}" registada com ID ${result.insertId}`
     );
     
-    await RefreshLessonCache(res, req);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.lesson.list()]);
 
     res.status(201).json({
       success: true,
@@ -380,7 +334,7 @@ const LessonUpdate_ED = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> LessonUpdate_ED: aula ${ID} atualizada`
     );
-    await RefreshLessonCache(res, req);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.lesson.list()]);
 
     res.status(200).json({
       success: true,
@@ -447,7 +401,7 @@ const LessonDelete_ED = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> LessonDelete_ED: aula ${ID} eliminada (soft-delete)`
     );
-    await RefreshLessonCache(res, req);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.lesson.list()]);
 
     res.status(200).json({
       success: true,
@@ -495,7 +449,7 @@ const LessonHardDelete_ED = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> LessonHardDelete_ED: aula ${ID} permanentemente eliminada`
     );
-    await RefreshLessonCache(res, req);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.lesson.list()]);
 
     res.status(200).json({
       success: true,
@@ -551,7 +505,7 @@ const LessonRestore_ED = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> LessonRestore_ED: aula ${ID} restaurada`
     );
-    await RefreshLessonCache(res, req);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.lesson.list()]);
 
     res.status(200).json({
       success: true,

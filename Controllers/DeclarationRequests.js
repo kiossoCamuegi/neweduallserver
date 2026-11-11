@@ -1,14 +1,10 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 const { RegisterAuditAction } = require("./Auditory");
 
-const DECLARATION_REQUEST_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `declarationRequest:list:${instituteCode}`,
-  single: (id, instituteCode) => `declarationRequest:single:${id}:${instituteCode}`,
-  all: () => "declarationRequest:*",
-};
+const DECLARATION_REQUEST_CACHE_TTL = 600; // lista com JOIN a alunos
 
 // ─── Validações reutilizáveis ─────────────────────────────────────────────────
 const ValidateDeclarationRequestFields = (body) => {
@@ -55,24 +51,6 @@ const FetchDeclarationRequests = async (req, res, instituteCode) => {
   });
 };
 
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
-const RefreshDeclarationRequestCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchDeclarationRequests(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, DECLARATION_REQUEST_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(
-    `🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`
-  );
-
-  return rows;
-};
-
 /* ===================== GET OPERATIONS (COM CACHE) ===================== */
 
 /**
@@ -81,24 +59,11 @@ const RefreshDeclarationRequestCache = async (req, res, instituteCode) => {
 const GetDeclarationRequests = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
 
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(
-        `📦⚡ CACHE (rápido) -> GetDeclarationRequests demorou ${duration}ms (${cacheKey})`
-      );
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchDeclarationRequests(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, DECLARATION_REQUEST_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(
-      `🗄️🐢 BASE DE DADOS (lento) -> GetDeclarationRequests demorou ${duration}ms (${cacheKey})`
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.declarationRequest.list(instituteCode),
+      DECLARATION_REQUEST_CACHE_TTL,
+      () => FetchDeclarationRequests(req, res, instituteCode)
     );
 
     res.status(200).json(rows);
@@ -117,18 +82,10 @@ const GetDeclarationRequests = async (req, res) => {
 const GetSingleDeclarationRequest = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(
-        `📦⚡ CACHE (rápido) -> GetSingleDeclarationRequest demorou ${duration}ms (${cacheKey})`
-      );
-      return res.status(200).json(cached);
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
     const query = `
       SELECT
@@ -157,12 +114,6 @@ const GetSingleDeclarationRequest = async (req, res) => {
         .json({ success: false, message: "Solicitação de declaração não encontrada." });
 
     const result = rows[0];
-    await Cache.eduallSet(cacheKey, result, DECLARATION_REQUEST_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(
-      `🗄️🐢 BASE DE DADOS (lento) -> GetSingleDeclarationRequest demorou ${duration}ms (${cacheKey})`
-    );
 
     res.status(200).json(result);
   } catch (error) {
@@ -250,7 +201,7 @@ const RegisterDeclarationRequest = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> RegisterDeclarationRequest: solicitação para aluno ${declaration_request_student_code} registada`
     );
-    await RefreshDeclarationRequestCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.declarationRequest.list(instituteCode)]);
 
     res
       .status(201)
@@ -353,7 +304,7 @@ const DeclarationRequestUpdate = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> DeclarationRequestUpdate: solicitação ${ID} atualizada`
     );
-    await RefreshDeclarationRequestCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.declarationRequest.list(instituteCode)]);
 
     res
       .status(200)
@@ -427,7 +378,7 @@ const DeclarationRequestDelete = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> DeclarationRequestDelete: solicitação ${ID} eliminada`
     );
-    await RefreshDeclarationRequestCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.declarationRequest.list(instituteCode)]);
 
     res.status(200).json({
       success: true,

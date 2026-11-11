@@ -1,3 +1,4 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 // ─────────────────────────────────────────────────────────────────────────────
 //  EnrollmentConfirmations.js  (Backend Controller – COM CACHE INTEGRADO)
 //  ✅ TPA + Borderô agora funcionam corretamente
@@ -12,34 +13,6 @@ const axios                   = require("axios");
 const { getSingleStudentByInstitute } = require("./Students");
 const { printInvoiceAndRegistry }  = require("./logger");
 const { VENDUS_CreateInvoiceCodeAndDoc, getPaymentMethods, resolvePaymentMethod } = require("../Functions/VENDUS");
-const Cache = require("../Functions/CacheRoutes");
-
-// ──────────────────────────────────────────────────────────────
-// ── CACHE CONFIGURATION (same pattern as AcademicYear.js) ─────
-// ────────────────────────────────────────────────────────────── 
-const ENROLLMENT_CACHE_TTL = 3600; // 1 hour
-
-const CacheKeys = {
-  list: (instituteCode) => `enrollment:list:${instituteCode}`, 
-  single: (id, instituteCode) => `enrollment:single:${id}:${instituteCode}`,
-  byCode: (code, instituteCode) => `enrollment:bycode:${code}:${instituteCode}`,
-  docs: (confirmationId, instituteCode) => `enrollment:docs:${confirmationId}:${instituteCode}`,
-  allGlobal: () => "enrollment:*",
-};
-
-/**
- * ──────────────────────────────────────────────────────────────
- * REFRESH CACHE FUNCTION — called after writes
- * ──────────────────────────────────────────────────────────────
- */
-const RefreshEnrollmentCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-  await Cache.eduallClear(CacheKeys.allGlobal());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode} (EnrollmentConfirmation)`);
-  
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🧹 CACHE CLEAR (EnrollmentConfirmation) demorou ${duration}ms para institute ${instituteCode}`);
-};
 
 // ════════════════════════════════════════════════════════════════════════════════
 // 🔥 FUNÇÃO AUXILIAR: VERIFICAR SE MÉTODO REQUER BORDERÔ
@@ -72,16 +45,6 @@ function requiresBordereau(methodName) {
 const GetEnrollmentConfirmations = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetEnrollmentConfirmations demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const query = `
       SELECT * FROM eduall_enrollment_confirmations
@@ -99,12 +62,6 @@ const GetEnrollmentConfirmations = async (req, res) => {
       db: "eduall_enrollment_confirmations", type: "select", data: req,
     });
 
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, rows, ENROLLMENT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetEnrollmentConfirmations demorou ${duration}ms (${cacheKey})`);
-
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar confirmações de matrícula!", error: error.message });
@@ -119,16 +76,6 @@ const GetSingleEnrollmentConfirmation = async (req, res) => {
   try {
     const { ID } = req.params;
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleEnrollmentConfirmation demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const query = `
       SELECT * FROM eduall_enrollment_confirmations
@@ -145,12 +92,6 @@ const GetSingleEnrollmentConfirmation = async (req, res) => {
       db: "eduall_enrollment_confirmations", type: "select", data: req,
     });
 
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, rows, ENROLLMENT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleEnrollmentConfirmation demorou ${duration}ms (${cacheKey})`);
-
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar a confirmação de matrícula!", error: error.message });
@@ -165,18 +106,8 @@ const GetSingleEnrolledConfirmation = async (req, res) => {
   try {
     const { ID } = req.params;
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode) + ":full";
-    const startTime = Date.now();
 
     console.log("ID = ", ID);
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleEnrolledConfirmation demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const query = `
       SELECT
@@ -205,12 +136,6 @@ const GetSingleEnrolledConfirmation = async (req, res) => {
       db: "eduall_enrollment_confirmations", type: "select", data: req,
     });
 
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, rows, ENROLLMENT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleEnrolledConfirmation demorou ${duration}ms (${cacheKey})`);
-
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar a confirmação de matrícula do aluno!", error: error.message });
@@ -225,16 +150,6 @@ const GetSingleEnrolledConfirmationByCode = async (req, res) => {
   try {
     const { CODE } = req.params;
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.byCode(CODE, instituteCode);
-    const startTime = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleEnrolledConfirmationByCode demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const query = `
       SELECT * FROM eduall_enrollment_confirmations
@@ -253,12 +168,6 @@ const GetSingleEnrolledConfirmationByCode = async (req, res) => {
     const rows = await ExecuteQuery(res, query, PARAMS, true, {
       db: "eduall_enrollment_confirmations", type: "select", data: req,
     });
-
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, rows, ENROLLMENT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleEnrolledConfirmationByCode demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -893,7 +802,6 @@ const RegisterEnrollmentConfirmation = async (req, res) => {
     console.log(`✅ SUCESSO: ${toConfirm.length} confirmação(ões) de matrícula registada(s)!`);
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> RegisterEnrollmentConfirmation: ${toConfirm.length} registo(s) inserido(s)`);
-    await RefreshEnrollmentCache(req, res, institute);
 
     await RegisterAuditAction({
       session:     req.session,
@@ -951,7 +859,6 @@ const EnrollmentConfirmationDelete = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> EnrollmentConfirmationDelete: registo ${ID} eliminado`);
-    await RefreshEnrollmentCache(req, res, instituteCode);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -1015,7 +922,6 @@ const EnrollmentConfirmationUpdate = async (req, res) => {
     }
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> EnrollmentConfirmationUpdate: registo ${ID} atualizado`);
-    await RefreshEnrollmentCache(req, res, institute);
 
     res.status(200).json(confirmationUpdate);
   } catch (error) {
@@ -1031,16 +937,6 @@ const GetConfirmationDocs = async (req, res) => {
   try {
     const { CONFIRMATION_ID } = req.params;
     const institute = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.docs(CONFIRMATION_ID, institute);
-    const startTime = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetConfirmationDocs demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const rows = await ExecuteQuery(
       res,
@@ -1053,12 +949,6 @@ const GetConfirmationDocs = async (req, res) => {
       true,
       { db: "eduall_enrollment_confirmation_docs", type: "select", data: req }
     );
-
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, rows, ENROLLMENT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetConfirmationDocs demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -1106,7 +996,6 @@ const AddConfirmationDoc = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> AddConfirmationDoc: documento adicionado à confirmação ${confirmation_id}`);
-    await RefreshEnrollmentCache(req, res, institute);
 
     res.status(200).json({ success: true, msg: "Documento adicionado com sucesso!" });
   } catch (error) {
@@ -1155,7 +1044,6 @@ const UpdateConfirmationDoc = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> UpdateConfirmationDoc: documento ${DOC_ID} atualizado`);
-    await RefreshEnrollmentCache(req, res, institute);
 
     res.status(200).json({ success: true, msg: "Documento atualizado com sucesso!" });
   } catch (error) {
@@ -1189,7 +1077,6 @@ const DeleteConfirmationDoc = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> DeleteConfirmationDoc: documento ${DOC_ID} eliminado`);
-    await RefreshEnrollmentCache(req, res, institute);
 
     res.status(200).json({ success: true, msg: "Documento removido com sucesso!" });
   } catch (error) {

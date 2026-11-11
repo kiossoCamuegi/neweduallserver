@@ -1,16 +1,12 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const multer = require("multer");
 const path = require("path");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 const { RegisterAuditAction } = require("./Auditory");
 
 const CONTACT_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `contact:list:${instituteCode}`,
-  single: (id, instituteCode) => `contact:single:${id}:${instituteCode}`,
-  all: () => "contact:*",
-};
 
 // ─── Validações reutilizáveis ─────────────────────────────────────────────────
 const ValidateContactFields = (body) => {
@@ -55,22 +51,6 @@ const FetchContacts = async (req, res, instituteCode) => {
   });
 };
 
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
-const RefreshContactCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchContacts(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, CONTACT_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`);
-
-  return rows;
-};
-
 /* ===================== GET OPERATIONS (COM CACHE) ===================== */
 
 /**
@@ -79,21 +59,12 @@ const RefreshContactCache = async (req, res, instituteCode) => {
 const GetContacts = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
 
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetContacts demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchContacts(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, CONTACT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetContacts demorou ${duration}ms (${cacheKey})`);
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.contact.list(instituteCode),
+      CONTACT_CACHE_TTL,
+      () => FetchContacts(req, res, instituteCode)
+    );
 
     res.status(200).json(rows);
   } catch (error) {
@@ -113,16 +84,10 @@ const GetContacts = async (req, res) => {
 const GetSingleContact = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleContact demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
     const query = `
       SELECT * FROM eduall_contacts
@@ -141,11 +106,6 @@ const GetSingleContact = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, message: "Contacto não encontrado." });
-
-    await Cache.eduallSet(cacheKey, rows, CONTACT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleContact demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -245,7 +205,7 @@ const RegisterContact = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> RegisterContact: contacto "${contact_name.trim()}" registado`
     );
-    await RefreshContactCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.contact.list(instituteCode)]);
 
     res
       .status(200)
@@ -375,7 +335,7 @@ const ContactUpdate = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> ContactUpdate: contacto ${ID} atualizado`);
-    await RefreshContactCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.contact.list(instituteCode)]);
 
     res
       .status(200)
@@ -447,7 +407,7 @@ const ContactDelete = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> ContactDelete: contacto ${ID} eliminado`);
-    await RefreshContactCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.contact.list(instituteCode)]);
 
     res
       .status(200)

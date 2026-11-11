@@ -1,3 +1,4 @@
+// CACHE-OPT v6 (aplicado por apply_cache_optimizations_v6.py)
 'use strict';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -12,6 +13,12 @@
 
 const { RegisterAuditAction } = require("./Auditory");
 const ExecuteQuery             = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v6: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 
 /* ─────────────────────────────────────────
    HELPER — institute code from session
@@ -158,6 +165,9 @@ const GetMovementsByExemplar = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const GetAntennas = async (req, res) => {
   try {
+      const _ck = `rfidAntennas:${inst(req)}:list`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.status(200).json(_hit);
     const rows = await ExecuteQuery(res,
       `SELECT * FROM eduall_library_rfid_antennas
        WHERE ed_rfid_antenna_deleted = 0
@@ -165,6 +175,7 @@ const GetAntennas = async (req, res) => {
        ORDER BY ed_rfid_antenna_name ASC`,
       [inst(req)], true,
       { db: "eduall_library_rfid_antennas", type: "select", data: req });
+    await _cacheSet(_ck, rows, 300);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar antenas!", error: error.message });
@@ -514,6 +525,7 @@ const RegisterAntenna = async (req, res) => {
       description: `Registou antena "${antenna_name}"`,
     });
 
+    await _cacheClear(`rfidAntennas:${inst(req)}:*`);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao registar antena!", error: error.message });
@@ -554,6 +566,7 @@ const UpdateAntenna = async (req, res) => {
       description: `Actualizou antena ID ${ID}`,
     });
 
+    await _cacheClear(`rfidAntennas:${inst(req)}:*`);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao actualizar antena!", error: error.message });
@@ -582,6 +595,7 @@ const DeleteAntenna = async (req, res) => {
       description: `Removeu antena ID ${ID}`,
     });
 
+    await _cacheClear(`rfidAntennas:${inst(req)}:*`);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao remover antena!", error: error.message });

@@ -1,4 +1,11 @@
+// CACHE-OPT v5 (aplicado por apply_cache_optimizations.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v5: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 const { RegisterAuditAction } = require("./Auditory");
 const bcrypt = require("bcryptjs");
 
@@ -10,16 +17,22 @@ const RequirePrincipalPortalAccess = async (req, res, next) => {
     const instituteCode = getInstituteCode(req);
     const userId = getUserId(req);
     if (!instituteCode || !userId) return res.status(401).json({ message: "Sessão inválida." });
+    const _accessKey = `principalPortal:${instituteCode}:access:${userId}`; // CACHE-OPT v5
+    if ((await _cacheGet(_accessKey)) === 1) return next();
 
     const accounts = await ExecuteQuery(res, `SELECT ed_system_account_id FROM eduall_system_accounts WHERE ed_system_account_userid = ? AND ed_system_account_institute_code = ? AND ed_system_account_app_type IS NULL AND ed_system_account_deleted = 0 LIMIT 1`, [userId, instituteCode], true, { db: "eduall_system_accounts", type: "select", data: req });
     if (!accounts?.length) return res.status(403).json({ message: "É necessária uma conta activa de dashboard para aceder ao Portal da Direção." });
+    await _cacheSet(_accessKey, 1, 60);
     return next();
   } catch (error) {
     return res.status(500).json({ message: "Não foi possível validar o acesso ao Portal da Direção.", error: error.message });
   }
 };
 
+let _principalSchemaReady = false; // CACHE-OPT v5: 7x CREATE TABLE só uma vez por processo (antes: em 18 funções)
+const _approvalRulesSeeded = new Set(); // CACHE-OPT v5: regras por omissão inseridas uma vez por escola e processo
 const ensurePrincipalPortalSchema = async (req, res) => {
+  if (_principalSchemaReady) return;
   const statements = [
     `CREATE TABLE IF NOT EXISTS eduall_principal_goals (
       ed_principal_goal_id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -109,6 +122,7 @@ const ensurePrincipalPortalSchema = async (req, res) => {
       data: req
     });
   }
+  _principalSchemaReady = true;
 };
 
 const audit = async (req, res, action, description, form) => {
@@ -147,9 +161,13 @@ const GetDashboardSummary = async (req, res) => {
 
 const GetGoals = async (req, res) => {
   try {
+      const _ck = `principalPortal:${getInstituteCode(req)}:goals`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.json(_hit);
     const instituteCode = getInstituteCode(req);
     await ensurePrincipalPortalSchema(req, res);
     const rows = await ExecuteQuery(res, `SELECT * FROM eduall_principal_goals WHERE ed_principal_goal_institute_code = ? AND ed_principal_goal_deleted = 0 ORDER BY ed_principal_goal_deadline ASC, ed_principal_goal_created_at DESC`, [instituteCode], true, { db: "eduall_principal_goals", type: "select", data: req });
+    await _cacheSet(_ck, rows, 300);
     return res.json(rows);
   } catch (error) {
     return res.status(500).json({ message: "Não foi possível carregar as metas.", error: error.message });
@@ -165,6 +183,7 @@ const CreateGoal = async (req, res) => {
     await ensurePrincipalPortalSchema(req, res);
     const result = await ExecuteQuery(res, `INSERT INTO eduall_principal_goals (ed_principal_goal_name, ed_principal_goal_category, ed_principal_goal_initial_value, ed_principal_goal_target_value, ed_principal_goal_current_value, ed_principal_goal_unit, ed_principal_goal_inverse, ed_principal_goal_deadline, ed_principal_goal_owner, ed_principal_goal_description, ed_principal_goal_academic_year, ed_principal_goal_institute_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [name.trim(), category.trim(), initialValue, targetValue, currentValue, unit, inverse ? 1 : 0, deadline, owner, description, academicYear, instituteCode], false, { db: "eduall_principal_goals", type: "insert", data: req });
     await audit(req, res, 1, `Criou a meta estratégica "${name.trim()}".`, "Portal da Direção");
+    await _cacheClear(`principalPortal:${getInstituteCode(req)}:*`);
     return res.status(201).json({ id: result?.insertId });
   } catch (error) {
     return res.status(500).json({ message: "Não foi possível criar a meta.", error: error.message });
@@ -181,6 +200,7 @@ const UpdateGoal = async (req, res) => {
     if (!before?.length) return res.status(404).json({ message: "Meta não encontrada." });
     await ExecuteQuery(res, `UPDATE eduall_principal_goals SET ed_principal_goal_name = COALESCE(?, ed_principal_goal_name), ed_principal_goal_category = COALESCE(?, ed_principal_goal_category), ed_principal_goal_initial_value = COALESCE(?, ed_principal_goal_initial_value), ed_principal_goal_target_value = COALESCE(?, ed_principal_goal_target_value), ed_principal_goal_current_value = COALESCE(?, ed_principal_goal_current_value), ed_principal_goal_unit = COALESCE(?, ed_principal_goal_unit), ed_principal_goal_inverse = COALESCE(?, ed_principal_goal_inverse), ed_principal_goal_deadline = COALESCE(?, ed_principal_goal_deadline), ed_principal_goal_owner = COALESCE(?, ed_principal_goal_owner), ed_principal_goal_description = COALESCE(?, ed_principal_goal_description), ed_principal_goal_status = COALESCE(?, ed_principal_goal_status), ed_principal_goal_updated_at = NOW() WHERE ed_principal_goal_id = ? AND ed_principal_goal_institute_code = ?`, [name, category, initialValue, targetValue, currentValue, unit, typeof inverse === "boolean" ? (inverse ? 1 : 0) : null, deadline, owner, description, status, goalId, instituteCode], false, { db: "eduall_principal_goals", type: "update", data: req });
     await audit(req, res, 2, `Actualizou a meta estratégica "${before[0].ed_principal_goal_name}".`, "Portal da Direção");
+    await _cacheClear(`principalPortal:${getInstituteCode(req)}:*`);
     return res.json({ success: true });
   } catch (error) {
     return res.status(500).json({ message: "Não foi possível actualizar a meta.", error: error.message });
@@ -196,6 +216,7 @@ const DeleteGoal = async (req, res) => {
     if (!goals?.length) return res.status(404).json({ message: "Meta não encontrada." });
     await ExecuteQuery(res, "UPDATE eduall_principal_goals SET ed_principal_goal_deleted = 1, ed_principal_goal_updated_at = NOW() WHERE ed_principal_goal_id = ? AND ed_principal_goal_institute_code = ?", [goalId, instituteCode], false, { db: "eduall_principal_goals", type: "delete", data: req });
     await audit(req, res, 3, `Arquivou a meta estratégica "${goals[0].ed_principal_goal_name}".`, "Portal da Direção");
+    await _cacheClear(`principalPortal:${getInstituteCode(req)}:*`);
     return res.json({ success: true });
   } catch (error) {
     return res.status(500).json({ message: "Não foi possível arquivar a meta.", error: error.message });
@@ -204,10 +225,14 @@ const DeleteGoal = async (req, res) => {
 
 const GetApprovals = async (req, res) => {
   try {
+      const _ck = `principalPortal:${getInstituteCode(req)}:approvals:${req.query.status === "historico" ? "history" : "pending"}`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.json(_hit);
     const instituteCode = getInstituteCode(req);
     const history = req.query.status === "historico";
     await ensurePrincipalPortalSchema(req, res);
     const rows = await ExecuteQuery(res, `SELECT * FROM eduall_principal_approvals WHERE ed_principal_approval_institute_code = ? AND ${history ? "ed_principal_approval_status <> 'Pendente'" : "ed_principal_approval_status = 'Pendente'"} ORDER BY ed_principal_approval_created_at DESC`, [instituteCode], true, { db: "eduall_principal_approvals", type: "select", data: req });
+    await _cacheSet(_ck, rows, 60);
     return res.json(rows);
   } catch (error) {
     return res.status(500).json({ message: "Não foi possível carregar as aprovações.", error: error.message });
@@ -227,6 +252,7 @@ const ResolveApproval = (status) => async (req, res) => {
 
     await ExecuteQuery(res, "UPDATE eduall_principal_approvals SET ed_principal_approval_status = ?, ed_principal_approval_comment = ?, ed_principal_approval_resolved_at = NOW(), ed_principal_approval_resolved_by = ? WHERE ed_principal_approval_id = ? AND ed_principal_approval_institute_code = ?", [status, comment, getUserId(req), approvalId, instituteCode], false, { db: "eduall_principal_approvals", type: "update", data: req });
     await audit(req, res, 2, `${status} o pedido "${approval.ed_principal_approval_type}" #${approvalId}.`, "Aprovações da Direção");
+    await _cacheClear(`principalPortal:${getInstituteCode(req)}:*`);
     return res.json({ success: true, status });
   } catch (error) {
     return res.status(500).json({ message: "Não foi possível tratar o pedido.", error: error.message });
@@ -247,6 +273,9 @@ const GetAuditLog = async (req, res) => {
 
 const GetInsights = async (req, res) => {
   try {
+      const _ck = `principalPortal:${getInstituteCode(req)}:insights`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.json(_hit);
     const instituteCode = getInstituteCode(req);
     await ensurePrincipalPortalSchema(req, res);
     const [pending, delayedGoals, failures] = await Promise.all([
@@ -258,6 +287,7 @@ const GetInsights = async (req, res) => {
     if (Number(pending[0]?.total || 0)) insights.push({ category: "Administrativo", severity: "Atenção", title: "Pedidos pendentes", evidence: `${pending[0].total} pedido(s) aguardam uma decisão da Direção.`, recommendation: "Reveja os pedidos pendentes e defina a decisão ou solicite esclarecimentos." });
     if (Number(delayedGoals[0]?.total || 0)) insights.push({ category: "Estratégico", severity: "Crítico", title: "Metas fora do prazo", evidence: `${delayedGoals[0].total} meta(s) ultrapassaram o prazo sem conclusão.`, recommendation: "Actualize o progresso, reavalie o prazo ou atribua um responsável." });
     if (Number(failures[0]?.total || 0)) insights.push({ category: "Auditoria", severity: "Informação", title: "Operações eliminadas", evidence: `${failures[0].total} operação(ões) de eliminação foram registadas nos últimos 30 dias.`, recommendation: "Consulte a auditoria para confirmar que as eliminações foram autorizadas." });
+    await _cacheSet(_ck, insights, 60);
     return res.json(insights);
   } catch (error) {
     return res.status(500).json({ message: "Não foi possível gerar os insights.", error: error.message });
@@ -266,11 +296,18 @@ const GetInsights = async (req, res) => {
 
 const GetApprovalRules = async (req, res) => {
   try {
+      const _ck = `principalPortal:${getInstituteCode(req)}:rules`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.json(_hit);
     const instituteCode = getInstituteCode(req);
     await ensurePrincipalPortalSchema(req, res);
     const defaults = ["Cancelar matrícula", "Alterar nota encerrada", "Alterar turma", "Desconto superior a 20%", "Isenção de propina", "Reembolso", "Emissão gratuita de documento"];
-    for (const key of defaults) await ExecuteQuery(res, "INSERT IGNORE INTO eduall_principal_approval_rules (ed_principal_approval_rule_key, ed_principal_approval_rule_active, ed_principal_approval_rule_institute_code) VALUES (?, 1, ?)", [key, instituteCode], false, { db: "eduall_principal_approval_rules", type: "insert", data: req });
+    if (!_approvalRulesSeeded.has(instituteCode)) {
+      for (const key of defaults) await ExecuteQuery(res, "INSERT IGNORE INTO eduall_principal_approval_rules (ed_principal_approval_rule_key, ed_principal_approval_rule_active, ed_principal_approval_rule_institute_code) VALUES (?, 1, ?)", [key, instituteCode], false, { db: "eduall_principal_approval_rules", type: "insert", data: req });
+      _approvalRulesSeeded.add(instituteCode);
+    }
     const rows = await ExecuteQuery(res, "SELECT * FROM eduall_principal_approval_rules WHERE ed_principal_approval_rule_institute_code = ? ORDER BY ed_principal_approval_rule_key", [instituteCode], true, { db: "eduall_principal_approval_rules", type: "select", data: req });
+    await _cacheSet(_ck, rows, 300);
     return res.json(rows);
   } catch (error) { return res.status(500).json({ message: "Não foi possível carregar as regras de aprovação.", error: error.message }); }
 };
@@ -284,15 +321,20 @@ const UpdateApprovalRule = async (req, res) => {
     await ensurePrincipalPortalSchema(req, res);
     await ExecuteQuery(res, "INSERT INTO eduall_principal_approval_rules (ed_principal_approval_rule_key, ed_principal_approval_rule_active, ed_principal_approval_rule_institute_code) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE ed_principal_approval_rule_active = VALUES(ed_principal_approval_rule_active)", [key, active ? 1 : 0, instituteCode], false, { db: "eduall_principal_approval_rules", type: "update", data: req });
     await audit(req, res, 2, `${active ? "Activou" : "Desactivou"} a regra de aprovação "${key}".`, "Aprovações da Direção");
+    await _cacheClear(`principalPortal:${getInstituteCode(req)}:*`);
     return res.json({ success: true });
   } catch (error) { return res.status(500).json({ message: "Não foi possível actualizar a regra.", error: error.message }); }
 };
 
 const GetAnnouncements = async (req, res) => {
   try {
+      const _ck = `principalPortal:${getInstituteCode(req)}:announcements`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.json(_hit);
     const instituteCode = getInstituteCode(req);
     await ensurePrincipalPortalSchema(req, res);
     const rows = await ExecuteQuery(res, "SELECT * FROM eduall_principal_announcements WHERE ed_principal_announcement_institute_code = ? ORDER BY ed_principal_announcement_created_at DESC", [instituteCode], true, { db: "eduall_principal_announcements", type: "select", data: req });
+    await _cacheSet(_ck, rows, 300);
     return res.json(rows);
   } catch (error) { return res.status(500).json({ message: "Não foi possível carregar os comunicados.", error: error.message }); }
 };
@@ -305,15 +347,20 @@ const CreateAnnouncement = async (req, res) => {
     await ensurePrincipalPortalSchema(req, res);
     const result = await ExecuteQuery(res, "INSERT INTO eduall_principal_announcements (ed_principal_announcement_subject, ed_principal_announcement_message, ed_principal_announcement_recipients, ed_principal_announcement_priority, ed_principal_announcement_institute_code, ed_principal_announcement_created_by) VALUES (?, ?, ?, ?, ?, ?)", [subject.trim(), message.trim(), JSON.stringify(recipients), priority, instituteCode, getUserId(req)], false, { db: "eduall_principal_announcements", type: "insert", data: req });
     await audit(req, res, 1, `Registou o comunicado "${subject.trim()}" para ${recipients.join(", ")}.`, "Comunicação da Direção");
+    await _cacheClear(`principalPortal:${getInstituteCode(req)}:*`);
     return res.status(201).json({ id: result?.insertId, status: "Registado" });
   } catch (error) { return res.status(500).json({ message: "Não foi possível registar o comunicado.", error: error.message }); }
 };
 
 const GetAgenda = async (req, res) => {
   try {
+      const _ck = `principalPortal:${getInstituteCode(req)}:agenda`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.json(_hit);
     const instituteCode = getInstituteCode(req);
     await ensurePrincipalPortalSchema(req, res);
     const rows = await ExecuteQuery(res, "SELECT * FROM eduall_principal_agenda WHERE ed_principal_agenda_institute_code = ? ORDER BY ed_principal_agenda_date ASC", [instituteCode], true, { db: "eduall_principal_agenda", type: "select", data: req });
+    await _cacheSet(_ck, rows, 300);
     return res.json(rows);
   } catch (error) { return res.status(500).json({ message: "Não foi possível carregar a agenda.", error: error.message }); }
 };
@@ -326,15 +373,20 @@ const CreateAgendaEvent = async (req, res) => {
     await ensurePrincipalPortalSchema(req, res);
     const result = await ExecuteQuery(res, "INSERT INTO eduall_principal_agenda (ed_principal_agenda_date, ed_principal_agenda_title, ed_principal_agenda_type, ed_principal_agenda_note, ed_principal_agenda_institute_code, ed_principal_agenda_created_by) VALUES (?, ?, ?, ?, ?, ?)", [date, title.trim(), type.trim(), note, instituteCode, getUserId(req)], false, { db: "eduall_principal_agenda", type: "insert", data: req });
     await audit(req, res, 1, `Criou o evento de agenda "${title.trim()}".`, "Comunicação da Direção");
+    await _cacheClear(`principalPortal:${getInstituteCode(req)}:*`);
     return res.status(201).json({ id: result?.insertId });
   } catch (error) { return res.status(500).json({ message: "Não foi possível criar o evento.", error: error.message }); }
 };
 
 const GetPreferences = async (req, res) => {
   try {
+      const _ck = `principalPortal:${getInstituteCode(req)}:preferences`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.json(_hit);
     const instituteCode = getInstituteCode(req);
     await ensurePrincipalPortalSchema(req, res);
     const rows = await ExecuteQuery(res, "SELECT * FROM eduall_principal_preferences WHERE ed_principal_preference_institute_code = ?", [instituteCode], true, { db: "eduall_principal_preferences", type: "select", data: req });
+    await _cacheSet(_ck, rows, 300);
     return res.json(rows);
   } catch (error) { return res.status(500).json({ message: "Não foi possível carregar as preferências.", error: error.message }); }
 };
@@ -347,15 +399,20 @@ const UpdatePreferences = async (req, res) => {
     await ensurePrincipalPortalSchema(req, res);
     for (const [key, value] of Object.entries(preferences)) await ExecuteQuery(res, "INSERT INTO eduall_principal_preferences (ed_principal_preference_key, ed_principal_preference_value, ed_principal_preference_institute_code) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE ed_principal_preference_value = VALUES(ed_principal_preference_value)", [key, value ? 1 : 0, instituteCode], false, { db: "eduall_principal_preferences", type: "update", data: req });
     await audit(req, res, 2, "Actualizou as preferências do Portal da Direção.", "Configurações da Direção");
+    await _cacheClear(`principalPortal:${getInstituteCode(req)}:*`);
     return res.json({ success: true });
   } catch (error) { return res.status(500).json({ message: "Não foi possível actualizar as preferências.", error: error.message }); }
 };
 
 const GetSignableDocuments = async (req, res) => {
   try {
+      const _ck = `principalPortal:${getInstituteCode(req)}:documents`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.json(_hit);
     const instituteCode = getInstituteCode(req);
     await ensurePrincipalPortalSchema(req, res);
     const rows = await ExecuteQuery(res, `SELECT d.ed_declaration_id, d.ed_declaration_effect, d.ed_declaration_with_marks, d.ed_declaration_class, s.ed_student_name, s.ed_student_code, sig.ed_principal_document_signature_created_at AS signed_at, sig.ed_principal_document_signature_user_id AS signed_by FROM eduall_declarations d LEFT JOIN eduall_students s ON s.ed_student_id = d.ed_declaration_student_code AND s.ed_student_deleted = 0 LEFT JOIN eduall_principal_document_signatures sig ON sig.ed_principal_document_signature_declaration_id = d.ed_declaration_id AND sig.ed_principal_document_signature_institute_code = d.ed_declaration_institute_code WHERE d.ed_declaration_deleted = 0 AND d.ed_declaration_institute_code = ? ORDER BY d.ed_declaration_id DESC`, [instituteCode], true, { db: "eduall_declarations", type: "select", data: req });
+    await _cacheSet(_ck, rows, 60);
     return res.json(rows);
   } catch (error) { return res.status(500).json({ message: "Não foi possível carregar os documentos.", error: error.message }); }
 };
@@ -374,6 +431,7 @@ const SignDocument = async (req, res) => {
     if (!user?.ed_user_account_password || !await bcrypt.compare(pin, user.ed_user_account_password)) return res.status(403).json({ message: "PIN inválido." });
     await ExecuteQuery(res, "INSERT INTO eduall_principal_document_signatures (ed_principal_document_signature_declaration_id, ed_principal_document_signature_institute_code, ed_principal_document_signature_user_id) VALUES (?, ?, ?)", [declarationId, instituteCode, userId], false, { db: "eduall_principal_document_signatures", type: "insert", data: req });
     await audit(req, res, 2, `Assinou internamente a declaração #${declarationId} (${document.ed_declaration_effect || "sem efeito indicado"}).`, "Documentos da Direção");
+    await _cacheClear(`principalPortal:${getInstituteCode(req)}:*`);
     return res.json({ success: true });
   } catch (error) { return res.status(500).json({ message: "Não foi possível assinar o documento.", error: error.message }); }
 };

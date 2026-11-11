@@ -1,5 +1,12 @@
+// CACHE-OPT v5 (aplicado por apply_cache_optimizations.py)
 const axios = require("axios");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v5: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 
 /* ===================== Helpers ===================== */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -42,6 +49,7 @@ async function geminiExplain({ action, form, description, userName, createdAt })
   try {
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
     if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
+    if (process.env.NOTIFY_USE_AI === "0") throw new Error("IA desativada (NOTIFY_USE_AI=0)"); // CACHE-OPT v5
 
     const prompt = `
 Gera uma descrição curta e amigável (máx 380 chars, HTML simples) sobre uma ação do utilizador.
@@ -77,7 +85,9 @@ Data: ${createdAt}
 }
 
 /* ===================== Garantir Estrutura ===================== */
+let _notifySchemaReady = false; // CACHE-OPT v5: schema só uma vez por processo (antes: em CADA RegisterAuditAction)
 async function ensureSchema(res, req) {
+  if (_notifySchemaReady) return;
   // Preferência de notificação
   const checkUserCol = `
     SELECT COUNT(*) AS exist FROM INFORMATION_SCHEMA.COLUMNS
@@ -110,6 +120,7 @@ async function ensureSchema(res, req) {
       INDEX (institute_code, recipient_user_id, seen)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
   );
+  _notifySchemaReady = true;
 }
 
 /* ===================== Core ===================== */
@@ -141,13 +152,19 @@ const RegisterAuditAction = async ({
     const audit_id = auditRes?.insertId;
 
     // Buscar info do ator
-    const [actor] = await ExecuteQuery(
-      res,
-      `SELECT ed_user_account_name AS name, ed_user_account_picture AS avatar
-       FROM eduall_user_accounts WHERE ed_user_account_id = ? LIMIT 1`,
-      [actor_user_id],
-      true
-    );
+    const _actorKey = `notify:actor:${actor_user_id}`; // CACHE-OPT v5
+    let actor = await _cacheGet(_actorKey);
+    if (actor === null) {
+      const [_actorRow] = await ExecuteQuery(
+        res,
+        `SELECT ed_user_account_name AS name, ed_user_account_picture AS avatar
+         FROM eduall_user_accounts WHERE ed_user_account_id = ? LIMIT 1`,
+        [actor_user_id],
+        true
+      );
+      actor = _actorRow || null;
+      await _cacheSet(_actorKey, actor, 300);
+    }
     const userName = actor?.name || "Utilizador";
 
     const { html: body_html } = await geminiExplain({
@@ -160,15 +177,20 @@ const RegisterAuditAction = async ({
     const body_text = `${userName} realizou uma ação em ${form}: ${description}`;
 
     // Selecionar destinatários da mesma instituição (exceto o autor)
-    const recipients = await ExecuteQuery(
-      res,
-      `SELECT ed_user_account_id AS id FROM eduall_user_accounts
-       WHERE ed_user_account_institute_code = ?
-         AND ed_user_account_allow_notification = 1
-         AND ed_user_account_id <> ?`,
-      [institute_code, actor_user_id],
-      true
-    );
+    const _rcKey = `notify:${institute_code}:recipients`; // CACHE-OPT v5: lista da escola em cache; o autor é filtrado em JS
+    let _allRecipients = await _cacheGet(_rcKey);
+    if (_allRecipients === null) {
+      _allRecipients = await ExecuteQuery(
+        res,
+        `SELECT ed_user_account_id AS id FROM eduall_user_accounts
+         WHERE ed_user_account_institute_code = ?
+           AND ed_user_account_allow_notification = 1`,
+        [institute_code],
+        true
+      );
+      await _cacheSet(_rcKey, _allRecipients, 120);
+    }
+    const recipients = (_allRecipients || []).filter((r) => String(r.id) !== String(actor_user_id));
 
     if (!recipients?.length) return { ok: true, audit_id, info: "Sem destinatários" };
 
@@ -311,6 +333,7 @@ function buildNotificationsRouter(io) {
         "UPDATE eduall_user_accounts SET ed_user_account_allow_notification = ? WHERE ed_user_account_id = ?",
         [newVal, uid]
       );
+      await _cacheClear("notify:*"); // CACHE-OPT v5: preferência mudou -> lista de destinatários/autores inválida
       res.json({ ok: true, allow: newVal });
     } catch (e) {
       res.status(500).json({ ok: false, error: e.message });

@@ -1,3 +1,4 @@
+// CACHE-OPT v4 (aplicado por apply_cache_optimizations_v4.py)
 const path = require("path");
 const multer = require("multer");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
@@ -35,7 +36,9 @@ const q = (db, type, req) => ({ db, type, data: req });
 /* -----------------------------------------------------------
    0) GARANTIR ESTRUTURA (COLUNAS + TABELA FICHEIROS)
 ------------------------------------------------------------ */
+let _lessonsStructureReady = false; // CACHE-OPT: CREATE TABLE / ALTER TABLE só uma vez por processo
 async function EnsureStructure(req, res) {
+  if (_lessonsStructureReady) return;
   // Tabela de ficheiros da aula
   try {
     await ExecuteQuery(
@@ -79,6 +82,7 @@ async function EnsureStructure(req, res) {
       console.log("ALTER ignorado:", err.message);
     }
   }
+  _lessonsStructureReady = true;
 }
 
 /* -----------------------------------------------------------

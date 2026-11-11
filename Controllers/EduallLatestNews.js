@@ -1,3 +1,4 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
  /* -------------------------------------------------------------------------- */
 /*                           NEWS VIDEOS CONTROLLER                            */
 /* -------------------------------------------------------------------------- */
@@ -8,7 +9,9 @@ const { RegisterAuditAction } = require("./Auditory");
 /* -------------------------------------------------------------------------- */
 /*     FUNÇÃO INTERNA — Garante que as tabelas necessárias existem            */
 /* -------------------------------------------------------------------------- */
+let _newsTablesReady = false; // CACHE-OPT: CREATE TABLE só uma vez por processo
 async function EnsureNewsTables() {
+  if (_newsTablesReady) return;
   try {
     /* -------------------- Tabela principal das notícias -------------------- */
     await ExecuteQuery(
@@ -39,6 +42,7 @@ async function EnsureNewsTables() {
       );
       `
     );
+    _newsTablesReady = true;
   } catch (err) {
     console.error("Erro ao garantir tabelas de novidades:", err.message);
   }

@@ -1,11 +1,21 @@
+// CACHE-OPT v6 (aplicado por apply_cache_optimizations_v6.py)
 const { RegisterAuditAction } = require("./Auditory");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v6: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 const multer = require("multer");
 const path = require("path");
 
 // ─── GET ALL ──────────────────────────────────────────────────────────────────
 const GetScientificPublications = async (req, res) => {
   try {
+      const _ck = `scientificPublications:${req.session.user.eduall_user_session_curentinstitute}:list`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.status(200).json(_hit);
     const query = `
       SELECT * FROM eduall_library_scientific_publications
       LEFT JOIN eduall_library_authors
@@ -18,6 +28,7 @@ const GetScientificPublications = async (req, res) => {
     const rows = await ExecuteQuery(res, query, PARAMS, true, {
       db: "eduall_library_scientific_publications", type: "select", data: req,
     });
+    await _cacheSet(_ck, rows, 300);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({
@@ -31,6 +42,9 @@ const GetScientificPublications = async (req, res) => {
 // ─── GET SINGLE ───────────────────────────────────────────────────────────────
 const GetSingleScientificPublication = async (req, res) => {
   try {
+      const _ck = `scientificPublications:${req.session.user.eduall_user_session_curentinstitute}:single:${req.params.ID}`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.status(200).json(_hit);
     const { ID } = req.params;
     const query = `
       SELECT * FROM eduall_library_scientific_publications
@@ -44,6 +58,7 @@ const GetSingleScientificPublication = async (req, res) => {
     const rows = await ExecuteQuery(res, query, PARAMS, true, {
       db: "eduall_library_scientific_publications", type: "select", data: req,
     });
+    await _cacheSet(_ck, rows, 300);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({
@@ -103,6 +118,7 @@ const RegisterScientificPublication = async (req, res) => {
       description: `Registou a publicação científica "${req.body.pub_title}"`,
     });
 
+    await _cacheClear(`scientificPublications:${req.session.user.eduall_user_session_curentinstitute}:*`);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({
@@ -136,6 +152,7 @@ const ScientificPublicationDelete = async (req, res) => {
       description: `Removeu a publicação científica com ID "${ID}"`,
     });
 
+    await _cacheClear(`scientificPublications:${req.session.user.eduall_user_session_curentinstitute}:*`);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({
@@ -195,6 +212,7 @@ const ScientificPublicationUpdate = async (req, res) => {
       description: `Atualizou a publicação científica "${pub_title}" (ID: ${ID})`,
     });
 
+    await _cacheClear(`scientificPublications:${req.session.user.eduall_user_session_curentinstitute}:*`);
     res.status(200).json(rows);
   } catch (error) {
     console.log(error);

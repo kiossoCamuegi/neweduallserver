@@ -1,19 +1,6 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
-const Cache = require("../Functions/CacheRoutes");
 const { RegisterAuditAction } = require("./Auditory");
-
-const CURRICULUM_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  chapters: (classId, subjectId, instituteCode) => `curriculum:chapters:${classId}:${subjectId}:${instituteCode}`,
-  chapter: (id, instituteCode) => `curriculum:chapter:${id}:${instituteCode}`,
-  subchapters: (chapterId, instituteCode) => `curriculum:subchapters:${chapterId}:${instituteCode}`,
-  subchapter: (id, instituteCode) => `curriculum:subchapter:${id}:${instituteCode}`,
-  lessons: (chapterId, subchapterId, instituteCode) => `curriculum:lessons:${chapterId}:${subchapterId}:${instituteCode}`,
-  lesson: (id, instituteCode) => `curriculum:lesson:${id}:${instituteCode}`,
-  plan: (classId, subjectId, instituteCode) => `curriculum:plan:${classId}:${subjectId}:${instituteCode}`,
-  all: () => "curriculum:*",
-};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const validateTitle = (title, fieldName) => {
@@ -22,17 +9,6 @@ const validateTitle = (title, fieldName) => {
   if (title.trim().length < 2)
     return `${fieldName} deve ter pelo menos 2 caracteres.`;
   return null;
-};
-
-// ─── Refrescar cache geral ─────────────────────────────────────────────────────
-const RefreshCurriculumCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache limpa em ${duration}ms para institute ${instituteCode}`);
 };
 
 /* ===================== CHAPTERS (CAPÍTULOS) ===================== */
@@ -44,15 +20,6 @@ const GetChapters = async (req, res) => {
   try {
     const { class_id, subject_id } = req.params;
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.chapters(class_id, subject_id, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetChapters demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const query = `
       SELECT * FROM eduall_curriculum_chapters
@@ -68,11 +35,6 @@ const GetChapters = async (req, res) => {
       type: "select",
       data: req,
     });
-
-    await Cache.eduallSet(cacheKey, rows, CURRICULUM_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetChapters demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -119,7 +81,6 @@ const CreateChapter = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> CreateChapter: capítulo "${title.trim()}" criado`
     );
-    await RefreshCurriculumCache(req, res, instituteCode);
 
     res.status(201).json({ success: true, message: "Capítulo criado com sucesso!", data: result });
   } catch (error) {
@@ -174,7 +135,6 @@ const UpdateChapter = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> UpdateChapter: capítulo ${id} atualizado`);
-    await RefreshCurriculumCache(req, res, instituteCode);
 
     res.status(200).json({ success: true, message: "Capítulo atualizado com sucesso!", data: result });
   } catch (error) {
@@ -224,7 +184,6 @@ const DeleteChapter = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> DeleteChapter: capítulo ${id} eliminado`);
-    await RefreshCurriculumCache(req, res, instituteCode);
 
     res.status(200).json({ success: true, message: "Capítulo eliminado com sucesso!", data: result });
   } catch (error) {
@@ -273,7 +232,6 @@ const CreateSubchapter = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> CreateSubchapter: subcapítulo "${title.trim()}" criado`
     );
-    await RefreshCurriculumCache(req, res, instituteCode);
 
     res.status(201).json({ success: true, message: "Subcapítulo criado com sucesso!", data: result });
   } catch (error) {
@@ -328,7 +286,6 @@ const UpdateSubchapter = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> UpdateSubchapter: subcapítulo ${id} atualizado`);
-    await RefreshCurriculumCache(req, res, instituteCode);
 
     res.status(200).json({ success: true, message: "Subcapítulo atualizado com sucesso!", data: result });
   } catch (error) {
@@ -378,7 +335,6 @@ const DeleteSubchapter = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> DeleteSubchapter: subcapítulo ${id} eliminado`);
-    await RefreshCurriculumCache(req, res, instituteCode);
 
     res.status(200).json({ success: true, message: "Subcapítulo eliminado com sucesso!", data: result });
   } catch (error) {
@@ -455,7 +411,6 @@ const CreateLesson = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> CreateLesson: aula "${title.trim()}" criada`);
-    await RefreshCurriculumCache(req, res, instituteCode);
 
     res.status(201).json({ success: true, message: "Aula criada com sucesso!", data: result });
   } catch (error) {
@@ -519,7 +474,6 @@ const UpdateLesson = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> UpdateLesson: aula ${id} atualizada`);
-    await RefreshCurriculumCache(req, res, instituteCode);
 
     res.status(200).json({ success: true, message: "Aula atualizada com sucesso!", data: result });
   } catch (error) {
@@ -569,7 +523,6 @@ const DeleteLesson = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> DeleteLesson: aula ${id} eliminada`);
-    await RefreshCurriculumCache(req, res, instituteCode);
 
     res.status(200).json({ success: true, message: "Aula eliminada com sucesso!", data: result });
   } catch (error) {
@@ -590,17 +543,6 @@ const GetClassAndSubjectCurricularPlan = async (req, res) => {
   try {
     const { class_id, subject_id } = req.params;
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.plan(class_id, subject_id, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(
-        `📦⚡ CACHE (rápido) -> GetClassAndSubjectCurricularPlan demorou ${duration}ms (${cacheKey})`
-      );
-      return res.json(cached);
-    }
 
     const rows = await ExecuteQuery(
       res,
@@ -668,13 +610,6 @@ const GetClassAndSubjectCurricularPlan = async (req, res) => {
         }
       }
     }
-
-    await Cache.eduallSet(cacheKey, result, CURRICULUM_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(
-      `🗄️🐢 BASE DE DADOS (lento) -> GetClassAndSubjectCurricularPlan demorou ${duration}ms (${cacheKey})`
-    );
 
     res.json(result);
   } catch (error) {

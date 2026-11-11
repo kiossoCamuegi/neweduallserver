@@ -1,14 +1,10 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const { RegisterAuditAction } = require("./Auditory");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 
 const BOOK_CATEGORY_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `bookCategory:list:${instituteCode}`,
-  single: (id, instituteCode) => `bookCategory:single:${id}:${instituteCode}`,
-  all: () => "bookCategory:*",
-};
 
 // ─── Fetch base (sem cache) ────────────────────────────────────────────────────
 const FetchBookCategories = async (req, res, instituteCode) => {
@@ -25,42 +21,15 @@ const FetchBookCategories = async (req, res, instituteCode) => {
   });
 };
 
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
-const RefreshBookCategoryCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchBookCategories(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, BOOK_CATEGORY_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`);
-
-  return rows;
-};
-
 // ─── GET todas as categorias ──────────────────────────────────────────────────
 const GetBookCategories = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetBookCategories demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchBookCategories(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, BOOK_CATEGORY_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetBookCategories demorou ${duration}ms (${cacheKey})`);
-
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.bookCategory.list(instituteCode),
+      BOOK_CATEGORY_CACHE_TTL,
+      () => FetchBookCategories(req, res, instituteCode)
+    );
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar categorias de livros!", error: error.message });
@@ -71,38 +40,22 @@ const GetBookCategories = async (req, res) => {
 const GetSingleBookCategory = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleBookCategory demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
+    const recordId = CacheKeys.parseId(ID);
+    if (recordId === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
-    const query = `
-      SELECT * FROM eduall_library_categories
-      WHERE ed_library_category_deleted = 0
-        AND ed_library_category_id = ?
-        AND ed_library_category_institute_code = ?
-    `;
-    const PARAMS = [ID, instituteCode];
-    const rows = await ExecuteQuery(res, query, PARAMS, true, {
-      db: "eduall_library_categories",
-      type: "select",
-      data: req,
-    });
-
-    if (!rows || rows.length === 0)
+    // Lista pequena: filtra a partir da lista em cache (uma só chave para invalidar)
+    const list = await Cache.eduallWithCache(
+      CacheKeys.bookCategory.list(instituteCode),
+      BOOK_CATEGORY_CACHE_TTL,
+      () => FetchBookCategories(req, res, instituteCode)
+    );
+    const rows = (list || []).filter((row) => Number(row.ed_library_category_id) === recordId);
+    if (rows.length === 0) {
       return res.status(404).json({ success: false, message: "Categoria de livro não encontrada." });
-
-    await Cache.eduallSet(cacheKey, rows, BOOK_CATEGORY_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleBookCategory demorou ${duration}ms (${cacheKey})`);
-
+    }
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar categoria de livro!", error: error.message });
@@ -170,7 +123,7 @@ const RegisterBookCategory = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> RegisterBookCategory: categoria "${category_title.trim()}" registada`);
-    await RefreshBookCategoryCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.bookCategory.list(instituteCode)]);
 
     res.status(200).json({ success: true, message: "Categoria de livro registada com sucesso!", data: rows });
   } catch (error) {
@@ -231,7 +184,7 @@ const BookCategoryUpdate = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> BookCategoryUpdate: registo ${ID} atualizado`);
-    await RefreshBookCategoryCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.bookCategory.list(instituteCode)]);
 
     res.status(200).json({ success: true, message: "Categoria de livro atualizada com sucesso!", data: rows });
   } catch (error) {
@@ -286,7 +239,7 @@ const BookCategoryDelete = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> BookCategoryDelete: registo ${ID} eliminado`);
-    await RefreshBookCategoryCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.bookCategory.list(instituteCode)]);
 
     res.status(200).json({ success: true, message: "Categoria de livro removida com sucesso!", data: rows });
   } catch (error) {

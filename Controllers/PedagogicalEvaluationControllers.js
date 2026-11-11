@@ -1,3 +1,4 @@
+// CACHE-OPT v5 (aplicado por apply_cache_optimizations.py)
 /* ═══════════════════════════════════════════════════════════════════════════
    PedagogicalEvaluation.js — Controller de Avaliação Pedagógica
    Segue o mesmo padrão dos controllers Employees.js / TeacherTimings.js:
@@ -13,12 +14,12 @@ const EVALUATION_CACHE_TTL = 3600;
  
 /* ─── Chaves de cache ──────────────────────────────────────────────────── */
 const CacheKeys = {
-  list: (instituteCode) => `pedagogicalEvaluation:list:${instituteCode}`,
-  single: (id, instituteCode) => `pedagogicalEvaluation:single:${id}:${instituteCode}`,
-  byProfessor: (professorCode, instituteCode) => `pedagogicalEvaluation:byProfessor:${professorCode}:${instituteCode}`,
-  byPeriod: (periodo, instituteCode) => `pedagogicalEvaluation:byPeriod:${periodo}:${instituteCode}`,
-  dashboard: (instituteCode) => `pedagogicalEvaluation:dashboard:${instituteCode}`,
-  all: () => "pedagogicalEvaluation:*",
+  list: (instituteCode) => `pedagogicalEvaluation:${instituteCode}:list`,
+  single: (id, instituteCode) => `pedagogicalEvaluation:${instituteCode}:single:${id}`,
+  byProfessor: (professorCode, instituteCode) => `pedagogicalEvaluation:${instituteCode}:byProfessor:${professorCode}`,
+  byPeriod: (periodo, instituteCode) => `pedagogicalEvaluation:${instituteCode}:byPeriod:${periodo}`,
+  dashboard: (instituteCode) => `pedagogicalEvaluation:${instituteCode}:dashboard`,
+  all: (instituteCode) => `pedagogicalEvaluation:${instituteCode}:*`,
 };
 
 /* ─── Constantes de domínio (espelham o frontend) ─────────────────────── */
@@ -178,7 +179,7 @@ const FetchSingleEvaluation = async (res, req, id, instituteCode) => {
 const RefreshEvaluationCache = async (res, req, instituteCode) => {
   const startTime = Date.now();
 
-  await Cache.eduallClear(CacheKeys.all());
+  await Cache.eduallClear(CacheKeys.all(instituteCode));
   console.log(`📦🧹 CACHE -> limpa (avaliações) para institute ${instituteCode}`);
 
   const rows = await FetchEvaluations(res, req, instituteCode);

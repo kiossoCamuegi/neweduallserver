@@ -1,4 +1,11 @@
+// CACHE-OPT v6 (aplicado por apply_cache_optimizations_v6.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v6: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 const { RegisterAuditAction } = require("./Auditory");
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -44,6 +51,9 @@ const toCommaSeparated = (val) => {
 ═══════════════════════════════════════════════════════════════════ */
 const GetAllCertificates = async (req, res) => {
   try {
+      const _ck = `certificates:${req.session.user.eduall_user_session_curentinstitute}:list`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.status(200).json(_hit);
     const query = `
       SELECT
         ed_cert_id,
@@ -78,6 +88,7 @@ const GetAllCertificates = async (req, res) => {
       type: "select",
       data: req,
     });
+    await _cacheSet(_ck, rows, 300);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({
@@ -96,6 +107,9 @@ const GetAllCertificates = async (req, res) => {
 ═══════════════════════════════════════════════════════════════════ */
 const GetCertificateById = async (req, res) => {
   try {
+      const _ck = `certificates:${req.session.user.eduall_user_session_curentinstitute}:single:${req.params.ID}`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.status(200).json(_hit);
     const { ID } = req.params;
     const query  = `
       SELECT *
@@ -118,6 +132,7 @@ const GetCertificateById = async (req, res) => {
       });
     }
 
+    await _cacheSet(_ck, rows, 300);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({
@@ -253,6 +268,7 @@ const RegisterCertificate = async (req, res) => {
       description: `Registou novo certificado de ${modelLabel} — turma "${class_title || "—"}", ${students.length} aluno(s).`,
     });
 
+    await _cacheClear(`certificates:${req.session.user.eduall_user_session_curentinstitute}:*`);
     res.status(200).json({
       success:     true,
       inserted_id: result.insertId || null,
@@ -391,6 +407,7 @@ const UpdateCertificate = async (req, res) => {
       description: `Atualizou certificado de ${modelLabel} ID ${ID} — turma "${class_title || "—"}", ${students.length} aluno(s).`,
     });
 
+    await _cacheClear(`certificates:${req.session.user.eduall_user_session_curentinstitute}:*`);
     res.status(200).json({
       success:    true,
       updated_id: parseInt(ID),
@@ -464,6 +481,7 @@ const DeleteCertificate = async (req, res) => {
       description: `Eliminou certificado ID ${ID} — modelo "${certModel}", turma "${classTitle}".`,
     });
 
+    await _cacheClear(`certificates:${req.session.user.eduall_user_session_curentinstitute}:*`);
     res.status(200).json({
       success:    true,
       deleted_id: parseInt(ID),

@@ -1,14 +1,10 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 const { RegisterAuditAction } = require("./Auditory");
 
 const COURSE_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `course:list:${instituteCode}`,
-  single: (id, instituteCode) => `course:single:${id}:${instituteCode}`,
-  all: () => "course:*",
-};
 
 // ─── Validações reutilizáveis ─────────────────────────────────────────────────
 const ValidateCourseFields = (body) => {
@@ -41,22 +37,6 @@ const FetchCourses = async (req, res, instituteCode) => {
   });
 };
 
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
-const RefreshCourseCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchCourses(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, COURSE_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`);
-
-  return rows;
-};
-
 /* ===================== GET OPERATIONS (COM CACHE) ===================== */
 
 /**
@@ -65,21 +45,12 @@ const RefreshCourseCache = async (req, res, instituteCode) => {
 const GetCourse = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
 
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetCourse demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchCourses(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, COURSE_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetCourse demorou ${duration}ms (${cacheKey})`);
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.course.list(instituteCode),
+      COURSE_CACHE_TTL,
+      () => FetchCourses(req, res, instituteCode)
+    );
 
     res.status(200).json(rows);
   } catch (error) {
@@ -99,16 +70,10 @@ const GetCourse = async (req, res) => {
 const GetsingleCourse = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetsingleCourse demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
     const query = `
       SELECT * FROM eduall_courses
@@ -127,11 +92,6 @@ const GetsingleCourse = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, message: "Curso não encontrado." });
-
-    await Cache.eduallSet(cacheKey, rows, COURSE_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetsingleCourse demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -208,7 +168,7 @@ const RegisterCourse = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> RegisterCourse: curso "${course_title.trim()}" registado`
     );
-    await RefreshCourseCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.course.list(instituteCode), CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode)]);
 
     res.status(200).json({
       success: true,
@@ -308,7 +268,7 @@ const CourseUpdate = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> CourseUpdate: curso ${ID} atualizado`);
-    await RefreshCourseCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.course.list(instituteCode), CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode)]);
 
     res.status(200).json({
       success: true,
@@ -405,7 +365,7 @@ const CourseDelete = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> CourseDelete: curso ${ID} eliminado`);
-    await RefreshCourseCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.course.list(instituteCode), CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode)]);
 
     res.status(200).json({
       success: true,

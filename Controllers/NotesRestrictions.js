@@ -1,4 +1,11 @@
+// CACHE-OPT v5 (aplicado por apply_cache_optimizations.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v5: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 
 /* ════════════════════════════════════════════════════════════════════
    TABELA: eduall_quarterly_note_restrictions
@@ -8,9 +15,11 @@ const ExecuteQuery = require("../Functions/ExecuteQuery");
    Chave única: (institute_code, employee_id)
 ════════════════════════════════════════════════════════════════════ */
 
+let _restrictionsTableReady = false; // CACHE-OPT v5: CREATE TABLE + migração só uma vez por processo
 const CreateQuarterlyNoteRestrictionsTable = async (instituteCode) => {
   try {
     if (!instituteCode) throw new Error("Código da escola não fornecido.");
+    if (_restrictionsTableReady) return;
 
     const createTableQuery = `
       CREATE TABLE IF NOT EXISTS eduall_quarterly_note_restrictions (
@@ -85,6 +94,7 @@ const CreateQuarterlyNoteRestrictionsTable = async (instituteCode) => {
         // já pode existir
       }
     }
+    _restrictionsTableReady = true;
   } catch (error) {
     console.error("Erro ao criar/migrar tabela de restrições:", error.message);
     throw error;
@@ -95,6 +105,9 @@ const CreateQuarterlyNoteRestrictionsTable = async (instituteCode) => {
 const GetCurrentEmployeeId = async (req, res, instituteCode) => {
   const currentSystemAccountId = req?.session?.user?.eduall_user_session_ID;
   if (!currentSystemAccountId) return null;
+  const _empKey = `notesRestrictions:${instituteCode}:emp:${currentSystemAccountId}`; // CACHE-OPT v5
+  const _empHit = await _cacheGet(_empKey);
+  if (_empHit !== null) return _empHit;
 
   const query = `
     SELECT ed_system_account_employee
@@ -109,7 +122,9 @@ const GetCurrentEmployeeId = async (req, res, instituteCode) => {
     data: req,
   });
 
-  return result.length ? result[0].ed_system_account_employee : null;
+  const _empId = result.length ? result[0].ed_system_account_employee : null;
+  if (_empId !== null && _empId !== undefined) await _cacheSet(_empKey, _empId, 300);
+  return _empId;
 };
 
 /* ─── Helper: verifica se o utilizador atual é o Diretor Pedagógico ─── */

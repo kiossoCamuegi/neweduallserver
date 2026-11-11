@@ -1,5 +1,15 @@
+// CACHE-OPT v5 (aplicado por apply_cache_optimizations.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v5: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 const axios = require("axios");
+// CACHE-OPT v5: ALTER TABLE / information_schema só uma vez por processo (antes: em cada pedido)
+let _portariaColReady = false;
+let _parentIdCardColReady = false;
 
 /**
  * ============================================================
@@ -191,6 +201,9 @@ const SearchResponsavel = async (req, res) => {
  */
 const GetAllResponsaveisByStudent = async (req, res) => {
     try {
+        const _ck = `parents:${req.session.user.eduall_user_session_curentinstitute}:byStudent:${req.params.STUDENTID}`;
+        const _hit = await _cacheGet(_ck);
+        if (_hit !== null) return res.status(200).json({ success: true, data: _hit });
         const { STUDENTID } = req.params;
         const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
@@ -215,6 +228,7 @@ const GetAllResponsaveisByStudent = async (req, res) => {
             db: "eduall_parents", type: "select", data: req
         });
 
+        await _cacheSet(_ck, rows, 120);
         return res.status(200).json({ success: true, data: rows });
     } catch (error) {
         return res.status(500).json({ success: false, msg: error.message });
@@ -239,11 +253,14 @@ const GetFrequenciaHistorico = async (req, res) => {
         // ── Ensure column exists before we SELECT it ─────────────────────────
         // MySQL 8+: IF NOT EXISTS silently skips if already present.
         // MySQL < 8: the ALTER will throw "Duplicate column" — we swallow it.
+        if (!_portariaColReady) {
         await ExecuteQuery(res,
             `ALTER TABLE eduall_portaria_frequencia
              ADD COLUMN IF NOT EXISTS ed_portaria_freq_registered_by_name VARCHAR(120) DEFAULT NULL`,
             [], false
         ).catch(() => {});
+        _portariaColReady = true;
+        }
 
         const query = `
             SELECT 
@@ -311,6 +328,7 @@ const RegistrarFrequencia = async (req, res) => {
 
         // ── Garantir coluna ed_portaria_freq_registered_by_name existe ──
         // Safe no-op if column already exists (MySQL 8+)
+        if (!_portariaColReady) {
         await ExecuteQuery(res,
             `ALTER TABLE eduall_portaria_frequencia
              ADD COLUMN IF NOT EXISTS ed_portaria_freq_registered_by_name VARCHAR(120) DEFAULT NULL`,
@@ -335,6 +353,8 @@ const RegistrarFrequencia = async (req, res) => {
                  ADD COLUMN ed_portaria_freq_registered_by_name VARCHAR(120) DEFAULT NULL`,
                 [], false
             ).catch(() => {});
+        }
+        _portariaColReady = true;
         }
 
         // ── Inserir registo de frequência ────────────────────────────────
@@ -614,6 +634,7 @@ const RegisterResponsavelPortaria = async (req, res) => {
         }
 
         // ── Garantir que colunas existem (safe — IF NOT EXISTS) ─
+        if (!_parentIdCardColReady) {
         await ExecuteQuery(res,
             `ALTER TABLE eduall_parents
              ADD COLUMN IF NOT EXISTS ed_parent_identityCard VARCHAR(50) DEFAULT NULL`,
@@ -636,6 +657,8 @@ const RegisterResponsavelPortaria = async (req, res) => {
                  ADD COLUMN ed_parent_identityCard VARCHAR(50) DEFAULT NULL`,
                 [], false
             );
+        }
+        _parentIdCardColReady = true;
         }
 
         // ── INSERT encarregado ──────────────────────────────────
@@ -697,6 +720,7 @@ const RegisterResponsavelPortaria = async (req, res) => {
             );
         }
 
+        await _cacheClear(`parents:${req.session.user.eduall_user_session_curentinstitute}:*`);
         return res.status(201).json({
             success: true,
             msg: `Responsável "${parent_name.trim()}" registado e associado ao aluno.`,

@@ -1,6 +1,13 @@
+// CACHE-OPT v5 (aplicado por apply_cache_optimizations.py)
 const multer = require("multer");
 const path = require("path");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v5: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 const { RegisterAuditAction } = require("./Auditory");  // Importa a função de auditoria
 const { VENDUS_CreateInvoiceCodeAndDoc } = require("../Functions/VENDUS");
 
@@ -263,6 +270,7 @@ const RegisterSale = async (req, res) => {
       `;
       const updateStockParams = [prod.product_quantity, prod.product_id, instituteCode];
       await ExecuteQuery(res, updateStockQuery, updateStockParams, false);
+      await _cacheClear(`products:${req.session.user.eduall_user_session_curentinstitute}:*`);  // CACHE-OPT: stock mudou -> lista de produtos em cache fica inválida
     }
 
     await RegisterAuditAction({

@@ -1,15 +1,10 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 const { RegisterAuditAction } = require("./Auditory");
 
-const ATTENDANCE_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `attendance:list:${instituteCode}`,
-  byCode: (employeeCode, instituteCode) => `attendance:byCode:${employeeCode}:${instituteCode}`,
-  single: (id, instituteCode) => `attendance:single:${id}:${instituteCode}`,
-  all: () => "attendance:*",
-};
+const ATTENDANCE_CACHE_TTL = 300; // presenças lançadas com frequência
 
 // ─── Validações reutilizáveis ─────────────────────────────────────────────────
 const ValidateEmployeeAttendanceFields = (body) => {
@@ -106,47 +101,16 @@ const FetchEmployeeAttendanceByCode = async (req, res, employeeCode, instituteCo
   });
 };
 
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
-const RefreshAttendanceCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchEmployeeAttendances(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, ATTENDANCE_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(
-    `🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`
-  );
-
-  return rows;
-};
-
 /* ===================== GET OPERATIONS (COM CACHE) ===================== */
 
 const GetEmployeesAttendance = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
 
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(
-        `📦⚡ CACHE (rápido) -> GetEmployeesAttendance demorou ${duration}ms (${cacheKey})`
-      );
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchEmployeeAttendances(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, ATTENDANCE_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(
-      `🗄️🐢 BASE DE DADOS (lento) -> GetEmployeesAttendance demorou ${duration}ms (${cacheKey})`
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.employeeAttendance.list(instituteCode),
+      ATTENDANCE_CACHE_TTL,
+      () => FetchEmployeeAttendances(req, res, instituteCode)
     );
 
     res.status(200).json(rows);
@@ -164,25 +128,8 @@ const GetEmployeeAttendanceBycode = async (req, res) => {
   try {
     const { CODE } = req.params;
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.byCode(CODE, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(
-        `📦⚡ CACHE (rápido) -> GetEmployeeAttendanceBycode demorou ${duration}ms (${cacheKey})`
-      );
-      return res.status(200).json(cached);
-    }
 
     const rows = await FetchEmployeeAttendanceByCode(req, res, CODE, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, ATTENDANCE_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(
-      `🗄️🐢 BASE DE DADOS (lento) -> GetEmployeeAttendanceBycode demorou ${duration}ms (${cacheKey})`
-    );
 
     res.status(200).json(rows);
   } catch (error) {
@@ -197,18 +144,10 @@ const GetEmployeeAttendanceBycode = async (req, res) => {
 const GetSingleEmployeeAttendance = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(
-        `📦⚡ CACHE (rápido) -> GetSingleEmployeeAttendance demorou ${duration}ms (${cacheKey})`
-      );
-      return res.status(200).json(cached);
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
     const query = `
       SELECT * FROM eduall_employee_attendence
@@ -229,12 +168,6 @@ const GetSingleEmployeeAttendance = async (req, res) => {
         .json({ success: false, message: "Registo de presença não encontrado."});
 
     const result = rows[0];
-    await Cache.eduallSet(cacheKey, result, ATTENDANCE_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(
-      `🗄️🐢 BASE DE DADOS (lento) -> GetSingleEmployeeAttendance demorou ${duration}ms (${cacheKey})`
-    );
 
     res.status(200).json(result);
   } catch (error) {
@@ -323,7 +256,7 @@ const RegisterEmployeeAttendance = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> RegisterEmployeeAttendance: presença registada para funcionário ${employee_attendance_code}`
     );
-    await RefreshAttendanceCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.employeeAttendance.list(instituteCode)]);
 
     res
       .status(201)
@@ -419,7 +352,7 @@ const EmployeeAttendanceUpdate = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> EmployeeAttendanceUpdate: presença ${ID} atualizada`
     );
-    await RefreshAttendanceCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.employeeAttendance.list(instituteCode)]);
 
     res
       .status(200)
@@ -489,7 +422,7 @@ const EmployeeAttendanceDelete = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> EmployeeAttendanceDelete: presença ${ID} eliminada`
     );
-    await RefreshAttendanceCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.employeeAttendance.list(instituteCode)]);
 
     res.status(200).json({
       success: true,

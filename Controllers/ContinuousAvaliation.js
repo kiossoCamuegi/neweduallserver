@@ -1,15 +1,10 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 const { RegisterAuditAction } = require("./Auditory");
 
-const POINT_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `point:list:${instituteCode}`,
-  bySubClass: (subClassId, instituteCode) => `point:subClass:${subClassId}:${instituteCode}`,
-  single: (id, instituteCode) => `point:single:${id}:${instituteCode}`,
-  all: () => "point:*",
-};
+const POINT_CACHE_TTL = 300; // notas lançadas com frequência: TTL curto
 
 // ─── Validações reutilizáveis ─────────────────────────────────────────────────
 const ValidatePointFields = (body) => {
@@ -67,22 +62,6 @@ const FetchPointsBySubClass = async (req, res, subClassId, instituteCode) => {
   });
 };
 
-// ─── Refrescar cache (limpa tudo e repõe as listas) ──────────────────────────
-const RefreshPointCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchPoints(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, POINT_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`);
-
-  return rows;
-};
-
 /* ===================== GET OPERATIONS (COM CACHE) ===================== */
 
 /**
@@ -91,21 +70,12 @@ const RefreshPointCache = async (req, res, instituteCode) => {
 const GetPoints = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
 
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetPoints demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchPoints(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, POINT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetPoints demorou ${duration}ms (${cacheKey})`);
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.point.list(instituteCode),
+      POINT_CACHE_TTL,
+      () => FetchPoints(req, res, instituteCode)
+    );
 
     res.status(200).json(rows);
   } catch (error) {
@@ -126,25 +96,8 @@ const GetPointsBySubClass = async (req, res) => {
   try {
     const { ID } = req.params;
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.bySubClass(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(
-        `📦⚡ CACHE (rápido) -> GetPointsBySubClass demorou ${duration}ms (${cacheKey})`
-      );
-      return res.status(200).json(cached);
-    }
 
     const rows = await FetchPointsBySubClass(req, res, ID, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, POINT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(
-      `🗄️🐢 BASE DE DADOS (lento) -> GetPointsBySubClass demorou ${duration}ms (${cacheKey})`
-    );
 
     res.status(200).json(rows);
   } catch (error) {
@@ -164,16 +117,10 @@ const GetPointsBySubClass = async (req, res) => {
 const GetSinglePoint = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSinglePoint demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
     const query = `
       SELECT * FROM eduall_continuous_avaliations
@@ -192,11 +139,6 @@ const GetSinglePoint = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, message: "Avaliação não encontrada." });
-
-    await Cache.eduallSet(cacheKey, rows, POINT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSinglePoint demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -289,7 +231,7 @@ const RegisterPoint = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> RegisterPoint: avaliação registada para aluno ${cn_avaliation_studentCode}`
     );
-    await RefreshPointCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.point.list(instituteCode)]);
 
     res
       .status(200)
@@ -376,7 +318,7 @@ const PointUpdate = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> PointUpdate: avaliação ${ID} atualizada`);
-    await RefreshPointCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.point.list(instituteCode)]);
 
     res
       .status(200)
@@ -446,7 +388,7 @@ const PointDelete = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> PointDelete: avaliação ${ID} eliminada`);
-    await RefreshPointCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.point.list(instituteCode)]);
 
     res
       .status(200)

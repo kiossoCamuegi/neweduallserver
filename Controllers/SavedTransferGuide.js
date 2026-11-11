@@ -1,4 +1,11 @@
+// CACHE-OPT v6 (aplicado por apply_cache_optimizations_v6.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v6: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 const { RegisterAuditAction } = require("./Auditory");
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -43,6 +50,9 @@ const toCommaSeparated = (val) => {
 ═══════════════════════════════════════════════════════════════════ */
 const GetAllTransferGuides = async (req, res) => {
   try {
+      const _ck = `transferGuides:${req.session.user.eduall_user_session_curentinstitute}:list`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.status(200).json(_hit);
     const query = `
       SELECT
         ed_tg_id,
@@ -75,6 +85,7 @@ const GetAllTransferGuides = async (req, res) => {
       type: "select",
       data: req,
     });
+    await _cacheSet(_ck, rows, 300);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({
@@ -93,6 +104,9 @@ const GetAllTransferGuides = async (req, res) => {
 ═══════════════════════════════════════════════════════════════════ */
 const GetTransferGuideById = async (req, res) => {
   try {
+      const _ck = `transferGuides:${req.session.user.eduall_user_session_curentinstitute}:single:${req.params.ID}`;
+      const _hit = await _cacheGet(_ck);
+      if (_hit !== null) return res.status(200).json(_hit);
     const { ID } = req.params;
     const query  = `
       SELECT *
@@ -115,6 +129,7 @@ const GetTransferGuideById = async (req, res) => {
       });
     }
 
+    await _cacheSet(_ck, rows, 300);
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({
@@ -237,6 +252,7 @@ const RegisterTransferGuide = async (req, res) => {
       description: `Registou nova guia de transferência — turma "${class_title || "—"}", ${students.length} aluno(s): ${toCommaSeparated(student_names)}.`,
     });
 
+    await _cacheClear(`transferGuides:${req.session.user.eduall_user_session_curentinstitute}:*`);
     res.status(200).json({
       success:     true,
       inserted_id: result.insertId || null,
@@ -371,6 +387,7 @@ const UpdateTransferGuide = async (req, res) => {
       description: `Atualizou guia de transferência ID ${ID} — turma "${class_title || "—"}", ${students.length} aluno(s).`,
     });
 
+    await _cacheClear(`transferGuides:${req.session.user.eduall_user_session_curentinstitute}:*`);
     res.status(200).json({
       success:    true,
       updated_id: parseInt(ID),
@@ -444,6 +461,7 @@ const DeleteTransferGuide = async (req, res) => {
       description: `Eliminou guia de transferência ID ${ID} — aluno "${studentName}", turma "${classTitle}".`,
     });
 
+    await _cacheClear(`transferGuides:${req.session.user.eduall_user_session_curentinstitute}:*`);
     res.status(200).json({
       success:    true,
       deleted_id: parseInt(ID),

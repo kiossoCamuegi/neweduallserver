@@ -1,14 +1,6 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const { RegisterAuditAction } = require("./Auditory");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
-const Cache = require("../Functions/CacheRoutes");
-
-const ACCOUNTS_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `accounts_payable_receivable:list:${instituteCode}`,
-  single: (id, instituteCode) => `accounts_payable_receivable:single:${id}:${instituteCode}`,
-  all: () => "accounts_payable_receivable:*",
-};
 
 const FetchAccountsPayableAndReceivable = async (req, res, instituteCode) => {
   const query = `SELECT * FROM eduall_accounts_payable_and_receivable 
@@ -22,40 +14,10 @@ const FetchAccountsPayableAndReceivable = async (req, res, instituteCode) => {
   });
 };
 
-const RefreshAccountsCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchAccountsPayableAndReceivable(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, ACCOUNTS_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`);
-
-  return rows;
-};
-
 const GetAccountsPayableAndReceivable = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetAccountsPayableAndReceivable demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
     const rows = await FetchAccountsPayableAndReceivable(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, ACCOUNTS_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetAccountsPayableAndReceivable demorou ${duration}ms (${cacheKey})`);
-
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar contas!", error: error.message });
@@ -66,15 +28,6 @@ const GetSingleAccountPayableAndReceivable = async (req, res) => {
   try {
     const { ID } = req.params;
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleAccountPayableAndReceivable demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const query = 'SELECT * FROM eduall_accounts_payable_and_receivable WHERE ed_accounts_payable_and_receivable_deleted = 0 AND ed_account_payable_receivable_id = ? AND ed_accounts_payable_and_receivable_institute_code = ?';
     const rows = await ExecuteQuery(res, query, [ID, instituteCode], true, {
@@ -82,11 +35,6 @@ const GetSingleAccountPayableAndReceivable = async (req, res) => {
       type: "select",
       data: req,
     });
-
-    await Cache.eduallSet(cacheKey, rows, ACCOUNTS_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleAccountPayableAndReceivable demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -119,7 +67,6 @@ const RegisterAccountPayableAndReceivable = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> RegisterAccountPayableAndReceivable: conta registada`);
-    await RefreshAccountsCache(req, res, instituteCode);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -143,7 +90,6 @@ const DeleteAccountPayableAndReceivable = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> DeleteAccountPayableAndReceivable: registo ${ID} eliminado`);
-    await RefreshAccountsCache(req, res, instituteCode);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -185,7 +131,6 @@ const UpdateAccountPayableAndReceivable = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> UpdateAccountPayableAndReceivable: registo ${ID} atualizado`);
-    await RefreshAccountsCache(req, res, instituteCode);
 
     res.status(200).json(rows);
   } catch (error) {

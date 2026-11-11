@@ -1,14 +1,10 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const { RegisterAuditAction } = require("./Auditory");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 
-const BORROWED_BOOK_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `borrowedBook:list:${instituteCode}`,
-  single: (id, instituteCode) => `borrowedBook:single:${id}:${instituteCode}`,
-  all: () => "borrowedBook:*",
-};
+const BORROWED_BOOK_CACHE_TTL = 600; // devoluções/atrasos mudam com frequência
 
 // ─── Fetch base (sem cache) ────────────────────────────────────────────────────
 const FetchBorrowedBooks = async (req, res, instituteCode) => {
@@ -80,22 +76,6 @@ const transformBorrowedBooks = (borrowedBooksRows, booksRows) => {
   return finalData;
 };
 
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
-const RefreshBorrowedBookCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchBorrowedBooks(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, BORROWED_BOOK_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`);
-
-  return rows;
-};
-
 // ─── Validações reutilizáveis ─────────────────────────────────────────────────
 const ValidateBorrowedBookFields = (body) => {
   const errors = [];
@@ -116,21 +96,12 @@ const ValidateBorrowedBookFields = (body) => {
 const GetBorrowedBooks = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
 
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetBorrowedBooks demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchBorrowedBooks(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, BORROWED_BOOK_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetBorrowedBooks demorou ${duration}ms (${cacheKey})`);
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.borrowedBook.list(instituteCode),
+      BORROWED_BOOK_CACHE_TTL,
+      () => FetchBorrowedBooks(req, res, instituteCode)
+    );
 
     res.status(200).json(rows);
   } catch (error) {
@@ -148,16 +119,10 @@ const GetBorrowedBooks = async (req, res) => {
 const GetSingleBorrowedBook = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleBorrowedBook demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
     const query = `
       SELECT * FROM eduall_library_borrowed_books
@@ -175,11 +140,6 @@ const GetSingleBorrowedBook = async (req, res) => {
 
     if (!rows || rows.length === 0)
       return res.status(404).json({ success: false, message: "Empréstimo de livro não encontrado." });
-
-    await Cache.eduallSet(cacheKey, rows, BORROWED_BOOK_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleBorrowedBook demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -260,7 +220,7 @@ const RegisterBorrowedBook = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> RegisterBorrowedBook: empréstimo registado para aluno ${borrow_book_student}`
     );
-    await RefreshBorrowedBookCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.borrowedBook.list(instituteCode), CacheKeys.exemplar.list(instituteCode)]);
 
     res.status(200).json({
       success: true,
@@ -368,7 +328,7 @@ const BorrowedBookUpdate = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> BorrowedBookUpdate: registo ${ID} atualizado`);
-    await RefreshBorrowedBookCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.borrowedBook.list(instituteCode), CacheKeys.exemplar.list(instituteCode)]);
 
     res.status(200).json({
       success: true,
@@ -438,7 +398,7 @@ const BorrowedBookDelete = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> BorrowedBookDelete: registo ${ID} eliminado`);
-    await RefreshBorrowedBookCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.borrowedBook.list(instituteCode), CacheKeys.exemplar.list(instituteCode)]);
 
     res.status(200).json({
       success: true,

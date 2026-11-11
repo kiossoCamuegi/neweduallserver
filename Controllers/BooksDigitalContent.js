@@ -1,6 +1,8 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const { RegisterAuditAction } = require("./Auditory");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -14,12 +16,6 @@ if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
   console.log(`📁 Criado diretório: ${UPLOAD_DIR}`);
 }
-
-const CacheKeys = {
-  list: (instituteCode) => `digitalContent:list:${instituteCode}`,
-  single: (id, instituteCode) => `digitalContent:single:${id}:${instituteCode}`,
-  all: () => "digitalContent:*",
-};
 
 // ─── Fetch base (sem cache) ────────────────────────────────────────────────────
 const FetchDigitalContents = async (req, res, instituteCode) => {
@@ -39,30 +35,6 @@ const FetchDigitalContents = async (req, res, instituteCode) => {
     type: "select",
     data: req,
   });
-};
-
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
-const RefreshDigitalContentCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  try {
-    await Cache.eduallClear(CacheKeys.all());
-    console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-    const rows = await FetchDigitalContents(req, res, instituteCode);
-    
-    if (rows && rows.length > 0) {
-      await Cache.eduallSet(CacheKeys.list(instituteCode), rows, DIGITAL_CONTENT_CACHE_TTL);
-    }
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`);
-
-    return rows;
-  } catch (err) {
-    console.error(`❌ Erro ao refrescar cache: ${err.message}`);
-    return [];
-  }
 };
 
 // ─── Validações reutilizáveis ─────────────────────────────────────────────────
@@ -99,26 +71,12 @@ const GetDigitalContents = async (req, res) => {
       });
     }
 
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
-
-    // Tentar obter do cache
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null && Array.isArray(cached)) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetDigitalContents demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
-    // Se não estiver em cache, buscar da BD
-    const rows = await FetchDigitalContents(req, res, instituteCode);
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.digitalContent.list(instituteCode),
+      DIGITAL_CONTENT_CACHE_TTL,
+      () => FetchDigitalContents(req, res, instituteCode)
+    );
     
-    if (rows && Array.isArray(rows)) {
-      await Cache.eduallSet(cacheKey, rows, DIGITAL_CONTENT_CACHE_TTL);
-    }
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetDigitalContents demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(rows || []);
   } catch (error) {
@@ -135,6 +93,9 @@ const GetDigitalContents = async (req, res) => {
 const GetSingleDigitalContent = async (req, res) => {
   try {
     const { ID } = req.params;
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
+    }
     const instituteCode = req.session?.user?.eduall_user_session_curentinstitute;
 
     if (!instituteCode) {
@@ -142,16 +103,6 @@ const GetSingleDigitalContent = async (req, res) => {
         success: false,
         message: "Sessão inválida ou instituição não identificada.",
       });
-    }
-
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null && Array.isArray(cached)) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleDigitalContent demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
     }
 
     const query = `
@@ -178,11 +129,6 @@ const GetSingleDigitalContent = async (req, res) => {
         message: "Conteúdo digital não encontrado.",
       });
     }
-
-    await Cache.eduallSet(cacheKey, rows, DIGITAL_CONTENT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleDigitalContent demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -303,7 +249,7 @@ const RegisterDigitalContent = async (req, res) => {
     console.log(`✅ RegisterDigitalContent: conteúdo "${content_title.trim()}" registado com sucesso`);
     
     // Refrescar cache para que a lista updated imediatamente
-    await RefreshDigitalContentCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.digitalContent.list(instituteCode)]);
 
     res.status(200).json({
       success: true,
@@ -438,7 +384,7 @@ const DigitalContentUpdate = async (req, res) => {
     console.log(`✅ DigitalContentUpdate: registo ${ID} atualizado com sucesso`);
     
     // Refrescar cache
-    await RefreshDigitalContentCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.digitalContent.list(instituteCode)]);
 
     res.status(200).json({
       success: true,
@@ -515,7 +461,7 @@ const DigitalContentDelete = async (req, res) => {
     console.log(`✅ DigitalContentDelete: registo ${ID} eliminado com sucesso`);
     
     // Refrescar cache
-    await RefreshDigitalContentCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.digitalContent.list(instituteCode)]);
 
     res.status(200).json({
       success: true,

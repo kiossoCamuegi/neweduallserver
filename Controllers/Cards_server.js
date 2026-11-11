@@ -1,3 +1,4 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 // cardDesigner.routes.js
 // Requisitos no projeto servidor: express, multer, path
 // Este ficheiro exporta um Router para ser montado com app.use(require('./cardDesigner.routes')).
@@ -23,7 +24,9 @@ const ok = (res, data) => res.status(200).json({ success: true, data });
 const fail = (res, msg, code=500) => res.status(code).json({ success:false, message: msg });
 
 // ====== Ensure tables (idempotente) ======
+let _tablesReady = false; // CACHE-OPT: criar tabela/índice só uma vez por processo
 async function ensureTables(req, res) {
+  if (_tablesReady) return;
   // Tabela de templates de cartões
   await ExecuteQuery(res, `
     CREATE TABLE IF NOT EXISTS eduall_card_templates (
@@ -42,6 +45,7 @@ async function ensureTables(req, res) {
   await ExecuteQuery(res, `
     CREATE INDEX IF NOT EXISTS idx_cardtpl_inst ON eduall_card_templates(institute_code, deleted)
   `, [], false, { db: "eduall_card_templates", type: "index", data: req });
+  _tablesReady = true;
 }
 
 // ====== Middleware de instituto ======

@@ -1,13 +1,24 @@
+// CACHE-OPT v5 (aplicado por apply_cache_optimizations.py)
 const multer = require('multer');
 const path = require('path');
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v5: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 const { RegisterAuditAction } = require("./Auditory");  // Importando a função de auditoria
 
 const Getparents = async (req, res) => {
     try {
+        const _ck = `parents:${req.session.user.eduall_user_session_curentinstitute}:list`;
+        const _hit = await _cacheGet(_ck);
+        if (_hit !== null) return res.status(200).json(_hit);
         const query = 'SELECT * FROM eduall_parents WHERE ed_parent_deleted = 0 AND ed_parent_institute_code = ? ORDER BY ed_parent_name ASC';
         const PARAMS = [req.session.user.eduall_user_session_curentinstitute];
         const result = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_parents", type: "select", data: req });
+        await _cacheSet(_ck, result, 600);
         res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ success: false, message: "Falha ao buscar os pais!", error: error.message });
@@ -32,6 +43,7 @@ const RegisterParent = async (req, res) => {
             description: `Registrou um novo encarregado (${req.body.parent_name})`,
         });
 
+        await _cacheClear(`parents:${req.session.user.eduall_user_session_curentinstitute}:*`);
         res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ success: false, message: "Falha ao registrar o pai!", error: error.message });
@@ -71,6 +83,7 @@ const RegisterParentKid = async (req, res) => {
             description: `Atribui um estudante ao encarregado com ID = (${req.body.parentkid_parent})`,
         });
 
+        await _cacheClear(`parents:${req.session.user.eduall_user_session_curentinstitute}:*`);
         res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ success: false, message: "Falha ao registrar dados!", error: error.message });
@@ -80,6 +93,9 @@ const RegisterParentKid = async (req, res) => {
 
 const GetParentKids = async (req, res) => {
     try {
+        const _ck = `parents:${req.session.user.eduall_user_session_curentinstitute}:kids:${req.params.ID}`;
+        const _hit = await _cacheGet(_ck);
+        if (_hit !== null) return res.status(200).json(_hit);
         const { ID } = req.params;
         const query = `SELECT * FROM eduall_parents_kids 
         LEFT JOIN eduall_students ON eduall_students.ed_student_id = ed_parentkid_student 
@@ -87,6 +103,7 @@ const GetParentKids = async (req, res) => {
         WHERE ed_parentkid_deleted = 0 AND eduall_students.ed_student_deleted  = 0  AND eduall_parents.ed_parent_deleted = 0 AND  ed_parentkid_parent = ? AND ed_parentkid_institute_code = ?`;
         const PARAMS = [ID, req.session.user.eduall_user_session_curentinstitute];
         const result = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_parents", type: "select", data: req });
+        await _cacheSet(_ck, result, 120);
         res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ success: false, message: "Falha ao buscar dados!", error: error.message });
@@ -95,6 +112,9 @@ const GetParentKids = async (req, res) => {
 
 const GetKidsParents = async (req, res) => {
     try {
+        const _ck = `parents:${req.session.user.eduall_user_session_curentinstitute}:kidsParents:${req.params.ID}`;
+        const _hit = await _cacheGet(_ck);
+        if (_hit !== null) return res.status(200).json(_hit);
         const { ID } = req.params;
         const query = `SELECT * FROM eduall_parents_kids 
         LEFT JOIN eduall_students ON eduall_students.ed_student_id = ed_parentkid_student 
@@ -102,6 +122,7 @@ const GetKidsParents = async (req, res) => {
         WHERE ed_parentkid_deleted = 0 AND eduall_students.ed_student_deleted  = 0  AND eduall_parents.ed_parent_deleted = 0 AND ed_parentkid_student = ? AND ed_parentkid_institute_code = ?`;
         const PARAMS = [ID, req.session.user.eduall_user_session_curentinstitute];
         const result = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_parents", type: "select", data: req });
+        await _cacheSet(_ck, result, 120);
         res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ success: false, message: "Falha ao buscar o dados !", error: error.message });
@@ -124,6 +145,7 @@ const ParentkidDelete = async (req, res) => {
             description: `Eliminou uma atribuição de estudante ao encarregado ${ID}`,
         });
 
+        await _cacheClear(`parents:${req.session.user.eduall_user_session_curentinstitute}:*`);
         res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ success: false, message: "Falha ao deletar o pai!", error: error.message });
@@ -153,6 +175,7 @@ const ParentUpdate = async (req, res) => {
                 description: `Atualizou o encarregado (${parent_name}) com o código ${ID}`,
             });
 
+            await _cacheClear(`parents:${req.session.user.eduall_user_session_curentinstitute}:*`);
             res.status(200).json(result);
         } else {
             const { parent_name, parent_degree_of_kinship, parent_gender, parent_email, parent_address, parent_job, parent_phone, parent_phone2, parent_nacionality } = req.body;
@@ -171,6 +194,7 @@ const ParentUpdate = async (req, res) => {
                 description: `Atualizou o encarregado (${parent_name}) com o código ${ID}`,
             });
 
+            await _cacheClear(`parents:${req.session.user.eduall_user_session_curentinstitute}:*`);
             res.status(200).json(result);
         }
     } catch (error) {
@@ -180,10 +204,14 @@ const ParentUpdate = async (req, res) => {
 
 const GetSingleparent = async (req, res) => {
     try {
+        const _ck = `parents:${req.session.user.eduall_user_session_curentinstitute}:single:${req.params.ID}`;
+        const _hit = await _cacheGet(_ck);
+        if (_hit !== null) return res.status(200).json(_hit);
         const { ID } = req.params;
         const query = 'SELECT * FROM eduall_parents WHERE ed_parent_deleted = 0 AND ed_parent_id = ? AND ed_parent_institute_code = ?';
         const PARAMS = [ID, req.session.user.eduall_user_session_curentinstitute];
         const result = await ExecuteQuery(res, query, PARAMS, true, { db: "eduall_parents", type: "select", data: req });
+        await _cacheSet(_ck, result, 600);
         res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ success: false, message: "Falha ao buscar o pai!", error: error.message });
@@ -206,6 +234,7 @@ const ParentDelete = async (req, res) => {
             description: `Eliminou o encarregado com ID ${ID}`,
         });
 
+        await _cacheClear(`parents:${req.session.user.eduall_user_session_curentinstitute}:*`);
         res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ success: false, message: "Falha ao deletar o pai!", error: error.message });

@@ -1,3 +1,4 @@
+// CACHE-OPT v2 (aplicado por apply_cache_optimizations_v2.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 
 const { RegisterAuditAction } = require("./Auditory"); 
@@ -166,15 +167,6 @@ function logBatchSummary({ total, succeeded, failed, matriculas, confirmacoes, d
   console.log(`${C.dim}  Duração total:${C.reset}     ${durationMs}ms`);
   console.log("");
 }
-
-// ──────────────────────────────────────────────────────────────
-// CACHE
-// ──────────────────────────────────────────────────────────────
-const RefreshEnrollmentCaches = async (instituteCode) => {
-  const startTime = Date.now();
-  await Cache.eduallClear("enrollment:*");
-  console.log(`${C.dim}[CACHE] limpa para institute ${instituteCode} (EnrollmentUnified) em ${Date.now() - startTime}ms${C.reset}`);
-};
 
 // ──────────────────────────────────────────────────────────────
 // HELPERS
@@ -1266,10 +1258,6 @@ const RegisterUnifiedEnrollmentOrConfirmation = async (req, res) => {
     const failed = results.filter((r) => !r.success);
     const matriculas = results.filter((r) => r.action === "matricula" && r.success).length;
     const confirmacoes = results.filter((r) => (r.action === "confirmacao" || r.action === "confirmacao_pagamento") && r.success).length;
-
-    if (succeeded.length > 0) {
-      await RefreshEnrollmentCaches(instituteCode);
-    }
 
     const durationMs = Date.now() - t0;
 

@@ -1,4 +1,11 @@
+// CACHE-OPT v7 (aplicado por apply_cache_optimizations_v7.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v7: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 const { RegisterAuditAction } = require("./Auditory");
 const fs = require("fs");
 const path = require("path");
@@ -424,6 +431,7 @@ async function SeedLibraryBooksFromOpenLibrary(req, res) {
       console.table(state.skippedItems.map((s) => ({ Título: s.title })));
     }
 
+    await _cacheClear(`publishers:${instituteCode}:*`);  // CACHE-OPT v7: a importação cria editoras -> lista em cache (v6) inválida
     const reportPath = path.join(__dirname, `seed-report-${Date.now()}.json`);
     fs.writeFileSync(reportPath, JSON.stringify({
       instituteCode,

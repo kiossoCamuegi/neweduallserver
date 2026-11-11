@@ -1,16 +1,12 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 const { RegisterAuditAction } = require("./Auditory");
 
 const TABLE = "eduall_bulletin_history";
 const AUDIT_FORM = "Histórico de Boletins";
 const BULLETIN_HISTORY_CACHE_TTL = 3600;
-
-const CacheKeys = {
-  list: (instituteCode) => `bulletinHistory:list:${instituteCode}`,
-  single: (id, instituteCode) => `bulletinHistory:single:${id}:${instituteCode}`,
-  all: () => "bulletinHistory:*",
-};
 
 // ─── Helpers para serialização ────────────────────────────────────────────────
 const toJson = (val) => {
@@ -87,24 +83,6 @@ const FetchBulletinHistory = async (req, res, instituteCode) => {
   });
 };
 
-// ─── Refrescar cache (limpa tudo e repõe a lista) ─────────────────────────────
-const RefreshBulletinHistoryCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-
-  await Cache.eduallClear(CacheKeys.all());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
-
-  const rows = await FetchBulletinHistory(req, res, instituteCode);
-  await Cache.eduallSet(CacheKeys.list(instituteCode), rows, BULLETIN_HISTORY_CACHE_TTL);
-
-  const duration = Date.now() - startTime;
-  console.log(
-    `🗄️🐢 BASE DE DADOS (lento) -> cache reposta em ${duration}ms para institute ${instituteCode}`
-  );
-
-  return rows;
-};
-
 /* ===================== GET OPERATIONS (COM CACHE) ===================== */
 
 /**
@@ -113,24 +91,11 @@ const RefreshBulletinHistoryCache = async (req, res, instituteCode) => {
 const GetAllBulletinHistory = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
 
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(
-        `📦⚡ CACHE (rápido) -> GetAllBulletinHistory demorou ${duration}ms (${cacheKey})`
-      );
-      return res.status(200).json(cached);
-    }
-
-    const rows = await FetchBulletinHistory(req, res, instituteCode);
-    await Cache.eduallSet(cacheKey, rows, BULLETIN_HISTORY_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(
-      `🗄️🐢 BASE DE DADOS (lento) -> GetAllBulletinHistory demorou ${duration}ms (${cacheKey})`
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.bulletinHistory.list(instituteCode),
+      BULLETIN_HISTORY_CACHE_TTL,
+      () => FetchBulletinHistory(req, res, instituteCode)
     );
 
     res.status(200).json(rows);
@@ -149,18 +114,10 @@ const GetAllBulletinHistory = async (req, res) => {
 const GetBulletinHistoryById = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(
-        `📦⚡ CACHE (rápido) -> GetBulletinHistoryById demorou ${duration}ms (${cacheKey})`
-      );
-      return res.status(200).json(cached);
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
     const query = `
       SELECT *
@@ -182,13 +139,6 @@ const GetBulletinHistoryById = async (req, res) => {
         msg: "Boletim não encontrado.",
       });
     }
-
-    await Cache.eduallSet(cacheKey, rows, BULLETIN_HISTORY_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(
-      `🗄️🐢 BASE DE DADOS (lento) -> GetBulletinHistoryById demorou ${duration}ms (${cacheKey})`
-    );
 
     res.status(200).json(rows);
   } catch (error) {
@@ -324,7 +274,7 @@ const RegisterBulletinHistory = async (req, res) => {
     console.log(
       `🗄️🐢 BASE DE DADOS (lento) -> RegisterBulletinHistory: boletim registado para turma "${class_title}"`
     );
-    await RefreshBulletinHistoryCache(req, res, institute);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.bulletinHistory.list(institute)]);
 
     res.status(200).json({
       success: true,
@@ -485,7 +435,7 @@ const UpdateBulletinHistory = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> UpdateBulletinHistory: boletim ${ID} atualizado`);
-    await RefreshBulletinHistoryCache(req, res, institute);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.bulletinHistory.list(institute)]);
 
     res.status(200).json({
       success: true,
@@ -555,7 +505,7 @@ const DeleteBulletinHistory = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> DeleteBulletinHistory: boletim ${ID} eliminado`);
-    await RefreshBulletinHistoryCache(req, res, institute);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.bulletinHistory.list(institute)]);
 
     res.status(200).json({
       success: true,

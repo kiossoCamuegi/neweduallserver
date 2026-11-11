@@ -1,3 +1,4 @@
+// CACHE-OPT v2 (aplicado por apply_cache_optimizations_v2.py)
 // ─────────────────────────────────────────────────────────────────────────────
 //  Enrollmenttemplates.js  (Backend Controller – COM CACHE INTEGRADO)
 //  Handles: Enrollment Template CRUD operations
@@ -7,32 +8,12 @@
 const { RegisterAuditAction } = require("./Auditory");
 const ExecuteQuery            = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 
 // ──────────────────────────────────────────────────────────────
 // ── CACHE CONFIGURATION (same pattern as AcademicYear.js) ─────
 // ──────────────────────────────────────────────────────────────
 const ENROLLMENT_TEMPLATE_CACHE_TTL = 3600; // 1 hour
-
-const CacheKeys = {
-  list: (instituteCode) => `enrollmenttemplate:list:${instituteCode}`,
-  single: (id, instituteCode) => `enrollmenttemplate:single:${id}:${instituteCode}`,
-  byModel: (modelKey, instituteCode) => `enrollmenttemplate:bymodel:${modelKey}:${instituteCode}`,
-  allGlobal: () => "enrollmenttemplate:*",
-};
-
-/**
- * ──────────────────────────────────────────────────────────────
- * REFRESH CACHE FUNCTION — called after writes
- * ──────────────────────────────────────────────────────────────
- */
-const RefreshEnrollmentTemplateCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-  await Cache.eduallClear(CacheKeys.allGlobal());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode} (EnrollmentTemplate)`);
-  
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🧹 CACHE CLEAR (EnrollmentTemplate) demorou ${duration}ms para institute ${instituteCode}`);
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ── GET ALL TEMPLATES FOR CURRENT INSTITUTE
@@ -41,34 +22,22 @@ const RefreshEnrollmentTemplateCache = async (req, res, instituteCode) => {
 const GetEnrollmentTemplates = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetEnrollmentTemplates demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
-
-    const query = `
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.enrollmentTemplate.list(instituteCode),
+      ENROLLMENT_TEMPLATE_CACHE_TTL,
+      () => ExecuteQuery(
+        res,
+        `
       SELECT * FROM eduall_enrollment_templates
       WHERE ed_enroll_tpl_deleted = 0
         AND ed_enroll_tpl_institute_code = ?
       ORDER BY ed_enroll_tpl_updated_at DESC
-    `;
-    const PARAMS = [instituteCode];
-    const rows = await ExecuteQuery(res, query, PARAMS, true, {
-      db: "eduall_enrollment_templates", type: "select", data: req,
-    });
-
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, rows, ENROLLMENT_TEMPLATE_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetEnrollmentTemplates demorou ${duration}ms (${cacheKey})`);
-
+    `,
+        [instituteCode],
+        true,
+        { db: "eduall_enrollment_templates", type: "select", data: req }
+      )
+    );
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar modelos de matrícula!", error: error.message });
@@ -82,17 +51,10 @@ const GetEnrollmentTemplates = async (req, res) => {
 const GetSingleEnrollmentTemplate = async (req, res) => {
   try {
     const { ID } = req.params;
-    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleEnrollmentTemplate demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
     }
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
 
     const query = `
       SELECT * FROM eduall_enrollment_templates
@@ -104,12 +66,6 @@ const GetSingleEnrollmentTemplate = async (req, res) => {
     const rows = await ExecuteQuery(res, query, PARAMS, true, {
       db: "eduall_enrollment_templates", type: "select", data: req,
     });
-
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, rows, ENROLLMENT_TEMPLATE_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleEnrollmentTemplate demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -125,16 +81,6 @@ const GetActiveTemplateByModel = async (req, res) => {
   try {
     const { MODEL } = req.params;
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CacheKeys.byModel(MODEL, instituteCode);
-    const startTime = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetActiveTemplateByModel demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const query = `
       SELECT * FROM eduall_enrollment_templates
@@ -150,12 +96,7 @@ const GetActiveTemplateByModel = async (req, res) => {
       db: "eduall_enrollment_templates", type: "select", data: req,
     });
 
-    // ── Set cache ──
     const resultData = rows[0] || null;
-    await Cache.eduallSet(cacheKey, resultData, ENROLLMENT_TEMPLATE_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetActiveTemplateByModel demorou ${duration}ms (${cacheKey})`);
 
     // Return first or empty object — frontend handles missing gracefully
     res.status(200).json(resultData);
@@ -211,7 +152,7 @@ const RegisterEnrollmentTemplate = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> RegisterEnrollmentTemplate: modelo "${tpl_name}" criado`);
-    await RefreshEnrollmentTemplateCache(req, res, inst);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.enrollmentTemplate.list(inst)]);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -274,7 +215,7 @@ const UpdateEnrollmentTemplate = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> UpdateEnrollmentTemplate: modelo ID ${ID} atualizado`);
-    await RefreshEnrollmentTemplateCache(req, res, inst);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.enrollmentTemplate.list(inst)]);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -309,7 +250,7 @@ const DeleteEnrollmentTemplate = async (req, res) => {
     });
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> DeleteEnrollmentTemplate: modelo ID ${ID} eliminado`);
-    await RefreshEnrollmentTemplateCache(req, res, inst);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.enrollmentTemplate.list(inst)]);
 
     res.status(200).json(rows);
   } catch (error) {

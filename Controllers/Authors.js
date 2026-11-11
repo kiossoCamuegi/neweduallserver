@@ -1,3 +1,4 @@
+// CACHE-OPT v1 (aplicado por apply_cache_optimizations.py)
 /**
  * ╔═══════════════════════════════════════════════════════════════════════════╗
  * ║                         AUTHOR CONTROLLER                                ║
@@ -19,6 +20,7 @@
 const { RegisterAuditAction } = require("./Auditory");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
+const CacheKeys = require("../Functions/CacheKeys");
 const path = require("path");
 const fs = require("fs").promises;
 
@@ -61,16 +63,6 @@ const log = {
   
   cache: (msg) => 
     console.log(`${COLORS.BOLD}${COLORS.CYAN}📦 ${msg}${COLORS.RESET}`),
-};
-
-/**
- * ─── CACHE KEYS ───────────────────────────────────────────────────────────
- * Chaves estruturadas para cache
- */
-const CacheKeys = {
-  list: (instituteCode) => `author:list:${instituteCode}`,
-  single: (id, instituteCode) => `author:single:${id}:${instituteCode}`,
-  all: () => "author:*",
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -194,56 +186,7 @@ const FetchAuthors = async (req, res, instituteCode) => {
     return rows;
   } catch (error) {
     log.error("Erro ao buscar autores", error);
-    return [];
-  }
-};
-
-/**
- * Refrescar cache de autores (limpar e recarregar)
- * @param {Object} req - Request do Express
- * @param {Object} res - Response do Express
- * @param {string} instituteCode - Código do instituto
- * @returns {Promise<Array>} Lista de autores recarregada
- */
-const RefreshAuthorCache = async (req, res, instituteCode) => {
-  try {
-    const startTime = Date.now();
-    log.cache(`Limpando cache para institute: ${instituteCode}`);
-
-    // Limpar todo o cache de autores
-    await Cache.eduallClear(CacheKeys.all());
-
-    // Recarregar lista completa
-    const rows = await FetchAuthors(req, res, instituteCode);
-
-    if (!rows || rows.length === 0) {
-      log.warning(
-        `Nenhum autor encontrado ao refrescar cache para ${instituteCode}`
-      );
-      await Cache.eduallSet(
-        CacheKeys.list(instituteCode),
-        [],
-        AUTHOR_CACHE_TTL
-      );
-      return [];
-    }
-
-    // Guardar em cache
-    await Cache.eduallSet(
-      CacheKeys.list(instituteCode),
-      rows,
-      AUTHOR_CACHE_TTL
-    );
-
-    const duration = Date.now() - startTime;
-    log.cache(
-      `Cache refrescado em ${duration}ms (${rows.length} registos)`
-    );
-
-    return rows;
-  } catch (error) {
-    log.error("Erro ao refrescar cache de autores", error);
-    return [];
+    throw error; // não devolver [] (seria guardado em cache)
   }
 };
 
@@ -268,27 +211,11 @@ const GetAuthors = async (req, res) => {
       });
     }
 
-    const cacheKey = CacheKeys.list(instituteCode);
-    const startTime = Date.now();
-
-    // Tentar buscar do cache
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      log.cache(`Hit do cache em ${duration}ms`);
-      return res.status(200).json(cached);
-    }
-
-    // Cache miss - buscar da BD
-    log.cache("Miss do cache, consultando base de dados...");
-    const rows = await FetchAuthors(req, res, instituteCode);
-
-    if (rows && rows.length > 0) {
-      await Cache.eduallSet(cacheKey, rows, AUTHOR_CACHE_TTL);
-    }
-
-    const duration = Date.now() - startTime;
-    log.db(`GetAuthors concluído em ${duration}ms`);
+    const rows = await Cache.eduallWithCache(
+      CacheKeys.author.list(instituteCode),
+      AUTHOR_CACHE_TTL,
+      () => FetchAuthors(req, res, instituteCode)
+    );
 
     res.status(200).json(rows || []);
   } catch (error) {
@@ -308,6 +235,9 @@ const GetAuthors = async (req, res) => {
 const GetSingleAuthor = async (req, res) => {
   try {
     const { ID } = req.params;
+    if (CacheKeys.parseId(ID) === null) {
+      return res.status(400).json({ success: false, message: "ID inválido." });
+    }
     const instituteCode =
       req.session?.user?.eduall_user_session_curentinstitute;
 
@@ -327,18 +257,6 @@ const GetSingleAuthor = async (req, res) => {
       });
     }
 
-    const cacheKey = CacheKeys.single(ID, instituteCode);
-    const startTime = Date.now();
-
-    // Tentar cache
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      log.cache(`Hit de cache (single) em ${duration}ms`);
-      return res.status(200).json(cached);
-    }
-
-    // Buscar BD
     const query = `
       SELECT * FROM eduall_library_authors
       WHERE ed_library_author_deleted = 0
@@ -360,12 +278,6 @@ const GetSingleAuthor = async (req, res) => {
         message: "Autor não encontrado.",
       });
     }
-
-    // Guardar em cache
-    await Cache.eduallSet(cacheKey, rows, AUTHOR_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    log.db(`GetSingleAuthor concluído em ${duration}ms`);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -510,7 +422,7 @@ const RegisterAuthor = async (req, res) => {
     log.success(`Autor "${author_name.trim()}" registado com sucesso`);
 
     // ✓ Refrescar cache
-    await RefreshAuthorCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.author.list(instituteCode), CacheKeys.digitalContent.list(instituteCode)]);
 
     res.status(200).json({
       success: true,
@@ -674,7 +586,7 @@ const AuthorUpdate = async (req, res) => {
     log.success(`Autor ${ID} atualizado: "${author_name.trim()}"`);
 
     // ✓ Refrescar cache
-    await RefreshAuthorCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.author.list(instituteCode), CacheKeys.digitalContent.list(instituteCode)]);
 
     res.status(200).json({
       success: true,
@@ -782,7 +694,7 @@ const AuthorDelete = async (req, res) => {
     log.success(`Autor ${ID} eliminado: "${authorName}"`);
 
     // ✓ Refrescar cache
-    await RefreshAuthorCache(req, res, instituteCode);
+    await CacheKeys.safeInvalidate(() => [CacheKeys.author.list(instituteCode), CacheKeys.digitalContent.list(instituteCode)]);
 
     res.status(200).json({
       success: true,

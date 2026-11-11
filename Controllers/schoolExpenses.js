@@ -1,8 +1,15 @@
+// CACHE-OPT v6 (aplicado por apply_cache_optimizations_v6.py)
 // controllers/schoolExpenses.controller.js
 
 const path    = require("path");
 const multer  = require("multer");
 const ExecuteQuery       = require("../Functions/ExecuteQuery");
+
+// CACHE-OPT v6: cache por escola (chaves "<entidade>:<escola>:..."); uma falha de cache nunca parte o pedido
+const Cache = require("../Functions/CacheRoutes");
+const _cacheGet = async (key) => { try { const v = await Cache.eduallGet(key); return v === undefined ? null : v; } catch (e) { return null; } };
+const _cacheSet = async (key, value, ttl) => { try { if (value !== undefined && value !== null) await Cache.eduallSet(key, value, ttl); } catch (e) { /* cache indisponível: ignorado */ } };
+const _cacheClear = async (...patterns) => { for (const p of patterns) { try { await Cache.eduallClear(p); } catch (e) { /* ignorado */ } } };
 const { RegisterAuditAction } = require("./Auditory");
 
  
@@ -253,6 +260,7 @@ const RegisterExpense = async (req, res) => {
       description: `Registou despesa "${expense_title.trim()}" — ${expense_amount} ${expense_currency} (operador: ${operator?.name || operatorId})`,
     });
 
+    await _cacheClear(`expenses:${req.session.user.eduall_user_session_curentinstitute}:*`);
     return res.status(201).json({
       success:  true,
       msg:      "Despesa registada com sucesso.",
@@ -342,6 +350,7 @@ const UpdateExpense = async (req, res) => {
       description: `Actualizou despesa #${ID} "${expense_title}" (operador: ${operator?.name || operatorId})`,
     });
 
+    await _cacheClear(`expenses:${req.session.user.eduall_user_session_curentinstitute}:*`);
     return res.status(200).json({
       success:  true,
       msg:      "Despesa actualizada com sucesso.",
@@ -385,6 +394,7 @@ const UpdateExpenseStatus = async (req, res) => {
       description: `Alterou estado da despesa #${ID} para "${STATUS_LABELS[status]}" (operador: ${operator?.name || operatorId})`,
     });
 
+    await _cacheClear(`expenses:${req.session.user.eduall_user_session_curentinstitute}:*`);
     return res.status(200).json({ success: true, msg: "Estado actualizado.", operator: operator?.name || null });
   } catch (err) {
     return res.status(400).json({ success: false, msg: err.message });
@@ -418,6 +428,7 @@ const DeleteExpense = async (req, res) => {
       description: `Eliminou despesa #${ID} (operador: ${operator?.name || operatorId})`,
     });
 
+    await _cacheClear(`expenses:${req.session.user.eduall_user_session_curentinstitute}:*`);
     return res.status(200).json({ success: true, msg: "Despesa eliminada.", operator: operator?.name || null });
   } catch (err) {
     return res.status(400).json({ success: false, msg: err.message });
@@ -430,6 +441,9 @@ const GetExpensesSummary = async (req, res) => {
   try {
     const institute = req.session.user.eduall_user_session_curentinstitute;
     const year      = req.query.year || new Date().getFullYear();
+    const _ck  = `expenses:${institute}:summary:${String(year).slice(0, 8)}`; // CACHE-OPT v6
+    const _hit = await _cacheGet(_ck);
+    if (_hit !== null) return res.status(200).json(_hit);
 
     const [byCategory, byMonth, byStatus] = await Promise.all([
       ExecuteQuery(res,
@@ -470,7 +484,9 @@ const GetExpensesSummary = async (req, res) => {
         [institute, year], true),
     ]);
 
-    return res.status(200).json({ byCategory, byMonth, byStatus, year: Number(year) });
+    const _payload = { byCategory, byMonth, byStatus, year: Number(year) };
+    await _cacheSet(_ck, _payload, 300);
+    return res.status(200).json(_payload);
   } catch (err) {
     return res.status(400).json({ success: false, msg: err.message });
   }

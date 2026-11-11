@@ -1,44 +1,11 @@
+// CACHE-OPT v2 (aplicado por apply_cache_optimizations_v2.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const { FACTPLUS_GenerateDocumentBody, FACTPLUS_decodificarMesEAno, FACTPLUS_formatarPreco, FACTPLUS_createDocumentFunction } = require("../Functions/FACTPLUS_HELPERS");
 const { VENDUS_CreateInvoiceCodeAndDoc } = require("../Functions/VENDUS");
 const { RegisterAuditAction } = require("./Auditory");
 const { getSingleStudentByInstitute } = require("./Students");
 
-const Cache = require("../Functions/CacheRoutes");
 const PAYMENT_TYPE_BALANCE = 4;
-
-// ──────────────────────────────────────────────────────────────
-// ── CACHE CONFIGURATION (same pattern as AcademicYear.js) ─────
-// ──────────────────────────────────────────────────────────────
-const FEES_PAYMENT_CACHE_TTL = 3600; // 1 hour
-
-const CacheKeys = {
-  list: (instituteCode) => `feespayment:list:${instituteCode}`,
-  single: (id, instituteCode) => `feespayment:single:${id}:${instituteCode}`,
-  byInvoice: (invoiceCode, instituteCode) => `feespayment:invoice:${invoiceCode}:${instituteCode}`,
-  studentFees: (studentId, instituteCode) => `feespayment:student:${studentId}:${instituteCode}`,
-  studentStatus: (studentId, instituteCode) => `feespayment:status:${studentId}:${instituteCode}`,
-  classStatus: (classId, instituteCode) => `feespayment:classstatus:${classId}:${instituteCode}`,
-  bordereauDetail: (bordereauNumber, instituteCode) => `feespayment:bordereau:${bordereauNumber}:${instituteCode}`,
-  bordereauStatus: (bordereauNumber, instituteCode) => `feespayment:bordstatus:${bordereauNumber}:${instituteCode}`,
-  allClassesStatus: (instituteCode) => `feespayment:allclassstatus:${instituteCode}`,
-  paidMonth: (month, studentId, instituteCode) => `feespayment:paidmonth:${month}:${studentId}:${instituteCode}`,
-  allGlobal: () => "feespayment:*",
-};
-
-/**
- * ──────────────────────────────────────────────────────────────
- * REFRESH CACHE FUNCTION — called after writes
- * ──────────────────────────────────────────────────────────────
- */
-const RefreshFeesPaymentCache = async (req, res, instituteCode) => {
-  const startTime = Date.now();
-  await Cache.eduallClear(CacheKeys.allGlobal());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode} (FeesPayment)`);
-  
-  const duration = Date.now() - startTime;
-  console.log(`🗄️🧹 CACHE CLEAR (FeesPayment) demorou ${duration}ms para institute ${instituteCode}`);
-};
 
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -237,16 +204,6 @@ const CheckBordereauStatus = async (req, res) => {
     
     const { NUMBER }  = req.params;
     const institute   = req.session?.user?.eduall_user_session_curentinstitute;
-    const cacheKey    = CacheKeys.bordereauStatus(NUMBER, institute);
-    const startTime   = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> CheckBordereauStatus demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     if (!NUMBER || !NUMBER.trim()) {
       return res.status(400).json({ success: false, msg: "Número de borderô inválido." });
@@ -336,12 +293,6 @@ const CheckBordereauStatus = async (req, res) => {
       };
     }
 
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, result, FEES_PAYMENT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> CheckBordereauStatus demorou ${duration}ms (${cacheKey})`);
-
     return res.status(200).json(result);
   } catch (err) {
     console.error("CheckBordereauStatus error:", err);
@@ -378,7 +329,6 @@ const SetBordereauOriginalValue = async (req, res) => {
     );
 
     // ── Invalidate cache ──
-    await RefreshFeesPaymentCache(req, res, institute);
 
     return res.status(200).json({ success: true, bordereauNumber, originalValue: val });
   } catch (err) {
@@ -397,16 +347,6 @@ const GetBordereauDetail = async (req, res) => {
   try {
     const { NUMBER } = req.params;
     const institute  = req.session?.user?.eduall_user_session_curentinstitute;
-    const cacheKey   = CacheKeys.bordereauDetail(NUMBER, institute);
-    const startTime  = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetBordereauDetail demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const [bRow] = await ExecuteQuery(
       res,
@@ -476,12 +416,6 @@ const GetBordereauDetail = async (req, res) => {
       usages: enrichedUsages,
     };
 
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, result, FEES_PAYMENT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetBordereauDetail demorou ${duration}ms (${cacheKey})`);
-
     return res.status(200).json(result);
   } catch (err) {
     console.error("GetBordereauDetail error:", err);
@@ -497,16 +431,6 @@ const GetFeepayments = async (req, res) => {
   try {
     const institute  = req.session.user.eduall_user_session_curentinstitute;
     const operatorId = req.session?.user?.eduall_user_session_ID;
-    const cacheKey   = CacheKeys.list(institute);
-    const startTime  = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetFeepayments demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const operator   = await getOperatorData(res, operatorId);
 
@@ -579,12 +503,6 @@ const GetFeepayments = async (req, res) => {
       operator_id: operator?.id   || null,
     }));
 
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, enrichedRows, FEES_PAYMENT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetFeepayments demorou ${duration}ms (${cacheKey})`);
-
     res.status(200).json(enrichedRows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar os pagamentos de taxa!", error: error.message });
@@ -595,16 +513,6 @@ const GetSingleFeepayment = async (req, res) => {
   try {
     const { ID }    = req.params;
     const institute = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey  = CacheKeys.single(ID, institute);
-    const startTime = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleFeepayment demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const query = `
       SELECT
@@ -644,12 +552,6 @@ const GetSingleFeepayment = async (req, res) => {
     });
 
     const result = rows[0] || {};
-
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, result, FEES_PAYMENT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleFeepayment demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(result);
   } catch (error) {
@@ -1128,7 +1030,6 @@ const RegisterFeepayment = async (req, res) => {
     });
 
     // ── 12) INVALIDAR CACHE ──────────────────────────────────────────────────
-    await RefreshFeesPaymentCache(req, res, sessionInstitute);
 
     return res.status(200).json({
       success:        true,
@@ -1162,16 +1063,6 @@ const GetSinglePaidMonth = async (req, res) => {
   try {
     const { MONTH, STUDENTCODE } = req.params;
     const institute = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey  = CacheKeys.paidMonth(MONTH, STUDENTCODE, institute);
-    const startTime = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSinglePaidMonth demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const query = `
       SELECT
@@ -1197,12 +1088,6 @@ const GetSinglePaidMonth = async (req, res) => {
       db: "eduall_fees_payments", type: "select", data: req
     });
 
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, rows, FEES_PAYMENT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSinglePaidMonth demorou ${duration}ms (${cacheKey})`);
-
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar o pagamento do mês!", error: error.message });
@@ -1213,16 +1098,6 @@ const GetSinglePayment = async (req, res) => {
   try {
     const { ID }    = req.params;
     const institute = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey  = CacheKeys.single(ID, institute);
-    const startTime = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSinglePayment demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const query = `
       SELECT
@@ -1248,12 +1123,6 @@ const GetSinglePayment = async (req, res) => {
       db: "eduall_fees_payments", type: "select", data: req
     });
 
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, rows, FEES_PAYMENT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSinglePayment demorou ${duration}ms (${cacheKey})`);
-
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar o pagamento!", error: error.message });
@@ -1264,16 +1133,6 @@ const GetPaymentsByInvoiceCode = async (req, res) => {
   try {
     const { ID }    = req.params;
     const institute = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey  = CacheKeys.byInvoice(ID, institute);
-    const startTime = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetPaymentsByInvoiceCode demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const paymentRows = await ExecuteQuery(res,
       `SELECT * FROM eduall_fees_payments
@@ -1294,12 +1153,6 @@ const GetPaymentsByInvoiceCode = async (req, res) => {
       [invoiceCode, institute], true, { db: "eduall_fees_payments", type: "select", data: req }
     );
 
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, rows, FEES_PAYMENT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetPaymentsByInvoiceCode demorou ${duration}ms (${cacheKey})`);
-
     res.status(200).json(rows);
   } catch (error) {
     res.status(500).json({ success: false, message: "Falha ao buscar os pagamentos!", error: error.message });
@@ -1310,16 +1163,6 @@ const GetSingleStudentFees = async (req, res) => {
   try {
     const { ACADEMICYEAR, STUDENTCODE } = req.params;
     const institute = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey  = CacheKeys.studentFees(STUDENTCODE, institute);
-    const startTime = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleStudentFees demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const query = `
       SELECT
@@ -1347,12 +1190,6 @@ const GetSingleStudentFees = async (req, res) => {
     const rows = await ExecuteQuery(res, query, [STUDENTCODE, ACADEMICYEAR, institute], true, {
       db: "eduall_fees_payments", type: "select", data: req
     });
-
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, rows, FEES_PAYMENT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleStudentFees demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -1438,7 +1275,6 @@ const FeePaymentDelete = async (req, res) => {
     });
 
     // ── Invalidar cache ──
-    await RefreshFeesPaymentCache(req, res, institute);
 
     res.status(200).json({
       success: true,
@@ -1488,7 +1324,6 @@ const FeePaymentUpdate = async (req, res) => {
     });
 
     // ── Invalidar cache ──
-    await RefreshFeesPaymentCache(req, res, institute);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -1509,18 +1344,6 @@ const GetSingleStudentPaymentStatus = async (req, res) => {
     
     if (!studentCode || !ano) {
       return res.status(400).json({ success: false, message: "Parâmetros inválidos: envie o código do aluno e o ano letivo (?ano=2025)." });
-    }
-
-    const cacheKey = CacheKeys.studentStatus(studentCode, institute);
-    const startTimeCache = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTimeCache;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleStudentPaymentStatus demorou ${duration}ms (${cacheKey})`);
-      console.timeEnd(timerLabel);
-      return res.status(200).json(cached);
     }
 
     const studentQuery = `
@@ -1588,11 +1411,6 @@ const GetSingleStudentPaymentStatus = async (req, res) => {
       months: monthsStatus
     }};
 
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, result, FEES_PAYMENT_CACHE_TTL);
-
-    const duration = Date.now() - startTimeCache;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleStudentPaymentStatus demorou ${duration}ms (${cacheKey})`);
     console.timeEnd(timerLabel);
 
     return res.status(200).json(result);
@@ -1611,17 +1429,6 @@ const GetSingleStudentPaymentStatusByRFID = async (req, res) => {
     const code = (rfidCode || "").trim();
     
     if (!code) return res.status(400).json({ success: false, message: "Parâmetros inválidos: envie o RFID do aluno." });
-
-    const cacheKey = CacheKeys.studentStatus(`rfid_${code}`, institute);
-    const startTime = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetSingleStudentPaymentStatusByRFID demorou ${duration}ms (${cacheKey})`);
-      return res.status(200).json(cached);
-    }
 
     const studentQuery = `
       SELECT s.ed_student_id, s.ed_student_code, s.ed_student_name, s.ed_student_picture,
@@ -1692,12 +1499,6 @@ const GetSingleStudentPaymentStatusByRFID = async (req, res) => {
       meta: { source: "rfid", academicYear: ano }
     };
 
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, result, FEES_PAYMENT_CACHE_TTL);
-
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetSingleStudentPaymentStatusByRFID demorou ${duration}ms (${cacheKey})`);
-
     return res.status(200).json(result);
   } catch (error) {
     console.error("ERRO em GetSingleStudentPaymentStatusByRFID:", error);
@@ -1710,18 +1511,6 @@ const GetAllClassesPaymentsStatus = async (req, res) => {
     console.time("GetAllClassesPaymentsStatus");
     const institute = req.session?.user?.eduall_user_session_curentinstitute;
     if (!institute) return res.status(400).json({ success: false, message: "Instituto inválido na sessão." });
-
-    const cacheKey = CacheKeys.allClassesStatus(institute);
-    const startTime = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetAllClassesPaymentsStatus demorou ${duration}ms (${cacheKey})`);
-      console.timeEnd("GetAllClassesPaymentsStatus");
-      return res.status(200).json(cached);
-    }
 
     const MonthsList = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
     const buildMonths = (yearData) => {
@@ -1772,12 +1561,7 @@ const GetAllClassesPaymentsStatus = async (req, res) => {
       return { class_id: cls.ed_class_id, class_title: cls.ed_class_title, academic_year: yearData, students: studentsData };
     });
 
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, finalResult, FEES_PAYMENT_CACHE_TTL);
-
     console.timeEnd("GetAllClassesPaymentsStatus");
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetAllClassesPaymentsStatus demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(finalResult);
   } catch (error) {
@@ -1791,17 +1575,6 @@ const GetClassPaymentsStatusById = async (req, res) => {
     console.time("GetClassPaymentsStatusById");
     const institute = req.session.user.eduall_user_session_curentinstitute;
     const classId   = req.params.classId;
-    const cacheKey  = `${CacheKeys.classStatus(classId, institute)}:v2`;
-    const startTime = Date.now();
-
-    // ── Check cache ──
-    const cached = await Cache.eduallGet(cacheKey);
-    if (cached !== null) {
-      const duration = Date.now() - startTime;
-      console.log(`📦⚡ CACHE (rápido) -> GetClassPaymentsStatusById demorou ${duration}ms (${cacheKey})`);
-      console.timeEnd("GetClassPaymentsStatusById");
-      return res.status(200).json(cached);
-    }
 
     const MonthsList = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
@@ -1888,7 +1661,6 @@ const GetClassPaymentsStatusById = async (req, res) => {
         },
         students: []
       }];
-      await Cache.eduallSet(cacheKey, emptyResult, FEES_PAYMENT_CACHE_TTL);
       console.timeEnd("GetClassPaymentsStatusById");
       return res.status(200).json(emptyResult);
     }
@@ -1974,12 +1746,7 @@ const GetClassPaymentsStatusById = async (req, res) => {
       students: studentsData
     }];
 
-    // ── Set cache ──
-    await Cache.eduallSet(cacheKey, finalResult, FEES_PAYMENT_CACHE_TTL);
-
     console.timeEnd("GetClassPaymentsStatusById");
-    const duration = Date.now() - startTime;
-    console.log(`🗄️🐢 BASE DE DADOS (lento) -> GetClassPaymentsStatusById demorou ${duration}ms (${cacheKey})`);
 
     res.status(200).json(finalResult);
   } catch (error) {
@@ -2136,7 +1903,6 @@ const ImportSinglePayment = async (req, res) => {
     const result = await importOne(rowData, institute, req.session, externalOrigin, externalFile, res);
  
     // ── Invalidar cache ──
-    await RefreshFeesPaymentCache(req, res, institute);
 
     return res.status(200).json({
       success: true, studentName: result.studentName,
@@ -2396,7 +2162,6 @@ const ImportBatchPayments = async (req, res) => {
     });
 
     // ── Invalidar cache ──
-    await RefreshFeesPaymentCache(req, res, institute);
  
     return res.status(200).json({
       success: true, total: rows.length,
@@ -2537,7 +2302,6 @@ const DeleteImportedPayments = async (req, res) => {
     });
 
     // ── Invalidar cache ──
-    await RefreshFeesPaymentCache(req, res, institute);
  
     return res.status(200).json({
       success:  true,
