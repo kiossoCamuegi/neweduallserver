@@ -1,4 +1,5 @@
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+const { invalidateStudentCaches } = require("../Functions/StudentCache");
 const { RegisterAuditAction } = require("./Auditory");
 
 const GetStudentEnrollments = async (req, res) => {
@@ -334,6 +335,7 @@ const RegisterStudentEnrollment = async (req, res) => {
       [newClass, studentId],
       false
     );
+    await invalidateStudentCaches(institute);
     console.log(`${C.green}✓${C.reset} Turma do aluno atualizada\n`);
 
     // ─────────────────────────────────────────────────────────

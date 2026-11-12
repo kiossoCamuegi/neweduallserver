@@ -7,6 +7,7 @@ const { GetCurrentUserData } = require("./GetCurrentUserData");
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const { RegisterAuditAction } = require("./Auditory");
 const Cache = require("../Functions/CacheRoutes");
+const { invalidateStudentCaches } = require("../Functions/StudentCache");
 const { checkClassCapacity } = require("./ServicePayments");
 
 // ── NOVO: Modelo de Processo de Matrícula configurável por escola ─────────
@@ -118,14 +119,55 @@ function ValidateAge(birthday) {
 // ──────────────────────────────────────────────────────────────
 // ── CACHE CONFIGURATION (same pattern as AcademicYear.js) ─────
 // ──────────────────────────────────────────────────────────────
-const STUDENTS_CACHE_TTL = 3600; // 1 hour
+// 5 minutos: a lista é pesada, mas o dashboard precisa de refletir mudanças.
+// A invalidação explícita (Functions/StudentCache.js) limpa antes disso nas
+// escritas de alunos/turmas/matrículas; o TTL é apenas a rede de segurança.
+const STUDENTS_CACHE_TTL = Number(process.env.STUDENTS_CACHE_TTL || 300);
+// O dashboard só precisa de contagens: cache curta para refletir depressa.
+const DASHBOARD_CACHE_TTL = Number(process.env.DASHBOARD_CACHE_TTL || 60);
+
+// O otimizador preferia full scan (~32% das linhas) + filesort. Com o índice
+// forçado a query caiu de ~4,6s para ~2,4s com BD remota; com BD local é ~1 RTT.
+// Fallback automático se o índice não existir (ex.: base antiga restaurada).
+const STUDENTS_FORCE_INDEX =
+  String(process.env.STUDENTS_FORCE_INDEX || "true").toLowerCase() !== "false";
+const STUDENTS_INDEX_HINT = STUDENTS_FORCE_INDEX
+  ? "FORCE INDEX (idx_students_inst_del_name)"
+  : "";
+
+async function executeStudentsQuery(res, sql, params, audit) {
+  try {
+    return await ExecuteQuery(res, sql, params, true, audit);
+  } catch (err) {
+    const missingIndex =
+      err.code === "ER_KEY_DOES_NOT_EXIST" ||
+      /idx_students_inst_del_name/i.test(err.message || "");
+    if (STUDENTS_FORCE_INDEX && missingIndex) {
+      const fallback = sql.replace(/\s*FORCE INDEX \(idx_students_inst_del_name\)/gi, "");
+      return ExecuteQuery(res, fallback, params, true, audit);
+    }
+    throw err;
+  }
+}
 
 const CacheKeys = {
   list: (instituteCode) => `students:list:${instituteCode}`,
+  // Lista leve usada pela tabela/cards/seletor do frontend (poucos campos).
+  listLite: (instituteCode) => `students:list-lite:${instituteCode}`,
+  // Apenas turma + género, para os gráficos do dashboard.
+  classGender: (instituteCode) => `students:class-gender:${instituteCode}`,
+  // GetStudentsByInstitute devolve um shape diferente de GetStudents —
+  // tem de ter chave própria (antes colidiam e podiam devolver o objeto errado).
+  byInstitute: (instituteCode) => `students:byinstitute:${instituteCode}`,
   byClass: (classId, instituteCode) => `students:byclass:${classId}:${instituteCode}`,
   single: (id, instituteCode) => `students:single:${id}:${instituteCode}`,
   byCode: (code) => `students:bycode:${code}`,
   byIdentityCard: (card, instituteCode) => `students:byidentity:${card}:${instituteCode}`,
+  emails: (instituteCode) => `students:emails:${instituteCode}`,
+  transferred: (instituteCode) => `students:transferred:${instituteCode}`,
+  // Transporte é outro conjunto de dados; não pode partilhar a chave de byClass.
+  transportByClass: (classId, instituteCode) => `students:transport:byclass:${classId}:${instituteCode}`,
+  transportList: (instituteCode) => `students:transport:list:${instituteCode}`,
   allGlobal: () => "students:*",
 };
 
@@ -136,11 +178,11 @@ const CacheKeys = {
  */
 const RefreshStudentCache = async (req, res, instituteCode) => {
   const startTime = Date.now();
-  await Cache.eduallClear(CacheKeys.allGlobal());
-  console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode} (Students)`);
-  
+  // Helper partilhado: usado também por turmas, matrículas e confirmações
+  // (Functions/StudentCache.js), para o dashboard refletir de imediato.
+  await invalidateStudentCaches(instituteCode);
   const duration = Date.now() - startTime;
-  console.log(`🗄️🧹 CACHE CLEAR (Students) demorou ${duration}ms para institute ${instituteCode}`);
+  console.log(`🗄️🧹 CACHE CLEAR (Students) ${duration}ms para institute ${instituteCode}`);
 };
  
 // ──────────────────────────────────────────────────────────────
@@ -236,9 +278,14 @@ const GetStudents = async (req, res) => {
       PARAMS = [instituteCode];
     }
 
-    const rows = await ExecuteQuery(res, query, PARAMS, true, {
-      db: "eduall_students", type: "select", data: req
-    });
+    // FORCE INDEX só nesta listagem (filtra por escola e ordena por nome).
+    // Se o índice não existir, o helper repete a query sem o hint.
+    const rows = await executeStudentsQuery(
+      res,
+      query.replace("FROM eduall_students s", `FROM eduall_students s ${STUDENTS_INDEX_HINT}`),
+      PARAMS,
+      { db: "eduall_students", type: "select", data: req }
+    );
 
     // ──────────────────────────────────────────────────────────
     // ── Histórico de matrículas (eduall_enrollment) ──
@@ -326,6 +373,151 @@ const GetStudents = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch students!",
+      error: error.message
+    });
+  }
+};
+
+// ──────────────────────────────────────────────────────────────
+// ── GET STUDENTS — LITE (lista/tabela/seletor do frontend)
+// Devolve só os campos que o frontend usa nestas páginas. A lista
+// completa tinha 154 colunas / ~11,6 MB; esta fica em ~1 MB
+// (~0,1 MB gzip), essencial para clientes com 3 Mbps.
+// ──────────────────────────────────────────────────────────────
+const GetStudentsLite = async (req, res) => {
+  try {
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
+    const cacheKey = CacheKeys.listLite(instituteCode);
+    const startTime = Date.now();
+
+    const cached = await Cache.eduallGet(cacheKey);
+    if (cached !== null) {
+      return res.status(200).json(cached);
+    }
+
+    const query = `
+      SELECT
+        s.ed_student_id,
+        s.ed_student_code,
+        s.ed_student_name,
+        s.ed_student_picture,
+        s.ed_student_identityCard,
+        s.ed_student_birthday,
+        s.ed_student_gender,
+        s.ed_student_status,
+        s.ed_student_scholarshipHolder,
+        s.ed_student_class,
+        s.ed_student_enrolled,
+        s.ed_student_awaiting_payment,
+        s.ed_student_dropout,
+        s.ed_student_dropout_date,
+        s.ed_student_email,
+        s.ed_student_phone,
+        s.ed_student_linkedin,
+        s.ed_student_facebook,
+        c.ed_class_title,
+        c.ed_class_year,
+        ci.ed_cicle_title,
+        co.ed_course_title,
+        cr.ed_classroom_title,
+        al.ed_academic_level_title
+      FROM eduall_students s ${STUDENTS_INDEX_HINT}
+      LEFT JOIN eduall_class c
+        ON s.ed_student_class = c.ed_class_id
+       AND c.ed_class_deleted = 0
+      LEFT JOIN eduall_cicles ci
+        ON ci.ed_cicle_id = c.ed_class_cicle
+       AND ci.ed_cicle_deleted = 0
+      LEFT JOIN eduall_classrooms cr
+        ON cr.ed_classroom_id = c.ed_class_room
+       AND cr.ed_classroom_deleted = 0
+      LEFT JOIN eduall_courses co
+        ON co.ed_course_id = c.ed_class_course
+       AND co.ed_course_deleted = 0
+      LEFT JOIN eduall_academic_level al
+        ON al.ed_academic_level_id = c.ed_class_academic_level
+       AND al.ed_academic_level_deleted = 0
+      WHERE s.ed_student_deleted = 0
+        AND s.ed_student_institute_code = ?
+        AND NOT (
+          s.ed_student_class = 0
+          AND EXISTS (
+            SELECT 1
+            FROM eduall_students s2
+            WHERE s2.ed_student_name           = s.ed_student_name
+              AND s2.ed_student_institute_code = s.ed_student_institute_code
+              AND s2.ed_student_deleted        = 0
+              AND s2.ed_student_class         != 0
+              AND s2.ed_student_id            != s.ed_student_id
+          )
+        )
+      ORDER BY s.ed_student_name ASC
+    `;
+
+    const rows = await executeStudentsQuery(res, query, [instituteCode], {
+      db: "eduall_students", type: "select", data: req
+    });
+
+    await Cache.eduallSet(cacheKey, rows, STUDENTS_CACHE_TTL);
+
+    const duration = Date.now() - startTime;
+    console.log(`🗄️🐢 BASE DE DADOS (lite) -> GetStudentsLite ${duration}ms (${cacheKey})`);
+    res.status(200).json(rows);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch students (lite)!",
+      error: error.message
+    });
+  }
+};
+
+// ──────────────────────────────────────────────────────────────
+// ── GET STUDENTS — CLASS + GENDER (gráficos do dashboard)
+// Antes o dashboard descarregava a lista inteira (~11,6 MB) só para
+// contar alunos por turma/género. Aqui devolve apenas 2 colunas.
+// ──────────────────────────────────────────────────────────────
+const GetStudentsClassGender = async (req, res) => {
+  try {
+    const instituteCode = req.session.user.eduall_user_session_curentinstitute;
+    const cacheKey = CacheKeys.classGender(instituteCode);
+
+    const cached = await Cache.eduallGet(cacheKey);
+    if (cached !== null) {
+      return res.status(200).json(cached);
+    }
+
+    const query = `
+      SELECT s.ed_student_id, s.ed_student_class, s.ed_student_gender,
+             s.ed_student_dropout, s.ed_student_scholarshipHolder,
+             s.ed_student_status, s.ed_student_rfid_code
+      FROM eduall_students s ${STUDENTS_INDEX_HINT}
+      WHERE s.ed_student_deleted = 0
+        AND s.ed_student_institute_code = ?
+        AND NOT (
+          s.ed_student_class = 0
+          AND EXISTS (
+            SELECT 1
+            FROM eduall_students s2
+            WHERE s2.ed_student_name           = s.ed_student_name
+              AND s2.ed_student_institute_code = s.ed_student_institute_code
+              AND s2.ed_student_deleted        = 0
+              AND s2.ed_student_class         != 0
+              AND s2.ed_student_id            != s.ed_student_id
+          )
+        )
+    `;
+
+    const rows = await executeStudentsQuery(res, query, [instituteCode], {
+      db: "eduall_students", type: "select", data: req
+    });
+
+    await Cache.eduallSet(cacheKey, rows, DASHBOARD_CACHE_TTL);
+    res.status(200).json(rows);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch students stats!",
       error: error.message
     });
   }
@@ -612,7 +804,7 @@ const GetStudentsByInstitute = async (req, res) => {
     const { CODE } = req.params;
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
     const instituteType = req.session.user.eduall_user_session_curentinstitute_type;
-    const cacheKey = CacheKeys.list(CODE);
+    const cacheKey = CacheKeys.byInstitute(CODE);
     const startTime = Date.now();
 
     // ── Check cache ──
@@ -643,11 +835,12 @@ const GetStudentsByInstitute = async (req, res) => {
       PARAMS = [CODE];
     }
 
-    const rows = await ExecuteQuery(res, query, PARAMS, true, { 
-      db: "eduall_students", 
-      type: "select", 
-      data: req 
-    });
+    const rows = await executeStudentsQuery(
+      res,
+      query.replace(/FROM\s+eduall_students\b/, `FROM eduall_students ${STUDENTS_INDEX_HINT}`),
+      PARAMS,
+      { db: "eduall_students", type: "select", data: req }
+    );
 
     // ── Set cache ──
     await Cache.eduallSet(cacheKey, rows, STUDENTS_CACHE_TTL);
@@ -856,7 +1049,9 @@ const GetTransportPassengersByClass = async (req, res) => {
   try {
     const { CLASS } = req.params;
     const institute = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = CLASS ? CacheKeys.byClass(CLASS, institute) : CacheKeys.list(institute);
+    const cacheKey = CLASS
+      ? CacheKeys.transportByClass(CLASS, institute)
+      : CacheKeys.transportList(institute);
     const startTime = Date.now();
 
     // ── Check cache ──
@@ -917,7 +1112,7 @@ const GetTransportPassengersByClass = async (req, res) => {
 const GetEmails = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = "students:emails:" + instituteCode;
+    const cacheKey = CacheKeys.emails(instituteCode);
     const startTime = Date.now();
 
     // ── Check cache ──
@@ -1190,6 +1385,7 @@ const RegisterStudent = async (req, res) => {
       student_status,
       student_naturalness,
       student_code,
+      student_rfid_code,
       father_name,
       father_phone,
       father_email,
@@ -1482,6 +1678,7 @@ const RegisterStudent = async (req, res) => {
         ed_student_picture,
         ed_student_institute_code,
         ed_student_type,
+        ed_student_rfid_code,
         ed_student_awaiting_payment,
         ed_student_father_name,
         ed_student_father_phone,
@@ -1496,7 +1693,7 @@ const RegisterStudent = async (req, res) => {
         ed_student_guardion_email,
         ed_student_guardion_job,
         ed_student_guardion_degree
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         student_name,
         student_address,
@@ -1517,6 +1714,7 @@ const RegisterStudent = async (req, res) => {
         picturePath,
         instituteCode,
         req.session.user.eduall_user_session_curentinstitute_type || 0,
+        student_rfid_code || "",
         financialConfirmationMode ? 1 : 0,   // ed_student_awaiting_payment (NOVO)
         father_name,
         father_phone,
@@ -1530,7 +1728,7 @@ const RegisterStudent = async (req, res) => {
         guardion_phone,
         guardion_email,
         guardion_job,
-        guardion_degree_of_kinship,
+        guardion_degree_of_kinship || 0,
       ],
       false,
       {
@@ -1550,8 +1748,8 @@ const RegisterStudent = async (req, res) => {
       const insertEnrollment = await ExecuteQuery(
         res,
         `INSERT INTO eduall_student_enrollment
-         (ed_student_enrollment_studentcode, ed_student_enrollment_service,
-          ed_student_enrollment_class, ed_enrollment_institute_code)
+         (ed_student_enrollment_studentcode, ed_enroll_payment_service,
+          ed_enroll_class, ed_enroll_institute_code)
          VALUES (?, ?, ?, ?)`,
         [finalCode, student_enrollment_service, student_class, instituteCode],
         false,
@@ -3227,7 +3425,7 @@ const GetStudentTransferHistory = async (req, res) => {
 const GetTransferredStudents = async (req, res) => {
   try {
     const instituteCode = req.session.user.eduall_user_session_curentinstitute;
-    const cacheKey = "students:transferred:" + instituteCode;
+    const cacheKey = CacheKeys.transferred(instituteCode);
     const startTime = Date.now();
 
     // ── Check cache ──
@@ -3305,7 +3503,8 @@ const GetStudentOldClasses = async (req, res) => {
 };
 
 module.exports = {
-  GetStudents, GetSingleStudent,
+  GetStudents, GetStudentsLite, GetStudentsClassGender,
+  GetSingleStudent,
   GetSingleStudentByCode, GetStudentsByClass,
   RegisterStudent, StudentDelete,
   getSingleStudentByInstitute, StudentDropoutUpdate,

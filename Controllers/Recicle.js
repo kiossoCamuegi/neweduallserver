@@ -15,6 +15,7 @@
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const { RegisterAuditAction } = require("./Auditory");
 const Cache = require("../Functions/CacheRoutes");
+const { invalidateStudentCaches } = require("../Functions/StudentCache");
 
 // ──────────────────────────────────────────────────────────────
 // ── CACHE CONFIGURATION ──────────────────────────────────────
@@ -36,6 +37,8 @@ const CacheKeys = {
 const RefreshDeletedItemsCache = async (req, res, instituteCode) => {
   const startTime = Date.now();
   await Cache.eduallClear(CacheKeys.allGlobal(instituteCode));
+  // Restaurar/eliminar alunos ou turmas também invalida as listas/dashboard.
+  await invalidateStudentCaches(instituteCode);
   console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode} (DeletedItems)`);
 
   const duration = Date.now() - startTime;

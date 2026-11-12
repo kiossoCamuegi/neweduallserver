@@ -11,25 +11,25 @@ const ADMISSION_CACHE_TTL = 3600;
 const StudentCacheKeys = {
   list: (instituteCode) => `admission_student:list:${instituteCode}`,
   single: (id, instituteCode) => `admission_student:single:${id}:${instituteCode}`,
-  all: () => "admission_student:*",
+  all: (instituteCode) => `admission_student:*:${instituteCode}`,
 };
 
 const ExamCacheKeys = {
   list: (instituteCode) => `admission_exam:list:${instituteCode}`,
   single: (id, instituteCode) => `admission_exam:single:${id}:${instituteCode}`,
-  all: () => "admission_exam:*",
+  all: (instituteCode) => `admission_exam:*:${instituteCode}`,
 };
 
 const ExamSubjectCacheKeys = {
   list: (instituteCode) => `admission_exam_subject:list:${instituteCode}`,
   byExam: (code, instituteCode) => `admission_exam_subject:by_exam:${code}:${instituteCode}`,
-  all: () => "admission_exam_subject:*",
+  all: (instituteCode) => `admission_exam_subject:*:${instituteCode}`,
 };
 
 const ResultCacheKeys = {
   list: (instituteCode) => `admission_result:list:${instituteCode}`,
   single: (id, instituteCode) => `admission_result:single:${id}:${instituteCode}`,
-  all: () => "admission_result:*",
+  all: (instituteCode) => `admission_result:*:${instituteCode}`,
 };
 
 /** =======================================================================
@@ -48,7 +48,7 @@ const FetchAdmissionStudents = async (req, res, instituteCode) => {
 const RefreshAdmissionStudentCache = async (req, res, instituteCode) => {
   const startTime = Date.now();
 
-  await Cache.eduallClear(StudentCacheKeys.all());
+  await Cache.eduallClear(StudentCacheKeys.all(instituteCode));
   console.log(`📦🧹 CACHE -> admission_student limpa para institute ${instituteCode}`);
 
   const rows = await FetchAdmissionStudents(req, res, instituteCode);
@@ -198,7 +198,7 @@ const FetchAdmissionExams = async (req, res, instituteCode) => {
 const RefreshAdmissionExamCache = async (req, res, instituteCode) => {
   const startTime = Date.now();
 
-  await Cache.eduallClear(ExamCacheKeys.all());
+  await Cache.eduallClear(ExamCacheKeys.all(instituteCode));
   console.log(`📦🧹 CACHE -> admission_exam limpa para institute ${instituteCode}`);
 
   const rows = await FetchAdmissionExams(req, res, instituteCode);
@@ -333,7 +333,7 @@ const FetchAdmissionExamSubjects = async (req, res, instituteCode) => {
 const RefreshAdmissionExamSubjectCache = async (req, res, instituteCode) => {
   const startTime = Date.now();
 
-  await Cache.eduallClear(ExamSubjectCacheKeys.all());
+  await Cache.eduallClear(ExamSubjectCacheKeys.all(instituteCode));
   console.log(`📦🧹 CACHE -> admission_exam_subject limpa para institute ${instituteCode}`);
 
   const rows = await FetchAdmissionExamSubjects(req, res, instituteCode);
@@ -500,7 +500,7 @@ const FetchAdmissionResults = async (req, res, instituteCode) => {
 const RefreshAdmissionResultCache = async (req, res, instituteCode) => {
   const startTime = Date.now();
 
-  await Cache.eduallClear(ResultCacheKeys.all());
+  await Cache.eduallClear(ResultCacheKeys.all(instituteCode));
   console.log(`📦🧹 CACHE -> admission_result limpa para institute ${instituteCode}`);
 
   const formattedResults = await FetchAdmissionResults(req, res, instituteCode);

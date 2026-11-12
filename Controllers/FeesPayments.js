@@ -889,22 +889,24 @@ const RegisterFeepayment = async (req, res) => {
           ed_fee_payment_student, ed_fee_payment_service, ed_fee_payment_price,
           ed_fee_payment_month, ed_fee_payment_discount, ed_fee_payment_type,
           ed_fee_payment_bank, ed_fee_payment_academic_year, ed_fee_payment_place,
-          ed_fee_payment_balance, ed_fee_payment_bordereux, ed_fee_payment_iva,
+          ed_fee_payment_balance, ed_fee_payment_value, ed_fee_payment_total,
+          ed_fee_payment_bordereux, ed_fee_payment_iva,
           ed_fee_payment_code, ed_fee_payment_fineType, ed_fee_payment_fineValue,
           ed_fee_payment_invoiceCode, ed_fee_payment_invoiceFile,
           ed_fee_payment_institute_code, ed_fee_payment_operator, ed_fee_payment_operator_id,
           ed_fee_payment_observations
         ) VALUES
-        ${dbRows.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(",")}
+        ${dbRows.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(",")}
       `;
       const params = [];
       for (const r of dbRows) {
         params.push(
           r.studentId, r.serviceId, r.price, r.month, r.discountPct,
           r.type, r.bankName, r.academicYearId, r.place, r.balance,
+          0, 0,
           r.bordereux, r.ivaPct, null, r.fineType, r.fineValue,
           vendus.number, vendus.id, sessionInstitute,
-          operator?.name || "operator:null", operator?.id || null,
+          operator?.id || 0, operator?.id || 0,
           obs, // ✅ Observações completas: saldo + matrícula + turma + instituição + operador + borderô
         );
       }
@@ -1866,20 +1868,21 @@ async function importOne(row, institute, session, externalOrigin, externalFile, 
        ed_fee_payment_student, ed_fee_payment_service, ed_fee_payment_price,
        ed_fee_payment_month, ed_fee_payment_type, ed_fee_payment_bank,
        ed_fee_payment_academic_year, ed_fee_payment_balance,
+       ed_fee_payment_value, ed_fee_payment_total,
        ed_fee_payment_invoiceCode, ed_fee_payment_invoiceFile,
        ed_fee_payment_institute_code, ed_fee_payment_operator, ed_fee_payment_operator_id,
        ed_fee_payment_external_file, ed_fee_payment_external_origin,
-       ed_fee_payment_notes, ed_fee_payment_discount, ed_fee_payment_iva,
+       ed_fee_payment_notes, ed_fee_payment_observations, ed_fee_payment_discount, ed_fee_payment_iva,
        ed_fee_payment_fineType, ed_fee_payment_fineValue
-     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,0,0)`,
+     ) VALUES (?,?,?,?,?,?,?,?,0,0,?,?,?,?,?,?,?,?,?,0,0,0,0)`,
     [
       student.ed_student_id, serviceId, priceVal,
       month.trim(), parseInt(paymentType, 10) || 0, bankName || "",
       resolvedYearId || null, priceVal,
-      generatedInvoiceCode, externalFile || null,
-      institute, operatorName, operatorId || null,
+      generatedInvoiceCode, externalFile || "",
+      institute, operatorId || 0, operatorId || 0,
       externalFile || null, externalOrigin || null,
-      notes || "",
+      notes || "", notes || "",
     ], false
   );
  
@@ -2083,17 +2086,17 @@ const ImportBatchPayments = async (req, res) => {
     for (let c = 0; c < toInsert.length; c += CHUNK_SIZE) {
       const chunk = toInsert.slice(c, c + CHUNK_SIZE);
  
-      const placeholders = chunk.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,0,0)").join(",");
+      const placeholders = chunk.map(() => "(?,?,?,?,?,?,?,?,0,0,?,?,?,?,?,?,?,?,?,0,0,0,0)").join(",");
       const params = [];
       for (const r of chunk) {
         params.push(
           r.studentId, r.serviceId, r.priceVal,
           r.month, r.paymentType, r.bankName,
           r.yearId, r.priceVal,
-          r.invoiceCode, externalFile || null,
-          institute, operatorName, operatorId || null,
+          r.invoiceCode, externalFile || "",
+          institute, operatorId || 0, operatorId || 0,
           externalFile || null, externalOrigin || null,
-          r.notes
+          r.notes, r.notes || ""
         );
       }
  
@@ -2103,10 +2106,11 @@ const ImportBatchPayments = async (req, res) => {
              ed_fee_payment_student, ed_fee_payment_service, ed_fee_payment_price,
              ed_fee_payment_month, ed_fee_payment_type, ed_fee_payment_bank,
              ed_fee_payment_academic_year, ed_fee_payment_balance,
+             ed_fee_payment_value, ed_fee_payment_total,
              ed_fee_payment_invoiceCode, ed_fee_payment_invoiceFile,
              ed_fee_payment_institute_code, ed_fee_payment_operator, ed_fee_payment_operator_id,
              ed_fee_payment_external_file, ed_fee_payment_external_origin,
-             ed_fee_payment_notes, ed_fee_payment_discount, ed_fee_payment_iva,
+             ed_fee_payment_notes, ed_fee_payment_observations, ed_fee_payment_discount, ed_fee_payment_iva,
              ed_fee_payment_fineType, ed_fee_payment_fineValue
            ) VALUES ${placeholders}`,
           params, false
@@ -2125,16 +2129,17 @@ const ImportBatchPayments = async (req, res) => {
                  ed_fee_payment_student, ed_fee_payment_service, ed_fee_payment_price,
                  ed_fee_payment_month, ed_fee_payment_type, ed_fee_payment_bank,
                  ed_fee_payment_academic_year, ed_fee_payment_balance,
+                 ed_fee_payment_value, ed_fee_payment_total,
                  ed_fee_payment_invoiceCode, ed_fee_payment_invoiceFile,
                  ed_fee_payment_institute_code, ed_fee_payment_operator, ed_fee_payment_operator_id,
                  ed_fee_payment_external_file, ed_fee_payment_external_origin,
-                 ed_fee_payment_notes, ed_fee_payment_discount, ed_fee_payment_iva,
+                 ed_fee_payment_notes, ed_fee_payment_observations, ed_fee_payment_discount, ed_fee_payment_iva,
                  ed_fee_payment_fineType, ed_fee_payment_fineValue
-               ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,0,0)`,
+               ) VALUES (?,?,?,?,?,?,?,?,0,0,?,?,?,?,?,?,?,?,?,0,0,0,0)`,
               [r.studentId, r.serviceId, r.priceVal, r.month, r.paymentType, r.bankName,
-               r.yearId, r.priceVal, r.invoiceCode, externalFile||null,
-               institute, operatorName, operatorId||null,
-               externalFile||null, externalOrigin||null, r.notes], false
+               r.yearId, r.priceVal, r.invoiceCode, externalFile||"",
+               institute, operatorId || 0, operatorId || 0,
+               externalFile||null, externalOrigin||null, r.notes, r.notes || ""], false
             );
             results.push({ index:r.index, ok:true, dup:false,
               studentCode:r.studentCode, studentName:r.studentName,

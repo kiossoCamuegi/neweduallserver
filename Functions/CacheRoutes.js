@@ -30,6 +30,15 @@ const MODULE_INSTANCE_ID = Math.random().toString(36).slice(2, 8);
 const MAX_PENDING_HITS = 10000;
 const MAX_HISTORY_BUFFER = 2000;
 
+// Teto de TTL (default 5 min). Evita que uma família sem invalidação
+// continue a mostrar dados antigos durante 1 hora. 0 = sem teto.
+const CACHE_MAX_TTL_SECONDS = Number(process.env.CACHE_MAX_TTL || 300);
+
+// Interruptor de segurança: CACHE_ENABLED=false repõe o comportamento antigo
+// (sem cache) sem alterar código. Útil se aparecer um dado desatualizado.
+const CACHE_ENABLED =
+  String(process.env.CACHE_ENABLED || 'true').toLowerCase() !== 'false';
+
 async function ensureDir(dir) {
   try {
     await fsPromises.mkdir(dir, { recursive: true });
@@ -550,7 +559,8 @@ const config = {
   enableHistory: process.env.CACHE_HISTORY === 'true', // histórico completo; erros são sempre registados
   cleanupInterval: 3600000,
   statsFlushInterval: 10000,
-  maxCacheSize: 500 * 1024 * 1024,
+  // Limite de disco da cache (default 200 MB; ajustável por CACHE_MAX_MB).
+  maxCacheSize: Number(process.env.CACHE_MAX_MB || 200) * 1024 * 1024,
   redisHealthCheckInterval: 30000,
   redis: {
     url: process.env.REDIS_URL,
@@ -729,6 +739,7 @@ async function flushMeta() {
 // =======================================================================
 
 async function eduallSet(key, value, ttl = 3600) {
+  await eduallReady();
   if (!adapter) {
     eduallLog(`SET ${key} ignorado — cache ainda não inicializada`);
     return false;
@@ -737,7 +748,11 @@ async function eduallSet(key, value, ttl = 3600) {
 
   const startTime = Date.now();
   try {
-    const ttlSeconds = Math.max(1, Math.floor(Number(ttl) || 3600));
+    const requestedTtl = Math.max(1, Math.floor(Number(ttl) || 3600));
+    const ttlSeconds =
+      CACHE_MAX_TTL_SECONDS > 0
+        ? Math.min(requestedTtl, CACHE_MAX_TTL_SECONDS)
+        : requestedTtl;
     const valueJson = JSON.stringify(value);
     const valueSize = Buffer.byteLength(valueJson);
 
@@ -755,6 +770,7 @@ async function eduallSet(key, value, ttl = 3600) {
 }
 
 async function eduallGet(key) {
+  await eduallReady();
   if (!adapter) {
     eduallLog(`GET ${key} ignorado — cache ainda não inicializada`);
     return null;
@@ -790,6 +806,7 @@ async function eduallGet(key) {
 }
 
 async function eduallDel(key) {
+  await eduallReady();
   if (!adapter) {
     eduallLog(`DELETE ${key} ignorado — cache ainda não inicializada`);
     return false;
@@ -811,6 +828,7 @@ async function eduallDel(key) {
 }
 
 async function eduallClear(pattern = '*') {
+  await eduallReady();
   if (!adapter) {
     eduallLog(`CLEAR ${pattern} ignorado — cache ainda não inicializada`);
     return 0;
@@ -932,6 +950,7 @@ function eduallStartTimers() {
 // Cache-aside com single-flight:
 // N pedidos simultâneos para a mesma chave fazem UMA só query à base de dados.
 async function eduallWithCache(cacheKey, ttl, asyncFn) {
+  await eduallReady();
   if (!adapter) {
     eduallLog('Cache não inicializado, a executar sem cache');
     return asyncFn();
@@ -955,6 +974,7 @@ async function eduallWithCache(cacheKey, ttl, asyncFn) {
 
 // Aceita uma chave, um array de chaves, ou padrões com '*'. Devolve quantas chaves foram removidas.
 async function eduallInvalidate(keysInput) {
+  await eduallReady();
   if (!adapter) return 0;
 
   try {
@@ -1045,6 +1065,23 @@ async function eduallReady() {
     }
   }
   return !!adapter;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// AUTO-INICIALIZAÇÃO
+// Antes, eduallInit() nunca era chamado em nenhum ponto da aplicação: o
+// módulo era carregado mas `adapter` ficava null, pelo que TODAS as
+// operações de cache eram ignoradas (Get/Set devolviam null/false).
+// Iniciar aqui (SQLite por defeito, Redis quando configurado) ativa a
+// cache em todo o app. Os timers têm .unref(), por isso não prendem o
+// processo em scripts.
+// ─────────────────────────────────────────────────────────────────────────
+if (CACHE_ENABLED) {
+  eduallInit().catch((err) => {
+    console.error("[CACHE] Falha ao inicializar:", err && err.message);
+  });
+} else {
+  console.warn("[CACHE] Desativada por CACHE_ENABLED=false");
 }
 
 module.exports = {

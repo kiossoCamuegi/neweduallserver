@@ -2,11 +2,27 @@ const fs = require("fs");
 const path = require("path");
 const mysql = require("mysql2/promise");
 const dbConfig = require("./DatabaseCredentials");
+// fallbackHost/fallbackPort são usados apenas pelo app.js; não são opções
+// válidas do mysql2 (versões futuras rejeitam-nas).
+const {
+  fallbackHost: _fallbackHost,
+  fallbackPort: _fallbackPort,
+  ...dbCredentials
+} = dbConfig;
 
 const DB_CONFIG = {
-  ...dbConfig,
-  connectionLimit: 10,
+  ...dbCredentials,
+  connectionLimit: Number(process.env.DB_POOL_SIZE || 10),
+  maxIdle: Number(process.env.DB_POOL_SIZE || 10),
+  waitForConnections: true,
+  queueLimit: 0,
   charset: "utf8mb4",
+  // keepAlive evita ligações mortas entre pedidos. idleTimeout tem de ser
+  // MENOR que o wait_timeout do MySQL (60s), senão o servidor fecha a
+  // ligação ao mesmo tempo que o pool a tenta reutilizar.
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 10000,
+  idleTimeout: Number(process.env.DB_IDLE_TIMEOUT || 30000),
 };
 
 let DATABASE;
@@ -31,7 +47,12 @@ function getRetryDelay() {
 }
 
 async function createPool() {
+  const previousPool = DATABASE;
   try {
+    const target = DB_CONFIG.socketPath
+      ? `socket ${DB_CONFIG.socketPath}`
+      : `${DB_CONFIG.host}:${DB_CONFIG.port}`;
+    console.log(`[DB] a ligar a ${target}`);
     DATABASE = mysql.createPool(DB_CONFIG);
     // Testa a conexão
     const conn = await DATABASE.getConnection();
@@ -40,11 +61,25 @@ async function createPool() {
     retryAttempt = 0; // reset do backoff após sucesso
     handlePoolErrors(DATABASE);
     readyResolve(DATABASE); // ✅ resolve a promise assim que o pool estiver pronto
+
+    // Fecha o pool antigo depois de o novo estar pronto — sem isto cada
+    // reconexão deixava 10 ligações abertas até ao limite do servidor.
+    if (previousPool && previousPool !== DATABASE) {
+      previousPool.end().catch(() => {});
+    }
   } catch (err) {
     const delay = getRetryDelay();
     console.error(
       `💥 Database connection failed: ${err.message} — nova tentativa em ${delay / 1000}s`
     );
+    if (["ECONNREFUSED", "ENOENT", "EACCES", "ER_ACCESS_DENIED_ERROR"].includes(err.code)) {
+      const target = DB_CONFIG.socketPath
+        ? `socket ${DB_CONFIG.socketPath}`
+        : `${DB_CONFIG.host}:${DB_CONFIG.port}`;
+      console.error(
+        `   Alvo atual: ${target}. Se o MySQL estiver noutro servidor, defina MYSQL_HOST=<host> no ambiente.`
+      );
+    }
     setTimeout(createPool, delay);
   }
 }
@@ -53,10 +88,12 @@ async function createPool() {
 function handlePoolErrors(pool) {
   pool.on("error", async (err) => {
     console.error("💔 Database error occurred:", err);
-    if (err.code === "PROTOCOL_CONNECTION_LOST") {
+    // Só reconecta se este ainda for o pool ativo (evita loops quando o
+    // pool antigo emite erros depois de já ter sido substituído).
+    if (err.code === "PROTOCOL_CONNECTION_LOST" && DATABASE === pool) {
       console.log("🔄 Reconnecting database...");
       await createPool();
-    } else {
+    } else if (err.code !== "PROTOCOL_CONNECTION_LOST") {
       console.error("Unexpected database error:", err.message);
     }
   });

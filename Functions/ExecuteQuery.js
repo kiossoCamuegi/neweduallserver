@@ -238,10 +238,18 @@ function isMySqlOnlyQuery(sql) {
 
 // ========= MAIN EXECUTOR =========
 
+// Debug de SQL desligado por defeito. Em produção, cada query escrevia uma
+// linha no stdout — com centenas de queries/s isso bloqueia o event loop.
+const SQL_DEBUG =
+  process.env.SQL_DEBUG === "1" || process.env.SQL_DEBUG === "true";
+// Se > 0, regista apenas queries acima deste limiar (ex.: SLOW_QUERY_MS=300).
+const SLOW_QUERY_MS = Number(process.env.SLOW_QUERY_MS || 0);
+
 const ExecuteQuery = async (res, sql, params = [], isSelect = true, audit) => {
   const req = res?.req;
   let mode = "online";
   let forcedOnline = false;
+  const startedAt = Date.now();
 
   try {
     const mysqlOnly = isMySqlOnlyQuery(sql);
@@ -254,36 +262,36 @@ const ExecuteQuery = async (res, sql, params = [], isSelect = true, audit) => {
       if (networkMode === "offline") mode = "offline";
     }
 
-    const mysqlDbName =
-      DB_CONFIG?.database ||
-      DATABASE?.config?.connectionConfig?.database ||
-      DATABASE?.config?.database ||
-      "(unknown)";
+    let result;
 
-    const dbLabel =
-      mode === "online"
-        ? `MySQL (${mysqlDbName})`
-        : `SQLite (${DB_PATH})`;
-
-    console.log(
-      `[DB] MODE=${mode.toUpperCase()} ${
-        forcedOnline ? "(FORCED)" : ""
-      } | ${dbLabel}`
-    );
-
-    // 👉 OFFLINE: tudo via SQLite, com possível sync de schema se quiseres
+    // 👉 OFFLINE: tudo via SQLite
     if (mode === "offline") {
       await openSqlite();
-      // Se quiseres sincronizar o schema mesmo em modo offline
-      // (assumindo que ainda tens acesso ao MySQL para popular a cache),
-      // deixa esta linha. Se não fizer sentido, podes comentar.
       await maybeSyncLocalSchema();
-      return await sqliteExecute(sql, params, isSelect);
+      result = await sqliteExecute(sql, params, isSelect);
+    } else {
+      // 👉 ONLINE: só MySQL, não mexe no ficheiro local.db
+      result = await mysqlExecute(sql, params, isSelect);
     }
 
-    // 👉 ONLINE: só MySQL, não mexe no ficheiro local.db
-    // (evita SQLITE_READONLY quando o ficheiro está read-only)
-    return await mysqlExecute(sql, params, isSelect);
+    if (SQL_DEBUG) {
+      const mysqlDbName =
+        DB_CONFIG?.database ||
+        DATABASE?.config?.connectionConfig?.database ||
+        DATABASE?.config?.database ||
+        "(unknown)";
+      const dbLabel =
+        mode === "online" ? `MySQL (${mysqlDbName})` : `SQLite (${DB_PATH})`;
+      console.log(
+        `[DB] MODE=${mode.toUpperCase()} ${forcedOnline ? "(FORCED)" : ""} | ${dbLabel} | ${Date.now() - startedAt}ms | ${String(sql).replace(/\s+/g, " ").slice(0, 180)}`
+      );
+    } else if (SLOW_QUERY_MS > 0 && Date.now() - startedAt >= SLOW_QUERY_MS) {
+      console.warn(
+        `[DB SLOW ${Date.now() - startedAt}ms] ${String(sql).replace(/\s+/g, " ").slice(0, 220)}`
+      );
+    }
+
+    return result;
   } catch (err) {
     console.error("[DB ERROR]", err.message);
     console.error("SQL:", sql);

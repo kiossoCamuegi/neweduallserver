@@ -13,14 +13,18 @@ const CacheKeys = {
   list: (instituteCode) => `transport_payments:list:${instituteCode}`,
   single: (id, instituteCode) => `transport_payments:single:${id}:${instituteCode}`,
   paidMonth: (month, studentCode, year, instituteCode) => `transport_payments:paidMonth:${month}:${studentCode}:${year}:${instituteCode}`,
-  all: () => "transport_payments:*",
+  // Scoped por escola: limpar "transport_payments:*" a cada gravação
+  // obrigava TODAS as escolas a refazer as listagens.
+  allByInstitute: (instituteCode) => `transport_payments:*:${instituteCode}`,
 };
 
 // ✅ FIX: Função de refresh de cache
 const RefreshTransportCache = async (req, res, instituteCode) => {
   const startTime = Date.now();
 
-  await Cache.eduallClear(CacheKeys.all());
+  await Cache.eduallClear(
+    instituteCode ? CacheKeys.allByInstitute(instituteCode) : "transport_payments:*"
+  );
   console.log(`📦🧹 CACHE -> limpa para institute ${instituteCode}`);
 
   const query = `SELECT * FROM eduall_transport_payments 

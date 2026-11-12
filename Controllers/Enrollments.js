@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ExecuteQuery        = require("../Functions/ExecuteQuery");
+const { invalidateStudentCaches } = require("../Functions/StudentCache");
 const { RegisterAuditAction } = require("./Auditory");
 const axios               = require("axios");
 
@@ -473,8 +474,8 @@ const RegisterEnrollment = async (req, res) => {
             await ExecuteQuery(
               res,
               `INSERT INTO eduall_enrollment_docs
-               (ed_enrollment_docs_enrollment, ed_enrollment_docs_name, ed_enrollment_docs_status,
-                ed_enrollment_docs_file, ed_enrollment_docs_file_name, ed_enrollment_docs_institute)
+               (ed_enroll_doc_enrollment, ed_enroll_doc_name, ed_enroll_doc_status,
+                ed_enroll_doc_file, ed_enroll_doc_file_name, ed_enroll_doc_institute)
                VALUES (?, ?, ?, ?, ?, ?)`,
               [
                 enrollment.ed_enrollment_id,
@@ -534,8 +535,9 @@ const RegisterEnrollment = async (req, res) => {
     ).catch(err => console.error("Erro ao registar auditoria:", err));
 
     // ─────────────────────────────────────────────────────────
-    // 12. ATUALIZAR CACHE
+    // 12. ATUALIZAR CACHE (uma vez por lote; não por aluno)
     // ─────────────────────────────────────────────────────────
+    await invalidateStudentCaches(institute);
 
     // ─────────────────────────────────────────────────────────
     // 13. RESPONDER AO CLIENTE
@@ -713,6 +715,8 @@ const EnrolledStudentUpdate = async (req, res) => {
     }
 
     await ExecuteQuery(res, `UPDATE eduall_students SET ed_student_class = ? WHERE ed_student_id = ?`, [enrollment_class, studentId]);
+
+    await invalidateStudentCaches(institute);
 
     await ExecuteQuery(
       res,
