@@ -2,6 +2,7 @@
 const ExecuteQuery = require("../Functions/ExecuteQuery");
 const Cache = require("../Functions/CacheRoutes");
 const CacheKeys = require("../Functions/CacheKeys");
+const { invalidateStudentCaches } = require("../Functions/StudentCache");
 const { RegisterAuditAction } = require("./Auditory");
 
 const CLASS_CACHE_TTL = 300; // listas com contagens/capacidade: TTL curto
@@ -484,6 +485,7 @@ const RegisterClass = async (req, res) => {
         `🗄️🐢 BASE DE DADOS (lento) -> RegisterClass: turma "${req.body.class_title}" registada`
       );
       await CacheKeys.safeInvalidate(() => [CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode), CacheKeys.academicLevel.studentsSummary(instituteCode)]);
+    await invalidateStudentCaches(instituteCode);
       return res.status(200).json(result.rows);
     }
 
@@ -528,6 +530,7 @@ const RegisterClass = async (req, res) => {
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> RegisterClass (bulk): ${ok} turmas registadas`);
     await CacheKeys.safeInvalidate(() => [CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode), CacheKeys.academicLevel.studentsSummary(instituteCode)]);
+    await invalidateStudentCaches(instituteCode);
 
     return res.status(200).json({ status: 200, success: true, ok, fail, details });
   } catch (error) {
@@ -693,6 +696,7 @@ const ClassUpdate = async (req, res) => {
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> ClassUpdate: turma ${ID} atualizada`);
     await CacheKeys.safeInvalidate(() => [CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode), CacheKeys.academicLevel.studentsSummary(instituteCode)]);
+    await invalidateStudentCaches(instituteCode);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -733,6 +737,7 @@ const UpdateAllClassesTransport = async (req, res) => {
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> UpdateAllClassesTransport: bulk update executado`);
     await CacheKeys.safeInvalidate(() => [CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode), CacheKeys.academicLevel.studentsSummary(instituteCode)]);
+    await invalidateStudentCaches(instituteCode);
 
     return res.status(200).json({
       status: 200,
@@ -806,6 +811,7 @@ const UpdateClassStudentLimit = async (req, res) => {
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> UpdateClassStudentLimit: turma ${ID} atualizada`);
     await CacheKeys.safeInvalidate(() => [CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode), CacheKeys.academicLevel.studentsSummary(instituteCode)]);
+    await invalidateStudentCaches(instituteCode);
 
     return res.status(200).json({
       status: 200,
@@ -883,6 +889,7 @@ const ClassDelete = async (req, res) => {
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> ClassDelete: turma ${ID} eliminada`);
     await CacheKeys.safeInvalidate(() => [CacheKeys.schoolClass.list(instituto), CacheKeys.schoolClass.exams(instituto), CacheKeys.academicLevel.studentsSummary(instituto)]);
+    await invalidateStudentCaches(instituto);
 
     res.status(200).json(rows);
   } catch (error) {
@@ -1475,6 +1482,7 @@ const ConfirmClassWizard = async (req, res) => {
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> ConfirmClassWizard: ${ok} turmas criadas, ${fail} falhas`);
     await CacheKeys.safeInvalidate(() => [CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode), CacheKeys.academicLevel.studentsSummary(instituteCode)]);
+    await invalidateStudentCaches(instituteCode);
 
     return res.status(200).json({ success: true, ok, fail, details });
   } catch (error) {
@@ -2007,6 +2015,7 @@ const ConfirmAiClassModelsSelection = async (req, res) => {
       `🗄️🐢 BASE DE DADOS (lento) -> ConfirmAiClassModelsSelection: ${created} criadas, ${reused} reutilizadas, ${fail} falhas`
     );
     await CacheKeys.safeInvalidate(() => [CacheKeys.schoolClass.list(instituteCode), CacheKeys.schoolClass.exams(instituteCode), CacheKeys.academicLevel.studentsSummary(instituteCode)]);
+    await invalidateStudentCaches(instituteCode);
 
     return res.status(200).json({ success: true, created, reused, fail, details });
   } catch (error) {

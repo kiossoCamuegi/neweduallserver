@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ExecuteQuery            = require("../Functions/ExecuteQuery");
+const { invalidateStudentCaches } = require("../Functions/StudentCache");
 const { RegisterAuditAction } = require("./Auditory");
 const axios                   = require("axios");
 const { getSingleStudentByInstitute } = require("./Students");
@@ -622,20 +623,10 @@ const RegisterEnrollmentConfirmation = async (req, res) => {
     console.log(" TODAS AS FATURAS GERADAS COM SUCESSO! Registando no banco...");
 
     const oldClassInsert = [];
-    const classUpdates   = [];
 
     for (const s of toConfirm) {
       if (s.ed_student_class !== classId) {
         oldClassInsert.push(`(${s.ed_student_id}, ${s.ed_student_class})`);
-        classUpdates.push(
-          ExecuteQuery(
-            res,
-            `UPDATE eduall_students SET ed_student_class = ?
-             WHERE ed_student_id = ? AND ed_student_institute_code = ?`,
-            [classId, s.ed_student_id, institute],
-            false
-          )
-        );
       }
     }
 
@@ -679,7 +670,19 @@ const RegisterEnrollmentConfirmation = async (req, res) => {
         );
       }
 
-      await Promise.all(classUpdates);
+      // Marcar todos os alunos como confirmados e na turma, DENTRO da transação.
+      // Antes, as atualizações corriam fora da transação e não marcavam enrolled=2,
+      // o que permitia confirmações duplicadas.
+      const studentPlaceholders = toConfirm.map(() => "?").join(",");
+      await ExecuteQuery(
+        res,
+        `UPDATE eduall_students
+            SET ed_student_class = ?, ed_student_enrolled = 2
+          WHERE ed_student_institute_code = ?
+            AND ed_student_id IN (${studentPlaceholders})`,
+        [classId, institute, ...toConfirm.map((s) => s.ed_student_id)],
+        false
+      );
 
       // 🔥 Debitar saldo do aluno (dentro da transação)
       if (balanceUsed > 0) {
@@ -730,6 +733,8 @@ const RegisterEnrollmentConfirmation = async (req, res) => {
       }
 
       await ExecuteQuery(res, "COMMIT", [], false);
+      // A turma do aluno mudou: o dashboard/listas não podem ficar com cache velha.
+      await invalidateStudentCaches(institute);
 
     } catch (txError) {
       await ExecuteQuery(res, "ROLLBACK", [], false);
@@ -920,6 +925,8 @@ const EnrollmentConfirmationUpdate = async (req, res) => {
         { db: "eduall_students", type: "update", data: req }
       );
     }
+
+    await invalidateStudentCaches(institute);
 
     console.log(`🗄️🐢 BASE DE DADOS (lento) -> EnrollmentConfirmationUpdate: registo ${ID} atualizado`);
 

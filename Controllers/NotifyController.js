@@ -333,7 +333,12 @@ function buildNotificationsRouter(io) {
         "UPDATE eduall_user_accounts SET ed_user_account_allow_notification = ? WHERE ed_user_account_id = ?",
         [newVal, uid]
       );
-      await _cacheClear("notify:*"); // CACHE-OPT v5: preferência mudou -> lista de destinatários/autores inválida
+      // Só a lista de destinatários DESTA escola muda. Antes limpava
+      // "notify:*" e obrigava todas as escolas a refazer a consulta.
+      const institute = user.eduall_user_session_curentinstitute;
+      await _cacheClear(
+        institute ? `notify:${institute}:recipients` : "notify:*"
+      );
       res.json({ ok: true, allow: newVal });
     } catch (e) {
       res.status(500).json({ ok: false, error: e.message });

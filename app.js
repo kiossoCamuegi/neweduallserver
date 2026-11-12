@@ -3,7 +3,6 @@
  const http = require("http");
  const path = require("path");
  const fs   = require("fs");
-const dbConfig = require("./config/DatabaseCredentials");
  
  const BOOT_ERRORS = [];
  const BOOT_START  = Date.now();
@@ -33,9 +32,56 @@ const dbConfig = require("./config/DatabaseCredentials");
  emergencyServer.listen(EMERGENCY_PORT, () => {
    console.log(`[BOOT] Servidor de emergência na porta ${EMERGENCY_PORT}`);
    // Agora carrega o resto da app de forma segura
-   loadFullApp();
+   loadFullApp().catch((err) => {
+     BOOT_ERRORS.push({ label: "loadFullApp (async)", error: err?.message || String(err) });
+     console.error("[BOOT ERR] loadFullApp:", err?.message || err);
+   });
  });
- 
+
+ // ================== Teste seguro da BD preferida ==================
+// Tenta socket/127.0.0.1 (rápido). Se falhar, muda para o host público
+// (fallback) ANTES de criar os pools — a aplicação nunca fica sem BD por
+// causa da otimização de latência.
+async function ensurePreferredDb(mysql2, dbConfig) {
+  const isPreferredLocal =
+    !!dbConfig.socketPath ||
+    dbConfig.host === "127.0.0.1" ||
+    dbConfig.host === "localhost";
+  if (!isPreferredLocal) return;
+
+  const target = dbConfig.socketPath
+    ? `socket ${dbConfig.socketPath}`
+    : `${dbConfig.host}:${dbConfig.port}`;
+
+  let conn = null;
+  try {
+    // Remove os campos internos de fallback antes de passar ao mysql2.
+    const { fallbackHost: _fbHost, fallbackPort: _fbPort, ...probeConfig } = dbConfig;
+    conn = mysql2.createConnection({
+      ...probeConfig,
+      connectTimeout: 4000,
+    });
+    // mysql2 (callback) → usar a promise wrapper.
+    const pconn = conn.promise();
+    // Não basta abrir: confirma que a BD responde e tem o schema esperado.
+    await pconn.query("SELECT 1");
+    await pconn.query("SELECT 1 FROM eduall_students LIMIT 1");
+    console.log(`[DB] ligação preferida OK: ${target}`);
+  } catch (err) {
+    const fallback = dbConfig.fallbackHost;
+    console.warn(
+      `[DB] ligação preferida falhou (${err.code || err.message}); a usar fallback ${fallback || "(sem fallback)"}`
+    );
+    if (fallback) {
+      delete dbConfig.socketPath;
+      dbConfig.host = fallback;
+      dbConfig.port = dbConfig.fallbackPort || 3306;
+    }
+  } finally {
+    try { if (conn) conn.destroy(); } catch (_) {}
+  }
+}
+
  // ================== Carregamento seguro da app completa ==================
  function safeRequire(modulePath, label) {
    try {
@@ -47,7 +93,7 @@ const dbConfig = require("./config/DatabaseCredentials");
    }
  }
  
- function loadFullApp() {
+ async function loadFullApp() {
    // -- Dependências npm (cada uma isolada) --
    const express         = safeRequire("express",               "express");
    const cookieParser    = safeRequire("cookie-parser",         "cookie-parser");
@@ -81,7 +127,14 @@ const dbConfig = require("./config/DatabaseCredentials");
        }
      } catch(e) { BOOT_ERRORS.push({ label: "dotenv.config", error: e.message }); }
    }
- 
+
+   // Config da BD depois do dotenv (aceita MYSQL_HOST do .env).
+   // Testa o alvo rápido (socket/127.0.0.1) e cai para o host público se falhar.
+   const dbConfig = safeRequire("./config/DatabaseCredentials", "DatabaseCredentials");
+   if (dbConfig && mysql2) {
+     await ensurePreferredDb(mysql2, dbConfig);
+   }
+
    const cloudinary = cloudinaryPkg?.v2 ?? null;
    const SocketServer = socketIoPkg?.Server ?? null;
  
@@ -95,7 +148,7 @@ const dbConfig = require("./config/DatabaseCredentials");
    // Segurança / perf
    if (helmet)      { try { app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "cross-origin" } })); } catch(e) { BOOT_ERRORS.push({ label:"helmet", error: e.message }); } }
    if (compression) { try { app.use(compression()); } catch(e) { BOOT_ERRORS.push({ label:"compression", error: e.message }); } }
-   if (morgan)      { try { app.use(morgan(process.env.NODE_ENV === "production" ? "tiny" : "dev")); } catch(e) { BOOT_ERRORS.push({ label:"morgan", error: e.message }); } }
+   if (morgan)      { try { app.use(morgan(process.env.LOG_HTTP === "dev" ? "dev" : "tiny")); } catch(e) { BOOT_ERRORS.push({ label:"morgan", error: e.message }); } }
  
    app.use(express.json({ limit: "500mb" }));
    app.use(express.urlencoded({ extended: true }));
@@ -118,15 +171,20 @@ const dbConfig = require("./config/DatabaseCredentials");
  
    // MySQL pool
    let pool = null, promisePool = null;
+   const {
+     fallbackHost: _poolFbHost,
+     fallbackPort: _poolFbPort,
+     ...dbPoolConfig
+   } = dbConfig || {};
    if (mysql2) {
      try {
        pool = mysql2.createPool({
-         ...dbConfig,
+         ...dbPoolConfig,
          charset: "utf8mb4",
          waitForConnections: true,
-         connectionLimit: Number(process.env.DB_CONN_LIMIT || 50),
-         maxIdle: Number(process.env.DB_MAX_IDLE || 20),
-         idleTimeout: Number(process.env.DB_IDLE_TIMEOUT || 60000),
+         connectionLimit: Number(process.env.DB_CONN_LIMIT || 10),
+         maxIdle: Number(process.env.DB_MAX_IDLE || 10),
+         idleTimeout: Number(process.env.DB_IDLE_TIMEOUT || 30000),
          queueLimit: 0,
          enableKeepAlive: true,
          keepAliveInitialDelay: 10000,
@@ -160,27 +218,8 @@ const dbConfig = require("./config/DatabaseCredentials");
      }
    }
  
-   // Sessão
-   let sessionMiddleware = null;
-   if (session && MySQLStoreFactory && pool) {
-     try {
-       const MySQLStore  = MySQLStoreFactory(session);
-       const sessionStore = new MySQLStore({ expiration: expiryDate, clearExpired: true, checkExpirationInterval: 15 * 60 * 1000 }, pool);
-       if (cookieParser) app.use(cookieParser());
-       sessionMiddleware = session({
-         secret: process.env.SESSION_SECRET || "troque-este-segredo",
-         resave: false,
-         saveUninitialized: true,
-         store: sessionStore,
-         cookie: { httpOnly: true, maxAge: expiryDate, secure: false, sameSite: "lax" },
-       });
-       app.use(sessionMiddleware);
-     } catch(e) { BOOT_ERRORS.push({ label:"session/store", error: e.message }); }
-   }
- 
-   if (passport) { try { app.use(passport.initialize()); } catch(e) { BOOT_ERRORS.push({ label:"passport", error: e.message }); } }
- 
-   // Estáticos
+   // Estáticos — montados ANTES da sessão para não irem à BD por cada
+   // imagem/asset. Só precisam de CORS, nunca de cookies.
    app.use("/public", express.static("public"));
    const IMAGES_DIR = path.resolve(__dirname, "images");
    const ASSETS_DIR = path.resolve(__dirname, "assets");
@@ -194,6 +233,35 @@ const dbConfig = require("./config/DatabaseCredentials");
      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
      next();
    }, express.static(IMAGES_DIR, staticOpts));
+
+   // Sessão
+   // - saveUninitialized:false → não cria sessão para visitantes anónimos
+   // - disableTouch:true       → não faz UPDATE em `sessions` em cada pedido
+   // Remove ~2 idas à BD de TODOS os pedidos (incluindo socket.io).
+   let sessionMiddleware = null;
+   if (session && MySQLStoreFactory && pool) {
+     try {
+       const MySQLStore  = MySQLStoreFactory(session);
+       const sessionStore = new MySQLStore({
+         expiration: expiryDate,
+         clearExpired: true,
+         checkExpirationInterval: 15 * 60 * 1000,
+         disableTouch: true,
+       }, pool);
+       if (cookieParser) app.use(cookieParser());
+       sessionMiddleware = session({
+         secret: process.env.SESSION_SECRET || "troque-este-segredo",
+         resave: false,
+         saveUninitialized: false,
+         rolling: false,
+         store: sessionStore,
+         cookie: { httpOnly: true, maxAge: expiryDate, secure: false, sameSite: "lax" },
+       });
+       app.use(sessionMiddleware);
+     } catch(e) { BOOT_ERRORS.push({ label:"session/store", error: e.message }); }
+   }
+
+   if (passport) { try { app.use(passport.initialize()); } catch(e) { BOOT_ERRORS.push({ label:"passport", error: e.message }); } }
  
    // Cloudinary
    if (cloudinary) {

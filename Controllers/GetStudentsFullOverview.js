@@ -1,5 +1,6 @@
 // CACHE-OPT v2 (aplicado por apply_cache_optimizations_v2.py)
 const ExecuteQuery = require("../Functions/ExecuteQuery");
+const { invalidateStudentCaches } = require("../Functions/StudentCache");
 
 const { RegisterAuditAction } = require("./Auditory"); 
 const {
@@ -777,6 +778,8 @@ async function processMatricula(req, res, entry, ctx) {
       [financialConfirmationMode ? 1 : 0, studentId], false
     );
 
+    await invalidateStudentCaches(instituteCode);
+
     for (const doc of docs) {
       if (!doc?.name || !String(doc.name).trim()) continue;
       await ExecuteQuery(
@@ -1088,6 +1091,8 @@ async function processConfirmacao(req, res, entry, ctx) {
       [classId, studentId], false
     );
 
+    await invalidateStudentCaches(instituteCode);
+
     let balanceResult = null;
     if (balanceUsed > 0) {
       balanceResult = await debitStudentBalance(res, {
@@ -1176,6 +1181,8 @@ async function processPaymentConfirmation(req, res, entry, ctx) {
       WHERE ed_student_id = ? AND ed_student_institute_code = ?`,
     [studentId, instituteCode], false
   );
+
+  await invalidateStudentCaches(instituteCode);
 
   await RegisterAuditAction({
     session: req.session, action: 2, form: "Matrículas",
@@ -2314,8 +2321,8 @@ const GetStudentsFullOverview = async (req, res) => {
 // não muda.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ENROLLMENT_DATE_COL   = "ed_enrollment_date";
-const CONFIRMATION_DATE_COL = "ed_enrollment_confirmation_date";
+const ENROLLMENT_DATE_COL   = "ed_enrollment_registerDate";
+const CONFIRMATION_DATE_COL = "ed_enrollment_confirmation_registerdate";
 
 const MONTH_LABEL = [
   "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
@@ -2380,12 +2387,13 @@ const GetEnrollmentConfirmationReport = async (req, res) => {
 
     // ── 1. Carregar anos lectivos (para resolver "ano anterior" e para o filtro do frontend) ──
     const academicYears = await ExecuteQuery(
+      res,
       `SELECT ed_academic_year_id, ed_academic_year_title, ed_academic_year_startDate, ed_academic_year_endDate
        FROM eduall_academic_year
-       WHERE institute_code = ?
+       WHERE ed_academic_year_institute_code = ? AND ed_academic_year_deleted = 0
        ORDER BY ed_academic_year_startDate DESC`,
       [instituteCode],
-      res
+      true
     );
 
     let resolvedPreviousYearId = previousAcademicYearId;
@@ -2406,43 +2414,65 @@ const GetEnrollmentConfirmationReport = async (req, res) => {
     }
 
     // ── 2. Carregar matrículas e confirmações (ano seleccionado) ──
+    // As matrículas antigas não têm ed_enrollment_academic_year preenchido;
+    // o ano lectivo efectivo vem da turma (actual do aluno ou da matrícula).
     const enrollmentWhere = academicYearId
-      ? "AND e.ed_enrollment_academic_year = ?"
+      ? "AND c.ed_class_year = ?"
       : "";
     const enrollmentParams = academicYearId
       ? [instituteCode, academicYearId]
       : [instituteCode];
 
     const enrollments = await ExecuteQuery(
+      res,
       `SELECT
          e.ed_enrollment_id, e.ed_enrollment_student, e.ed_enrollment_class,
          e.ed_enrollment_service, e.ed_enrollment_academic_year, e.${ENROLLMENT_DATE_COL},
-         c.ed_class_title, c.ed_academic_level_title, c.ed_course_title
+         c.ed_class_title,
+         al.ed_academic_level_title AS ed_academic_level_title,
+         co.ed_course_title       AS ed_course_title
        FROM eduall_enrollment e
-       LEFT JOIN eduall_class c ON c.ed_class_id = e.ed_enrollment_class
-       WHERE e.institute_code = ? ${enrollmentWhere}`,
+       LEFT JOIN eduall_students s
+              ON s.ed_student_id = e.ed_enrollment_student
+             AND s.ed_student_deleted = 0
+       LEFT JOIN eduall_class c
+              ON c.ed_class_id = COALESCE(NULLIF(e.ed_enrollment_class, 0), s.ed_student_class)
+       LEFT JOIN eduall_academic_level al ON al.ed_academic_level_id = c.ed_class_academic_level
+       LEFT JOIN eduall_courses co        ON co.ed_course_id = c.ed_class_course
+       WHERE e.ed_enrollment_institute_code = ?
+         AND e.ed_enrollment_deleted = 0
+         ${enrollmentWhere}`,
       enrollmentParams,
-      res
+      true
     );
 
+    // A tabela de confirmações não tem coluna de ano lectivo; o ano vem da
+    // turma (ed_class_year).
     const confirmationWhere = academicYearId
-      ? "AND cf.ed_enrollment_confirmation_academic_year = ?"
+      ? "AND c.ed_class_year = ?"
       : "";
     const confirmationParams = academicYearId
       ? [instituteCode, academicYearId]
       : [instituteCode];
 
     const confirmations = await ExecuteQuery(
+      res,
       `SELECT
          cf.ed_enrollment_confirmation_id, cf.ed_enrollment_confirmation_student,
-         cf.ed_enrollment_confirmation_class, cf.ed_enrollment_confirmation_academic_year,
+         cf.ed_enrollment_confirmation_class,
          cf.${CONFIRMATION_DATE_COL},
-         c.ed_class_title, c.ed_academic_level_title, c.ed_course_title
-       FROM eduall_enrollment_confirmation cf
-       LEFT JOIN eduall_class c ON c.ed_class_id = cf.ed_enrollment_confirmation_class
-       WHERE cf.institute_code = ? ${confirmationWhere}`,
+         c.ed_class_title,
+         al.ed_academic_level_title AS ed_academic_level_title,
+         co.ed_course_title       AS ed_course_title
+       FROM eduall_enrollment_confirmations cf
+       LEFT JOIN eduall_class c          ON c.ed_class_id = cf.ed_enrollment_confirmation_class
+       LEFT JOIN eduall_academic_level al ON al.ed_academic_level_id = c.ed_class_academic_level
+       LEFT JOIN eduall_courses co        ON co.ed_course_id = c.ed_class_course
+       WHERE cf.ed_enrollment_confirmation_institute_code = ?
+         AND cf.ed_enrollment_confirmation_deleted = 0
+         ${confirmationWhere}`,
       confirmationParams,
-      res
+      true
     );
 
     // ── 3. KPIs de topo ──
@@ -2452,7 +2482,9 @@ const GetEnrollmentConfirmationReport = async (req, res) => {
     const totalPendentes    = enrollments.filter(
       (e) => !confirmedStudentIds.has(Number(e.ed_enrollment_student))
     ).length;
-    const pctConfirmacao = pct(totalConfirmacoes, totalMatriculas);
+    // Pode haver confirmações sem matrícula correspondente (dados antigos);
+    // nunca mostrar mais de 100%.
+    const pctConfirmacao = Math.min(100, pct(totalConfirmacoes, totalMatriculas));
 
     // ── 4. Evolução mensal (matrículas vs confirmações) ──
     const matriculasByMonth   = countByMonth(enrollments, ENROLLMENT_DATE_COL);
@@ -2492,16 +2524,30 @@ const GetEnrollmentConfirmationReport = async (req, res) => {
     if (resolvedPreviousYearId) {
       const [prevEnrollments, prevConfirmations] = await Promise.all([
         ExecuteQuery(
-          `SELECT ed_enrollment_id FROM eduall_enrollment
-           WHERE institute_code = ? AND ed_enrollment_academic_year = ?`,
+          res,
+          `SELECT e.ed_enrollment_id
+           FROM eduall_enrollment e
+           LEFT JOIN eduall_students s
+                  ON s.ed_student_id = e.ed_enrollment_student
+                 AND s.ed_student_deleted = 0
+           LEFT JOIN eduall_class c
+                  ON c.ed_class_id = COALESCE(NULLIF(e.ed_enrollment_class, 0), s.ed_student_class)
+           WHERE e.ed_enrollment_institute_code = ?
+             AND e.ed_enrollment_deleted = 0
+             AND c.ed_class_year = ?`,
           [instituteCode, resolvedPreviousYearId],
-          res
+          true
         ),
         ExecuteQuery(
-          `SELECT ed_enrollment_confirmation_id FROM eduall_enrollment_confirmation
-           WHERE institute_code = ? AND ed_enrollment_confirmation_academic_year = ?`,
+          res,
+          `SELECT cf.ed_enrollment_confirmation_id
+           FROM eduall_enrollment_confirmations cf
+           LEFT JOIN eduall_class c ON c.ed_class_id = cf.ed_enrollment_confirmation_class
+           WHERE cf.ed_enrollment_confirmation_institute_code = ?
+             AND cf.ed_enrollment_confirmation_deleted = 0
+             AND c.ed_class_year = ?`,
           [instituteCode, resolvedPreviousYearId],
-          res
+          true
         ),
       ]);
 
@@ -2793,6 +2839,8 @@ const ConfirmEnrollmentPayment = async (req, res) => {
       false,
       { db: "eduall_students", type: "update", data: req }
     );
+
+    await invalidateStudentCaches(instituteCode);
 
     await RegisterAuditAction({
       session: req.session,

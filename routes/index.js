@@ -1,7 +1,7 @@
  const express = require("express"); 
 const path = require('path');
 
-const { GetSingleStudent, GetSingleStudentByCode,GetStudents, GetStudentsByClass, RegisterStudent, StudentDelete,
+const { GetSingleStudent, GetSingleStudentByCode,GetStudents, GetStudentsLite, GetStudentsClassGender, GetStudentsByClass, RegisterStudent, StudentDelete,
    StudentEnrollmentConfirmationUpdate, StudentUpdate, StudentUpdateClass, StudentUpdateEnrollment, uploadStudentPicture,
     tpath, GetSingleStudentByIdentityCard, GetEmails, GetStudentsByInstitute, GetSTDS,
     GetTransportPassengersByClass,
@@ -563,6 +563,9 @@ router.put('/eduallstudentclassupdate/put/:ID', VerifyToken, StudentClassUpdate)
 router.put('/eduallstudentbulkupdate/put', VerifyToken, StudentBulkUpdate); 
 router.put("/eduallstudentdropout/put/:ID", VerifyToken, StudentDropoutUpdate);
 router.get('/eduallstudentsapi/get', VerifyToken,   GetStudents);
+// Versões leves usadas pela lista/tabela/seletor e pelos gráficos do dashboard.
+router.get('/eduallstudentsapi/get-lite', VerifyToken, GetStudentsLite);
+router.get('/eduallstudentsapi/class-gender', VerifyToken, GetStudentsClassGender);
 router.get('/eduallsinglestudentapi/get/:ID', VerifyToken,  GetSingleStudent);
 router.get('/eduallgetstudentsbyclass/:CLASS', VerifyToken,  GetStudentsByClass);
 router.get("/eduallgetstudentspassengersbyclass/:CLASS", VerifyToken,  GetTransportPassengersByClass)

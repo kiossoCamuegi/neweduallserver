@@ -71,11 +71,19 @@ function renderNotificationHTML({ action, form, description, userName, createdAt
 }
 
 async function geminiExplain({ action, form, description, userName, createdAt }) {
+  const localHTML = () => renderNotificationHTML({ action, form, description, userName, createdAt });
+
+  // A IA NÃO pode estar no caminho crítico de uma escrita: cada gravação
+  // esperava 1–8s por uma chamada externa. O texto local é imediato.
+  // Para voltar a usar Gemini: AUDIT_AI=true no ambiente.
+  if (String(process.env.AUDIT_AI || "false").toLowerCase() !== "true") {
+    return { ok: true, html: localHTML(), mode: "local" };
+  }
+
   try {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      const html = renderNotificationHTML({ action, form, description, userName, createdAt });
-      return { ok: true, html };
+      return { ok: true, html: localHTML() };
     }
     const prompt = `
     Gera uma descrição curta (≤580 chars) em HTML simples (p, span, b, small, br).
@@ -107,7 +115,12 @@ async function geminiExplain({ action, form, description, userName, createdAt })
 }
 
 /* =============== Schema/Índices =============== */
-async function ensureSchema(res, req) {
+let ensureSchemaPromise = null;
+function ensureSchema(res, req) {
+  // Corre uma única vez por processo. Antes fazia INFORMATION_SCHEMA + DDL
+  // em CADA escrita (2 idas à BD por gravação).
+  if (ensureSchemaPromise) return ensureSchemaPromise;
+  ensureSchemaPromise = (async () => {
   // preferências
   const q1 = `
     SELECT COUNT(*) AS exist
@@ -145,6 +158,11 @@ async function ensureSchema(res, req) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `;
   await ExecuteQuery(res, q2, [], false, { db: "eduall_notifications", type: "create", data: req });
+  })().catch((err) => {
+    ensureSchemaPromise = null; // permite nova tentativa se falhar
+    throw err;
+  });
+  return ensureSchemaPromise;
 }
 
 /* =============== Socket Rooms Helper =============== */
@@ -171,7 +189,11 @@ const RegisterAuditAction = async ({ session, res, req, action, description, for
       (ed_auditory_action, ed_auditory_description, ed_auditory_form, ed_auditory_user_code, ed_auditory_institute_code) 
       VALUES (?, ?, ?, ?, ?)
     `;
-    const params = [action, description, form, actor_user_id, institute_code];
+    // ed_auditory_description/form são varchar(111) na BD de produção.
+    // Truncar só a linha de auditoria; as notificações mantêm o texto completo.
+    const safeDescription = String(description || "").slice(0, 111);
+    const safeForm = String(form || "").slice(0, 111);
+    const params = [action, safeDescription, safeForm, actor_user_id, institute_code];
     const auditResult = await ExecuteQuery(res, insertAudit, params, false, {
       db: "eduall_auditory",
       type: "insert",
@@ -259,9 +281,10 @@ const RegisterAuditAction = async ({ session, res, req, action, description, for
         body_text,
         created_at: nowIso()
       };
-      // uso direto do io.to()
-      io.to && io.to(`inst:${institute_code}`).emit("notification:new", payload);
-      io.emitTo && io.emitTo(`inst:${institute_code}`, "notification:new", payload); // compat
+      // Uma única emissão (antes emitia por to() e emitTo() e o cliente
+      // recebia a mesma notificação duas vezes).
+      if (io.emitTo) io.emitTo(`inst:${institute_code}`, "notification:new", payload);
+      else if (io.to) io.to(`inst:${institute_code}`).emit("notification:new", payload);
     }
 
     return { ok: true, audit_id };
